@@ -515,22 +515,25 @@ export function apply(ctx: Context, config: Config) {
     }
 
   ctx.command('mcinfo [server]', '查询MC服务器状态')
-    .option('host', '-h <host:string> 服务器地址')
-    .option('port', '-p <port:number> 服务器端口')
-    .action(async ({ session, options }, server) => {
+    .action(async ({ session }, server) => {
       try {
         let host: string
         let port: number
 
-        if (options.host && options.port) {
-          // 使用命令选项指定的服务器
-          host = options.host
-          port = options.port
+        if (server?.includes(':')) {
+          // 解析 ip:port 格式
+          const [inputHost, inputPort] = server.split(':')
+          host = inputHost
+          port = parseInt(inputPort)
+
+          if (!host || isNaN(port)) {
+            return '无效的服务器地址格式，请使用 ip:port 格式或服务器名称'
+          }
         } else if (server && config.defaultServers.length > 0) {
           // 查找配置的服务器
           const serverConfig = config.defaultServers.find(s => s.name === server)
           if (!serverConfig) {
-            return '未找到指定的服务器配置，请检查服务器名称或使用 -h 和 -p 参数指定服务器'
+            return '未找到指定的服务器配置'
           }
           host = serverConfig.host
           port = serverConfig.port
@@ -547,7 +550,7 @@ export function apply(ctx: Context, config: Config) {
           }))
           return results.join('\n\n')
         } else {
-          return '请指定服务器地址和端口，或在配置中添加默认服务器'
+          return '请输入服务器地址(ip:port)或在配置中添加默认服务器'
         }
 
         const pinger = new MCPinger()
