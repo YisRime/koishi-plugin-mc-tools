@@ -30,6 +30,9 @@ export interface Config {
   timeout: number
   maxResults: number
   searchTimeout: number
+  enableVersionNotify: boolean
+  notifyGroups: string[]
+  checkInterval: number
 }
 
 export const Config: Schema<Config> = Schema.object({
@@ -44,7 +47,14 @@ export const Config: Schema<Config> = Schema.object({
   maxResults: Schema.number().default(10)
     .description('搜索结果最大显示数'),
   searchTimeout: Schema.number().default(10000)
-    .description('搜索交互超时时间(ms)')
+    .description('搜索交互超时时间(ms)'),
+  enableVersionNotify: Schema.boolean().default(false)
+    .description('是否启用新版本通知'),
+  notifyGroups: Schema.array(Schema.string())
+    .description('接收新版本通知的群组ID列表')
+    .default([]),
+  checkInterval: Schema.number().default(3600000)
+    .description('版本检查间隔(ms)，默认1小时')
 })
 
 export const inject = {
@@ -114,9 +124,9 @@ export function apply(ctx: Context, config: Config) {
         const lang = userLangs.get(session.userId) || config.defaultLang
         const domain = lang === 'en' ? 'minecraft.wiki' : `${lang}.minecraft.wiki`
         const searchUrl = `https://${domain}/api.php?action=opensearch&search=${encodeURIComponent(keyword)}&limit=${config.maxResults}`
-        
+
         const [_, titles, descriptions, urls] = await axios.get(searchUrl).then(res => res.data)
-        
+
         if (!titles.length) return '未找到相关结果'
 
         const results = titles.map((title, i) => ({
@@ -127,7 +137,7 @@ export function apply(ctx: Context, config: Config) {
 
         let msg = '搜索结果:\n' + results.map((r, i) => `${i + 1}. ${r.title}`).join('\n')
         msg += '\n\n请输入序号查看对应页面'
-        
+
         ctx.emit('mcwiki-search-select', results, session)
         return msg
 
@@ -139,7 +149,7 @@ export function apply(ctx: Context, config: Config) {
   ctx.on('mcwiki-search-select', (results, session) => {
     const dispose = ctx.middleware((session2, next) => {
       if (session.userId !== session2.userId) return next()
-      
+
       const num = parseInt(session2.content)
       if (isNaN(num) || num < 1 || num > results.length) {
         session.send('无效的序号，请重新输入')
@@ -168,22 +178,22 @@ export function apply(ctx: Context, config: Config) {
 
         const context = await ctx.puppeteer.browser.createBrowserContext()
         const page = await context.newPage()
-        
+
         await page.setViewport({
           width: config.viewportWidth,
           height: config.viewportHeight,
           deviceScaleFactor: 1
         })
 
-        await page.goto(pageUrl, { 
+        await page.goto(pageUrl, {
           waitUntil: 'networkidle0',
-          timeout: config.timeout 
+          timeout: config.timeout
         })
 
         await page.waitForSelector('#mw-content-text')
         const element = await page.$('#mw-content-text')
         const height = await element.evaluate(el => el.scrollHeight)
-        
+
         const screenshot = await element.screenshot({
           type: 'png',
           clip: {
@@ -206,4 +216,66 @@ export function apply(ctx: Context, config: Config) {
         return `截图失败: ${error.message}`
       }
     })
+
+  ctx.command('mcver', '获取Minecraft最新版本信息')
+    .action(async () => {
+      try {
+        const response = await axios.get('https://launchermeta.mojang.com/mc/game/version_manifest.json')
+        const { versions } = response.data
+
+        const latest = versions[0]
+        const latestRelease = versions.find(v => v.type === 'release')
+
+        return `Minecraft 最新版本信息：
+快照版：${latest.id} (${new Date(latest.releaseTime).toLocaleDateString()})
+正式版：${latestRelease.id} (${new Date(latestRelease.releaseTime).toLocaleDateString()})`
+      } catch (error) {
+        return `获取版本信息失败：${error.message}`
+      }
+    })
+
+  // 存储上次检查的版本信息
+  let lastSnapshot = ''
+  let lastRelease = ''
+
+  // 检查新版本
+  async function checkNewVersion() {
+    try {
+      const response = await axios.get('https://launchermeta.mojang.com/mc/game/version_manifest.json')
+      const { versions } = response.data
+
+      const latest = versions[0]
+      const latestRelease = versions.find(v => v.type === 'release')
+
+      // 检查是否有新版本
+      if (lastSnapshot && latest.id !== lastSnapshot) {
+        const message = `Minecraft 新快照版本发布：${latest.id}\n发布时间：${new Date(latest.releaseTime).toLocaleString()}`
+        config.notifyGroups.forEach(groupId => {
+          ctx.bots.forEach(bot => bot.sendMessage(groupId, message))
+        })
+      }
+
+      if (lastRelease && latestRelease.id !== lastRelease) {
+        const message = `Minecraft 新正式版本发布：${latestRelease.id}\n发布时间：${new Date(latestRelease.releaseTime).toLocaleString()}`
+        config.notifyGroups.forEach(groupId => {
+          ctx.bots.forEach(bot => bot.sendMessage(groupId, message))
+        })
+      }
+
+      // 更新版本记录
+      lastSnapshot = latest.id
+      lastRelease = latestRelease.id
+
+    } catch (error) {
+      ctx.logger('mc-tools').warn('版本检查失败：', error)
+    }
+  }
+
+  // 启动版本检查
+  if (config.enableVersionNotify && config.notifyGroups.length > 0) {
+    // 启动时检查一次
+    checkNewVersion()
+    // 设置定时检查
+    setInterval(checkNewVersion, config.checkInterval)
+  }
 }
