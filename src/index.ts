@@ -97,6 +97,12 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
     return { domain, variant }
   }
 
+  // 新增：构建 Wiki URL 的辅助函数
+  const buildWikiUrl = (title: string, domain: string, variant?: string, includeVariant = false) => {
+    const baseUrl = `https://${domain}/w/${encodeURIComponent(title)}`
+    return includeVariant && variant ? `${baseUrl}?variant=${variant}` : baseUrl
+  }
+
   async function captureWiki(url: string, lang: LangCode) {
     const context = await ctx.puppeteer.browser.createBrowserContext()
     const page = await context.newPage()
@@ -235,16 +241,18 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
       return titles.map((title, i) => ({ title, url: urls[i] }))
     } catch (error) {
       ctx.logger('mc-tools').warn(`Wiki搜索失败: ${error.message}`)
-      throw new Error('Wiki搜索失败，请稍后重试')
+      throw new Error('搜索失败，请稍后重试')
     }
   }
 
   // 修改 getWikiContent 函数，添加语言参数支持
   async function getWikiContent(pageUrl: string, lang: LangCode) {
     const { variant } = getWikiDomain(lang)
-    const response = await axios.get(pageUrl, {
+    // 确保请求时使用带 variant 的 URL
+    const requestUrl = pageUrl.includes('?') ? pageUrl : `${pageUrl}?variant=${variant}`
+
+    const response = await axios.get(requestUrl, {
       params: {
-        variant: lang === 'zh' ? 'zh-cn' : variant,  // 确保zh使用简体中文
         uselang: lang,
         setlang: lang
       }
@@ -261,24 +269,27 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
       .get()
 
     if (!paragraphs.length) {
-      return { title, content: '本页面目前没有内容。', url: pageUrl }
+      // 移除链接中的variant参数
+      const cleanUrl = pageUrl.split('?')[0]
+      return { title, content: '本页面目前没有内容。', url: cleanUrl }
     }
 
-    const content = paragraphs.join('\n\n').slice(0, 600)
+    const content = paragraphs.join('\n').slice(0, 600)
+    // 移除链接中的variant参数
+    const cleanUrl = pageUrl.split('?')[0]
     return {
       title,
       content: content.length >= 600 ? content + '...' : content,
-      url: pageUrl
+      url: cleanUrl
     }
   }
 
   // Wiki commands
   const mcwiki = ctx.command('mcwiki', 'Minecraft Wiki 查询')
-    .usage('mcwiki <关键词> - 直接查询内容\nmcwiki.search <关键词> - 搜索并选择\nmcwiki.shot <关键词> - 获取页面截图')
-
+    .usage(`使用方法：\nmcwiki <关键词> - 直接查询内容\nmcwiki.search <关键词> - 搜索并选择条目\nmcwiki.shot <关键词> - 获取页面截图`)
   // 统一的 Wiki 页面处理函数
   async function handleWikiPage(keyword: string, userId: string, mode: 'text' | 'image' | 'search' = 'text') {
-    if (!keyword) return '请输入要查询的内容'
+    if (!keyword) return '请输入要查询的内容关键词'
 
     try {
       const lang = userLangs.get(userId) || config.wiki.defaultLanguage
@@ -298,26 +309,29 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
       }
 
       const result = results[0]
-      const pageUrl = variant
-        ? `https://${domain}/w/${encodeURIComponent(result.title)}?variant=${variant}`
-        : `https://${domain}/w/${encodeURIComponent(result.title)}`
+      const pageUrl = buildWikiUrl(result.title, domain, variant, true) // 内部使用时包含 variant
 
       // 根据模式返回不同内容
       if (mode === 'image') {
         const { image, truncated } = await captureWiki(pageUrl, lang)
+        const displayUrl = buildWikiUrl(result.title, domain) // 展示时不包含 variant
         return {
           image,
           truncated,
-          pageUrl
+          pageUrl: displayUrl
         }
       }
 
       const { title, content, url } = await getWikiContent(pageUrl, lang)
-      return `【${title}】\n\n${content}\n\n链接：${url}`
+      return `『${title}』${content}\n详细内容：${url}`
 
     } catch (error) {
-      const action = mode === 'image' ? '截图' : mode === 'search' ? '搜索' : '查询'
-      throw new Error(`${action}失败: ${error.message}`)
+      const action = {
+        'image': '页面截图',
+        'search': '搜索条目',
+        'text': '内容查询'
+      }[mode]
+      throw new Error(`${action}失败：${error.message}`)
     }
   }
 
@@ -339,9 +353,9 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
         const { results, domain, lang } = searchResult
         const { variant } = getWikiDomain(lang)
 
-        const msg = '搜索结果如下：\n' +
-          results.map((r, i) => `${i + 1}. ${r.title}`).join('\n') +
-          '\n\n回复序号查看内容，或在序号后添加 -i 获取截图（如：1-i）'
+        const msg = `Wiki 搜索结果：\n${
+          results.map((r, i) => `${i + 1}. ${r.title}`).join('\n')
+        }\n回复序号查看内容（添加 -i 获取截图）`
 
         await session.send(msg)
         const response = await session.prompt(config.wiki.timeout)
@@ -356,20 +370,21 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
         }
 
         const result = results[index]
-        const pageUrl = variant
-          ? `https://${domain}/w/${encodeURIComponent(result.title)}?variant=${variant}`
-          : `https://${domain}/w/${encodeURIComponent(result.title)}`
+        // 使用 buildWikiUrl 构建内部使用的 URL（带variant）和展示用的 URL（不带variant）
+        const pageUrl = buildWikiUrl(result.title, domain, variant, true)
 
         if (flag?.trim() === 'i') {
           const { image, truncated } = await captureWiki(pageUrl, lang)
           if (truncated) {
-            await session.send(`页面内容过长，完整页面: ${pageUrl}`)
+            // 展示用的 URL 不带 variant
+            const displayUrl = buildWikiUrl(result.title, domain)
+            await session.send(`完整内容: ${displayUrl}`)
           }
           return h.image(image, 'image/png')
         }
 
         const { title, content, url } = await getWikiContent(pageUrl, lang)
-        return `【${title}】\n\n${content}\n\n链接：${url}`
+        return `『${title}』${content}\n详细内容：${url}`
 
       } catch (error) {
         return error.message
@@ -384,7 +399,7 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
 
         const { image, truncated, pageUrl } = result
         if (truncated) {
-          await session.send(`页面内容过长，完整页面: ${pageUrl}`)
+          await session.send(`完整内容：${pageUrl}`)
         }
         return h.image(image, 'image/png')
       } catch (error) {
