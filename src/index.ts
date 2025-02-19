@@ -30,7 +30,7 @@ type LangCode = keyof typeof LANGUAGES
 export interface MinecraftToolsConfig {
   wiki: {
     defaultLanguage: LangCode
-    timeout: number
+    pageTimeout: number
     searchResultLimit: number
   }
   versionCheck: {
@@ -49,9 +49,9 @@ export const Config: Schema<MinecraftToolsConfig> = Schema.object({
     defaultLanguage: Schema.union(Object.keys(LANGUAGES) as LangCode[])
       .default('zh')
       .description('默认的 Wiki 浏览语言'),
-    timeout: Schema.number()
-      .default(10000)
-      .description('超时时间（毫秒）'),
+    pageTimeout: Schema.number()
+      .default(30)
+      .description('获取页面超时时间（秒）'),
     searchResultLimit: Schema.number()
       .default(10)
       .description('搜索结果最大显示数量'),
@@ -79,10 +79,20 @@ export const Config: Schema<MinecraftToolsConfig> = Schema.object({
   }).description('默认的 Minecraft 服务器配置')
 })
 
+/**
+ * 插件主函数
+ * @param {Context} ctx - Koishi 上下文
+ * @param {MinecraftToolsConfig} config - 插件配置
+ */
 export function apply(ctx: Context, config: MinecraftToolsConfig) {
   const userLangs = new Map<string, LangCode>()
   const versions = { snapshot: '', release: '' }
 
+  /**
+   * 根据语言代码获取对应的 Wiki 域名和语言变体
+   * @param {LangCode} lang - 语言代码
+   * @returns {{domain: string, variant: string}} 域名和语言变体信息
+   */
   const getWikiDomain = (lang: LangCode) => {
     let domain: string
     let variant: string = ''
@@ -97,12 +107,26 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
     return { domain, variant }
   }
 
-  // 新增：构建 Wiki URL 的辅助函数
+  /**
+   * 构建 Wiki URL
+   * @param {string} title - 页面标题
+   * @param {string} domain - Wiki 域名
+   * @param {string} [variant] - 语言变体
+   * @param {boolean} [includeVariant=false] - 是否在 URL 中包含语言变体参数
+   * @returns {string} 完整的 Wiki URL
+   */
   const buildWikiUrl = (title: string, domain: string, variant?: string, includeVariant = false) => {
     const baseUrl = `https://${domain}/w/${encodeURIComponent(title)}`
     return includeVariant && variant ? `${baseUrl}?variant=${variant}` : baseUrl
   }
 
+  /**
+   * 使用 Puppeteer 获取 Wiki 页面截图
+   * @param {string} url - 页面 URL
+   * @param {LangCode} lang - 语言代码
+   * @returns {Promise<{image: Buffer, height: number, truncated: boolean}>} 截图结果
+   * @throws {Error} 当页面加载失败时抛出错误
+   */
   async function captureWiki(url: string, lang: LangCode) {
     const context = await ctx.puppeteer.browser.createBrowserContext()
     const page = await context.newPage()
@@ -117,11 +141,11 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
 
       await page.goto(url, {
         waitUntil: 'networkidle0',
-        timeout: config.wiki.timeout
+        timeout: config.wiki.pageTimeout * 1000
       })
 
       // 等待主要内容加载完成
-      await page.waitForSelector('#bodyContent', { timeout: config.wiki.timeout })
+      await page.waitForSelector('#bodyContent', { timeout: config.wiki.pageTimeout * 1000 })
 
       // 注入优化后的样式
       await page.evaluate(() => {
@@ -180,7 +204,9 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
           '.navbox',         // 导航框
           '#siteNotice',     // 网站通知
           '#contentSub',     // 内容子标题
-          '.mw-indicators'    // 右上角指示器
+          '.mw-indicators',   // 右上角指示器
+          '.sister-wiki',     // 姊妹维基链接
+          '.external'         // 外部链接
         ]
         selectors.forEach(selector => {
           document.querySelectorAll(selector).forEach(el => el.remove())
@@ -218,7 +244,6 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
       return {
         image: screenshot,
         height: dimensions.height,
-        // 如果内容过长则返回 true
         truncated: dimensions.height > 3840
       }
 
@@ -227,13 +252,19 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
     }
   }
 
+  /**
+   * 搜索 Wiki 页面
+   * @param {string} keyword - 搜索关键词
+   * @returns {Promise<Array<{title: string, url: string}>>} 搜索结果数组
+   * @throws {Error} 当搜索失败时抛出错误
+   */
   async function searchWiki(keyword: string) {
-    const { domain } = getWikiDomain('zh')  // 使用简体中文进行搜索
+    const { domain } = getWikiDomain('zh')
     try {
       const searchUrl = `https://${domain}/api.php?action=opensearch&search=${encodeURIComponent(keyword)}&limit=${config.wiki.searchResultLimit}&variant=zh-cn`
       const { data } = await axios.get(searchUrl, {
-        params: { variant: 'zh-cn' },  // 确保使用简体中文
-        timeout: config.wiki.timeout
+        params: { variant: 'zh-cn' },
+        timeout: config.wiki.pageTimeout * 1000
       })
 
       const [_, titles, urls] = data
@@ -245,10 +276,15 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
     }
   }
 
-  // 修改 getWikiContent 函数，添加语言参数支持
+  /**
+   * 获取 Wiki 页面内容
+   * @param {string} pageUrl - 页面 URL
+   * @param {LangCode} lang - 语言代码
+   * @returns {Promise<{title: string, content: string, url: string}>} 页面内容
+   * @throws {Error} 当获取内容失败时抛出错误
+   */
   async function getWikiContent(pageUrl: string, lang: LangCode) {
     const { variant } = getWikiDomain(lang)
-    // 确保请求时使用带 variant 的 URL
     const requestUrl = pageUrl.includes('?') ? pageUrl : `${pageUrl}?variant=${variant}`
 
     const response = await axios.get(requestUrl, {
@@ -269,13 +305,11 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
       .get()
 
     if (!paragraphs.length) {
-      // 移除链接中的variant参数
       const cleanUrl = pageUrl.split('?')[0]
-      return { title, content: '本页面目前没有内容。', url: cleanUrl }
+      return { title, content: `${title}：本页面目前没有内容。`, url: cleanUrl }
     }
 
     const content = paragraphs.join('\n').slice(0, 600)
-    // 移除链接中的variant参数
     const cleanUrl = pageUrl.split('?')[0]
     return {
       title,
@@ -284,10 +318,14 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
     }
   }
 
-  // Wiki commands
-  const mcwiki = ctx.command('mcwiki', 'Minecraft Wiki 查询')
-    .usage(`使用方法：\nmcwiki <关键词> - 直接查询内容\nmcwiki.search <关键词> - 搜索并选择条目\nmcwiki.shot <关键词> - 获取页面截图`)
-  // 统一的 Wiki 页面处理函数
+  /**
+   * 统一处理 Wiki 页面请求
+   * @param {string} keyword - 搜索关键词
+   * @param {string} userId - 用户 ID
+   * @param {'text' | 'image' | 'search'} [mode='text'] - 处理模式
+   * @returns {Promise<string | object>} 处理结果
+   * @throws {Error} 当处理失败时抛出错误
+   */
   async function handleWikiPage(keyword: string, userId: string, mode: 'text' | 'image' | 'search' = 'text') {
     if (!keyword) return '请输入要查询的内容关键词'
 
@@ -295,11 +333,10 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
       const lang = userLangs.get(userId) || config.wiki.defaultLanguage
       const results = await searchWiki(keyword)
 
-      if (!results.length) return '未找到相关结果'
+      if (!results.length) return `${keyword}：本页面目前没有内容。`
 
       const { domain, variant } = getWikiDomain(lang)
 
-      // 搜索模式特殊处理
       if (mode === 'search') {
         return {
           results,
@@ -309,16 +346,17 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
       }
 
       const result = results[0]
-      const pageUrl = buildWikiUrl(result.title, domain, variant, true) // 内部使用时包含 variant
+      const pageUrl = buildWikiUrl(result.title, domain, variant, true)
+      const displayUrl = buildWikiUrl(result.title, domain)
 
       // 根据模式返回不同内容
       if (mode === 'image') {
-        const { image, truncated } = await captureWiki(pageUrl, lang)
-        const displayUrl = buildWikiUrl(result.title, domain) // 展示时不包含 variant
         return {
-          image,
-          truncated,
-          pageUrl: displayUrl
+          url: displayUrl,
+          async getImage() {
+            const { image, truncated } = await captureWiki(pageUrl, lang)
+            return { image, truncated }
+          }
         }
       }
 
@@ -334,6 +372,27 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
       throw new Error(`${action}失败：${error.message}`)
     }
   }
+
+  const mcwiki = ctx.command('mcwiki', 'Minecraft Wiki 查询')
+    .usage(`使用方法：\nmcwiki <关键词> - 直接查询内容\nmcwiki.search <关键词> - 搜索并选择条目\nmcwiki.shot <关键词> - 获取页面截图\nmcwiki.lang <语言> - 设置显示语言`)
+
+  mcwiki.subcommand('.lang [language:string]', '设置Wiki显示语言')
+    .action(({ session }, language) => {
+      if (!language) {
+        const currentLang = userLangs.get(session.userId) || config.wiki.defaultLanguage
+        const langList = Object.entries(LANGUAGES)
+          .map(([code, name]) => `${code}: ${name}${code === currentLang ? ' (当前)' : ''}`)
+          .join('\n')
+        return `当前支持的语言：\n${langList}`
+      }
+
+      if (!(language in LANGUAGES)) {
+        return `不支持的语言代码。支持的语言代码：${Object.keys(LANGUAGES).join(', ')}`
+      }
+
+      userLangs.set(session.userId, language as LangCode)
+      return `已将 Wiki 显示语言设置为${LANGUAGES[language as LangCode]}`
+    })
 
   mcwiki.action(async ({ session }, keyword) => {
     try {
@@ -358,7 +417,7 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
         }\n回复序号查看内容（添加 -i 获取截图）`
 
         await session.send(msg)
-        const response = await session.prompt(config.wiki.timeout)
+        const response = await session.prompt(10000)
 
         if (!response) return '操作超时'
 
@@ -370,16 +429,12 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
         }
 
         const result = results[index]
-        // 使用 buildWikiUrl 构建内部使用的 URL（带variant）和展示用的 URL（不带variant）
         const pageUrl = buildWikiUrl(result.title, domain, variant, true)
+        const displayUrl = buildWikiUrl(result.title, domain)
 
         if (flag?.trim() === 'i') {
-          const { image, truncated } = await captureWiki(pageUrl, lang)
-          if (truncated) {
-            // 展示用的 URL 不带 variant
-            const displayUrl = buildWikiUrl(result.title, domain)
-            await session.send(`完整内容: ${displayUrl}`)
-          }
+          await session.send(`正在获取页面截图...\n完整内容：${displayUrl}`)
+          const { image } = await captureWiki(pageUrl, lang)
           return h.image(image, 'image/png')
         }
 
@@ -397,17 +452,17 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
         const result = await handleWikiPage(keyword, session.userId, 'image') as any
         if (typeof result === 'string') return result
 
-        const { image, truncated, pageUrl } = result
-        if (truncated) {
-          await session.send(`完整内容：${pageUrl}`)
-        }
+        // 先发送URL
+        await session.send(`正在获取页面截图...\n完整内容：${result.url}`)
+
+        // 然后获取并发送图片
+        const { image } = await result.getImage()
         return h.image(image, 'image/png')
       } catch (error) {
         return error.message
       }
     })
 
-  // Version check
   ctx.command('mcver', '获取 Minecraft 最新版本')
     .action(async () => {
       try {
@@ -425,9 +480,13 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
       }
     })
 
+  /**
+   * 检查 Minecraft 版本更新
+   * @returns {Promise<void>}
+   */
   async function checkVersion() {
     const retryCount = 3
-    const retryDelay = 30000 // 30秒
+    const retryDelay = 30000
 
     for (let i = 0; i < retryCount; i++) {
       try {
@@ -441,7 +500,6 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
         if (!latest || !release) {
           throw new Error('无效的版本数据')
         }
-
         for (const [type, ver] of [['snapshot', latest], ['release', release]]) {
           if (versions[type] && ver.id !== versions[type]) {
             const msg = `发现MC更新：${ver.id} (${type})\n发布时间：${new Date(ver.releaseTime).toLocaleString('zh-CN')}`
@@ -502,59 +560,59 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
 
         const lines: string[] = []
 
-        // 显示服务器图标
-        if ('favicon' in client && client.favicon) {
+        // 显示服务器图标（检查base64格式）
+        if (client && 'favicon' in client && typeof client.favicon === 'string' && client.favicon.startsWith('data:image/png;base64,')) {
           lines.push(h.image(client.favicon).toString())
         }
 
-        // 仅在不带参数且端口不是25565时显示端口
-        if (!server) {
-          lines.push(port === 25565 ? host : `${host}:${port}`)
-        }
+        // 显示服务器地址
+        const displayAddr = port === 25565 ? host : `${host}:${port}`
+        lines.push(displayAddr)
 
-        // 处理MOTD
+        // 处理MOTD（增强类型检查）
         let motd = '无描述信息'
-        if ('description' in client && client.description) {
-          if (typeof client.description === 'string') {
-            motd = client.description
-          } else if (typeof client.description === 'object') {
-            motd = client.description.text ||
-                   (Array.isArray(client.description.extra)
-                    ? client.description.extra
-                        .map(e => typeof e === 'string' ? e : (e.text || ''))
-                        .join('')
-                    : '')
+        if (client && 'description' in client && client.description) {
+          const extractText = (obj: any): string => {
+            if (!obj) return ''
+            if (typeof obj === 'string') return obj
+            if (typeof obj === 'object') {
+              if ('text' in obj) return obj.text
+              if ('extra' in obj && Array.isArray(obj.extra)) {
+                return obj.extra.map(extractText).join('')
+              }
+              if (Array.isArray(obj)) {
+                return obj.map(extractText).join('')
+              }
+            }
+            return ''
           }
+          motd = extractText(client.description).trim() || '无描述信息'
+          motd = motd.replace(/§[0-9a-fk-or]/g, '')
+          lines.push(motd)
         }
-        motd = motd.replace(/§[0-9a-fk-or]/g, '').trim() || '无描述信息'
 
-        // 获取版本信息和支持范围
-        let versionInfo = ''
-        if (client.version) {
-          const currentVersion = typeof client.version === 'string'
-            ? client.version
-            : client.version.name
+        // 版本信息（增强类型检查）
+        let versionInfo = '未知版本'
+        if (client?.version) {
+          const currentVersion = typeof client.version === 'object'
+            ? (client.version.name || '未知版本')
+            : String(client.version)
 
-          let minVersion = ''
-          if (typeof client.version === 'object' && client.version.protocol) {
-            minVersion = getVersionFromProtocol(client.version.protocol)
-          }
+          const protocol = typeof client.version === 'object'
+            ? client.version.protocol
+            : null
 
-          versionInfo = minVersion && minVersion !== currentVersion
-            ? `${currentVersion}(${minVersion}+)`
+          versionInfo = protocol
+            ? `${currentVersion}(${getVersionFromProtocol(protocol)})`
             : currentVersion
-        } else {
-          versionInfo = '未知版本'
         }
 
-        // 状态信息行
-        const playerCount = 'players' in client && client.players
-          ? `${client.players.online}/${client.players.max}`
-          : '0/0'
-
+        // 玩家信息（增强类型检查）
+        const players = ('players' in client ? client.players : { online: 0, max: 0 })
+        const playerCount = `${players.online ?? 0}/${players.max ?? 0}`
         lines.push(`${versionInfo} | ${playerCount} | ${pingTime}ms`)
 
-        // 服务器设置信息
+        // 服务器设置（增强类型检查和默认值）
         const settings: string[] = []
         if ('onlineMode' in client) {
           settings.push(client.onlineMode ? '正版验证' : '离线模式')
@@ -569,78 +627,86 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
           lines.push(settings.join(' | '))
         }
 
-        // 如果有在线玩家则单独显示
-        if ('players' in client && client.players?.sample?.length > 0) {
-          lines.push('当前在线：' + client.players.sample.map(p => p.name).join(', '))
+        // 在线玩家列表（增强类型检查）
+        if (players?.sample?.length > 0) {
+          const playerList = players.sample
+            .filter(p => p && typeof p.name === 'string')
+            .map(p => p.name)
+          if (playerList.length > 0) {
+            lines.push('当前在线：' + playerList.join(', '))
+            if (playerList.length < players.online) {
+              lines.push(`（仅显示 ${playerList.length}/${players.online} 名玩家）`)
+            }
+          }
         }
 
         return lines.join('\n')
       } catch (error) {
+        if (!error) return '未知错误'
+
         if (error.code === 'ECONNREFUSED') {
-          // 错误信息中也遵循同样的规则
-          const addr = port === 25565 ? host : `${host}:${port}`
-          return `无法连接到服务器 ${addr}`
-        } else if (error.code === 'ETIMEDOUT') {
-          return '服务器连接超时'
+          return `无法连接到服务器 ${host}:${port} (连接被拒绝)`
         }
-        return `查询失败: ${error.message}`
+        if (error.code === 'ETIMEDOUT') {
+          return `连接服务器超时 ${host}:${port}`
+        }
+        if (error.code === 'ENOTFOUND') {
+          return `无法解析服务器地址 ${host}`
+        }
+        return `查询失败: ${error.message || '未知错误'}`
       }
     })
 
   // 添加协议版本到游戏版本的映射函数
+  /**
+   * 根据协议版本获取对应的游戏版本
+   * @param {number} protocol - 协议版本号
+   * @returns {string} 对应的游戏版本
+   */
   function getVersionFromProtocol(protocol: number): string {
+    // 只保留指定的关键版本
     const protocolMap: Record<number, string> = {
       764: '1.20.1',
-      763: '1.20',
       762: '1.19.4',
-      761: '1.19.4-pre1',
-      760: '1.19.3',
-      759: '1.19.2',
-      758: '1.19.1',
-      757: '1.19',
       756: '1.18.2',
-      755: '1.18.1',
-      754: '1.18',
       753: '1.17.1',
       752: '1.16.5',
-      751: '1.16.4',
-      750: '1.16.3',
-      749: '1.16.2',
-      748: '1.16.1',
-      747: '1.16',
       736: '1.15.2',
-      735: '1.15.1',
-      734: '1.15',
       498: '1.14.4',
-      497: '1.14.3',
-      496: '1.14.2',
-      495: '1.14.1',
-      494: '1.14',
       404: '1.13.2',
-      403: '1.13.1',
-      402: '1.13',
       340: '1.12.2',
-      339: '1.12.1',
-      338: '1.12',
       316: '1.11.2',
-      315: '1.11',
       210: '1.10.2',
       110: '1.9.4',
-      109: '1.9.2',
-      108: '1.9.1',
-      107: '1.9',
-      47: '1.8.9',
-      46: '1.8.8',
-      45: '1.8.7',
-      44: '1.8.6',
-      43: '1.8.5',
-      42: '1.8.4',
-      41: '1.8.3',
-      40: '1.8.2',
-      39: '1.8.1',
-      38: '1.8',
-      // 更老的版本一般用不到，就不添加了
+      47: '1.8.9'
     }
-    return protocolMap[protocol] || `协议版本${protocol}`
+
+    // 精确匹配
+    if (protocol in protocolMap) {
+      return protocolMap[protocol]
+    }
+
+    // 按协议号排序，用于版本推测
+    const protocols = Object.keys(protocolMap).map(Number).sort((a, b) => b - a)
+
+    // 版本推测逻辑
+    for (let i = 0; i < protocols.length; i++) {
+      const currentProtocol = protocols[i]
+      const nextProtocol = protocols[i + 1]
+
+      if (protocol > currentProtocol) {
+        // 高于最新已知版本
+        return `~${protocolMap[currentProtocol]}+`
+      } else if (nextProtocol && protocol > nextProtocol && protocol < currentProtocol) {
+        // 在两个已知版本之间
+        return `~${protocolMap[nextProtocol]}-${protocolMap[currentProtocol]}`
+      }
+    }
+
+    if (protocol < 47) {
+      return '~1.8.9'
+    }
+
+    return `未知版本(协议:${protocol})`
   }
 }
