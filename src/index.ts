@@ -242,18 +242,13 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
   }
 
   // Wiki commands
-  ctx.command('mcwiki.lang <lang>', '设置 Wiki 浏览语言')
-    .action(({ session }, lang: LangCode) => {
-      if (!lang) return `当前浏览语言：${LANGUAGES[userLangs.get(session.userId) || config.wiki.defaultLanguage]}\n可选语言：\n${Object.entries(LANGUAGES).map(([c, n]) => `${c} - ${n}`).join('\n')}`
-      if (!(lang in LANGUAGES)) return '暂不支持该语言，请选择其他语言代码'
-      userLangs.set(session.userId, lang)
-      return `Wiki 浏览语言已设置为：${LANGUAGES[lang]}`
-    })
+  const mcwiki = ctx.command('mcwiki', 'Minecraft Wiki 查询')
+    .usage('输入 mcwiki <关键词> 直接查询内容\n使用子命令获取更多功能')
+    .example('mcwiki 末影龙 - 查询末影龙的信息')
 
-  ctx.command('mcwiki.search <keyword:text>', '搜索 Minecraft Wiki 内容')
+  mcwiki.subcommand('.search <keyword:text>')
     .action(async ({ session }, keyword) => {
       if (!keyword) return '请输入要搜索的关键词'
-
       try {
         const lang = userLangs.get(session.userId) || config.wiki.defaultLanguage
         const results = await searchWiki(keyword, lang)
@@ -300,11 +295,9 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
       }
     })
 
-  // 修改相关命令处理函数
-  ctx.command('mcwiki.shot <keyword:text>', '获取 Wiki 页面截图')
+  mcwiki.subcommand('.shot <keyword:text>')
     .action(async ({ session }, keyword) => {
       if (!keyword) return '请输入要截图的页面标题或关键词'
-
       try {
         const lang = userLangs.get(session.userId) || config.wiki.defaultLanguage
         const { domain } = getWikiDomain(lang)
@@ -322,28 +315,33 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
       }
     })
 
-  // 添加主 Wiki 命令
-  ctx.command('mcwiki <keyword:text>', 'Minecraft Wiki 查询')
-    .action(async ({ session }, keyword) => {
-      if (!keyword) return '请输入要查询的内容'
+  mcwiki.action(async ({ session }, keyword) => {
+    if (!keyword) return '请输入要查询的内容'
+    try {
+      const lang = userLangs.get(session.userId) || config.wiki.defaultLanguage
+      const results = await searchWiki(keyword, lang)
 
-      try {
-        const lang = userLangs.get(session.userId) || config.wiki.defaultLanguage
-        const results = await searchWiki(keyword, lang)
+      if (!results.length) return '未找到相关结果'
 
-        if (!results.length) return '未找到相关结果'
+      // 直接获取第一个搜索结果的内容
+      const result = results[0]
+      const { domain } = getWikiDomain(lang)
+      const pageUrl = `https://${domain}/w/${encodeURIComponent(result.title)}`
 
-        // 直接获取第一个搜索结果的内容
-        const result = results[0]
-        const { domain } = getWikiDomain(lang)
-        const pageUrl = `https://${domain}/w/${encodeURIComponent(result.title)}`
+      const content = await getWikiContent(pageUrl)
+      return `${content}\n链接：${pageUrl}`
 
-        const content = await getWikiContent(pageUrl)
-        return `${content}\n链接：${pageUrl}`
+    } catch (error) {
+      return `查询失败: ${error.message}`
+    }
+  })
 
-      } catch (error) {
-        return `查询失败: ${error.message}`
-      }
+  mcwiki.subcommand('.lang <lang>')
+    .action(({ session }, lang: LangCode) => {
+      if (!lang) return `当前浏览语言：${LANGUAGES[userLangs.get(session.userId) || config.wiki.defaultLanguage]}\n可选语言：\n${Object.entries(LANGUAGES).map(([c, n]) => `${c} - ${n}`).join('\n')}`
+      if (!(lang in LANGUAGES)) return '暂不支持该语言，请选择其他语言代码'
+      userLangs.set(session.userId, lang)
+      return `Wiki 浏览语言已设置为：${LANGUAGES[lang]}`
     })
 
   // Version check
