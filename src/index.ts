@@ -192,6 +192,28 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
     return titles.map((title, i) => ({ title, description: descriptions[i], url: urls[i] }))
   }
 
+  // 添加获取Wiki内容的辅助函数
+  async function getWikiContent(pageUrl: string) {
+    const response = await axios.get(pageUrl)
+    const $ = cheerio.load(response.data)
+
+    const paragraphs = $('#mw-content-text p')
+      .filter((_, el) => $(el).text().trim() !== '')
+      .map((_, el) => $(el).text().trim())
+      .get()
+      .join('\n\n')
+
+    if (!paragraphs) {
+      return '本页面目前没有内容。'
+    }
+
+    const content = paragraphs.length > 600
+      ? paragraphs.slice(0, 600) + '...'
+      : paragraphs
+
+    return content
+  }
+
   // Wiki commands
   ctx.command('mcwiki.lang <lang>', '设置 Wiki 浏览语言')
     .action(({ session }, lang: LangCode) => {
@@ -243,23 +265,7 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
         }
 
         // 否则返回文字内容
-        const pageResponse = await axios.get(pageUrl)
-        const $ = cheerio.load(pageResponse.data)
-
-        const paragraphs = $('#mw-content-text p')
-          .filter((_, el) => $(el).text().trim() !== '')
-          .map((_, el) => $(el).text().trim())
-          .get()
-          .join('\n\n')
-
-        if (!paragraphs) {
-          return '本页面目前没有内容。'
-        }
-
-        const content = paragraphs.length > 600
-          ? paragraphs.slice(0, 600) + '...'
-          : paragraphs
-
+        const content = await getWikiContent(pageUrl)
         return `${content}\n链接：${pageUrl}`
 
       } catch (error) {
@@ -286,6 +292,30 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
         return h.image(image, 'image/png')
       } catch (error) {
         return `截图失败: ${error.message}`
+      }
+    })
+
+  // 添加主 Wiki 命令
+  ctx.command('mcwiki <keyword:text>', 'Minecraft Wiki 查询')
+    .action(async ({ session }, keyword) => {
+      if (!keyword) return '请输入要查询的内容'
+
+      try {
+        const lang = userLangs.get(session.userId) || config.wiki.defaultLanguage
+        const results = await searchWiki(keyword, lang)
+
+        if (!results.length) return '未找到相关结果'
+
+        // 直接获取第一个搜索结果的内容
+        const result = results[0]
+        const { domain } = getWikiDomain(lang)
+        const pageUrl = `https://${domain}/w/${encodeURIComponent(result.title)}`
+
+        const content = await getWikiContent(pageUrl)
+        return `${content}\n链接：${pageUrl}`
+
+      } catch (error) {
+        return `查询失败: ${error.message}`
       }
     })
 
