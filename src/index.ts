@@ -2,7 +2,7 @@ import { Context, Schema, h } from 'koishi'
 import axios from 'axios'
 import * as cheerio from 'cheerio'
 import {} from 'koishi-plugin-puppeteer'
-import { MCInfo } from './mcinfo'
+import * as mc from 'minecraft-protocol'
 
 export const name = 'mc-tools'
 export const inject = {required: ['puppeteer']}
@@ -105,17 +105,24 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
     const page = await context.newPage()
 
     try {
-      // 设置语言相关的请求头
+      // 增强语言相关的请求头设置
       await page.setExtraHTTPHeaders({
-        'Accept-Language': `${lang},${lang}-*;q=0.9`
+        'Accept-Language': `${lang},${lang}-*;q=0.9,en;q=0.8`,
+        'Cookie': `language=${lang}; hl=${lang}; uselang=${lang}`,
+        'Cache-Control': 'no-cache'
       })
 
       const { variantLang } = getWikiDomain(lang)
-      const finalUrl = `${url}${url.includes('?') ? '&' : '?'}variant=${variantLang}`
-      await page.goto(finalUrl, { waitUntil: 'networkidle0', timeout: config.wiki.pageLoadTimeout })
+      const finalUrl = `${url}${url.includes('?') ? '&' : '?'}variant=${variantLang}&uselang=${lang}&setlang=${lang}`
 
-      // 等待主要内容加载
-      await page.waitForSelector('.mw-parser-output', { timeout: 5000 })
+      // 增加页面加载超时时间
+      await page.goto(finalUrl, {
+        waitUntil: 'networkidle0',
+        timeout: config.wiki.pageLoadTimeout
+      })
+
+      // 等待主要内容加载，增加超时时间
+      await page.waitForSelector('#bodyContent', { timeout: 10000 })
 
       // 清理页面，隐藏干扰元素
       await page.evaluate(() => {
@@ -140,46 +147,58 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
           })
         })
 
-        const content = document.querySelector('.mw-parser-output')
+        const content = document.querySelector('#bodyContent')
         if (content instanceof HTMLElement) {
           content.style.padding = '20px'
           content.style.margin = '0 auto'
           content.style.maxWidth = '1200px'
+          // 确保内容可见
+          content.style.visibility = 'visible'
+          content.style.display = 'block'
         }
       })
 
       // 获取主要内容区域并确保元素存在
-      const content = await page.$('.mw-parser-output')
+      const content = await page.$('#bodyContent')
       if (!content) {
         throw new Error('找不到页面主要内容')
       }
 
-      // 获取内容区域的尺寸
-      const boundingBox = await content.boundingBox()
-      if (!boundingBox) {
+      // 使用 evaluate 获取元素尺寸作为备选方案
+      const dimensions = await page.evaluate(() => {
+        const element = document.querySelector('#bodyContent')
+        if (!element) return null
+        const rect = element.getBoundingClientRect()
+        return {
+          x: rect.x,
+          y: rect.y,
+          width: rect.width,
+          height: rect.height
+        }
+      })
+
+      if (!dimensions) {
         throw new Error('无法获取内容区域尺寸')
       }
 
-      const {x, y, width, height} = boundingBox
-
-      // 截取内容区域
+      // 使用获取到的尺寸进行截图
       const screenshot = await content.screenshot({
         type: 'png',
         clip: {
-          x,
-          y,
-          width,
-          height: Math.min(height, config.wiki.screenshotHeight)
+          x: dimensions.x,
+          y: dimensions.y,
+          width: dimensions.width,
+          height: Math.min(dimensions.height, config.wiki.screenshotHeight)
         }
       })
 
       return {
         image: screenshot,
-        height,
-        truncated: height > config.wiki.screenshotHeight
+        height: dimensions.height,
+        truncated: dimensions.height > config.wiki.screenshotHeight
       }
     } catch (error) {
-      throw new Error(`Wiki 页面截图失败: ${error.message}`)
+      throw new Error(`${error.message}`)
     } finally {
       await context.close()
     }
@@ -187,9 +206,17 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
 
   async function searchWiki(keyword: string, lang: LangCode) {
     const { domain, variantLang } = getWikiDomain(lang)
-    const searchUrl = `https://${domain}/api.php?action=opensearch&search=${encodeURIComponent(keyword)}&limit=${config.wiki.searchResultLimit}&variant=${variantLang}`
-    const [_, titles, descriptions, urls] = await axios.get(searchUrl).then(res => res.data)
-    return titles.map((title, i) => ({ title, description: descriptions[i], url: urls[i] }))
+    const searchUrl = `https://${domain}/api.php?action=opensearch&search=${encodeURIComponent(keyword)}&limit=${config.wiki.searchResultLimit}&variant=${variantLang}&uselang=${lang}&setlang=${lang}`
+
+    const { data } = await axios.get(searchUrl, {
+      headers: {
+        'Accept-Language': `${lang},${lang}-*;q=0.9,en;q=0.8`,
+        'Cookie': `language=${lang}; hl=${lang}; uselang=${lang}`
+      }
+    })
+
+    const [_, titles, , urls] = data
+    return titles.map((title, i) => ({ title, url: urls[i] }))
   }
 
   // 添加获取Wiki内容的辅助函数
@@ -233,8 +260,8 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
 
         if (!results.length) return '未找到相关结果'
 
-        let msg = '搜索结果：\n' + results.map((r, i) => `${i + 1}. ${r.title}\n   ${r.description || '暂无描述'}`).join('\n')
-        msg += '\n- 输入数字(1-' + results.length + ')：查看文字版内容\n- 输入数字-i：获取页面截图\n- 等待超时或输入其他内容：取消操作'
+        let msg = '搜索结果如下：\n' + results.map((r, i) => `${i + 1}. ${r.title}`).join('\n')
+        msg += '\n- 输入序号：查看文字内容\n- 输入（序号-i）：获取页面截图'
 
         await session.send(msg)
         const response = await session.prompt(config.wiki.userInputTimeout)
@@ -363,32 +390,70 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
   // Server status
   ctx.command('mcinfo [server]', '查询 MC 服务器状态')
     .action(async (_, server) => {
-      const mcInfo = new MCInfo()
-      try {
-        let host: string
-        let port: number
+      let host = config.server.host
+      let port = config.server.port
 
-        if (!server) {
-          // 使用默认配置
-          host = config.server.host
-          port = config.server.port
-        } else {
-          // 解析输入的服务器地址
-          if (server.includes(':')) {
-            const [inputHost, inputPort] = server.split(':')
-            host = inputHost
-            port = parseInt(inputPort)
-            if (isNaN(port)) {
-              return '端口格式错误，请输入有效的数字'
-            }
+      if (server) {
+        const parts = server.split(':')
+        host = parts[0]
+        if (parts[1]) {
+          const parsedPort = parseInt(parts[1])
+          if (isNaN(parsedPort) || parsedPort < 1 || parsedPort > 65535) {
+            return '端口必须是1-65535之间的数字'
+          }
+          port = parsedPort
+        }
+      }
+
+      try {
+        const client = await mc.ping({
+          host,
+          port
+        })
+
+        let response = `服务器状态 ${host}:${port}\n`
+
+        // 处理版本信息
+        if (client.version) {
+          if (typeof client.version !== 'string') {
+            response += `版本: ${client.version.name}\n`
           } else {
-            host = server
-            port = 25565 // 默认端口
+            response += `版本: ${client.version}\n`
           }
         }
 
-        return await mcInfo.queryServer(host, port)
+        // 处理玩家信息
+        if ('players' in client && client.players) {
+          response += `在线: ${client.players.online}/${client.players.max}\n`
+          if (client.players.sample?.length > 0) {
+            response += '在线玩家:\n'
+            response += client.players.sample
+              .map(p => `- ${p.name}`)
+              .join('\n')
+            response += '\n'
+          }
+        }
+
+        // 处理MOTD
+        if ('description' in client && client.description) {
+          const motd = typeof client.description === 'string'
+            ? client.description
+            : typeof client.description === 'object'
+              ? client.description.text ||
+                (client.description.extra?.map(e =>
+                  typeof e === 'string' ? e : e.text
+                ).join(''))
+              : '无描述信息'
+          response += `描述: ${motd.replace(/§[0-9a-fk-or]/g, '')}`
+        }
+
+        return response.trim()
       } catch (error) {
+        if (error.code === 'ECONNREFUSED') {
+          return `无法连接到服务器 ${host}:${port}`
+        } else if (error.code === 'ETIMEDOUT') {
+          return '服务器连接超时'
+        }
         return `查询失败: ${error.message}`
       }
     })
