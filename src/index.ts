@@ -110,18 +110,15 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
         'Accept-Language': `${lang},${lang}-*;q=0.9`
       })
 
-      // ...existing code...
       const { variantLang } = getWikiDomain(lang)
-      // 在URL中添加语言变体参数
       const finalUrl = `${url}${url.includes('?') ? '&' : '?'}variant=${variantLang}`
       await page.goto(finalUrl, { waitUntil: 'networkidle0', timeout: config.wiki.pageLoadTimeout })
 
-      // 等待主要内容加载并隐藏不需要的元素
-      await page.waitForSelector('.mw-parser-output')
+      // 等待主要内容加载
+      await page.waitForSelector('.mw-parser-output', { timeout: 5000 })
 
-      // 清理页面，隐藏干扰元素并定位主要内容
+      // 清理页面，隐藏干扰元素
       await page.evaluate(() => {
-        // 需要隐藏的元素
         const hideSelectors = [
           '.mw-indicators',
           '.mw-editsection',
@@ -135,7 +132,6 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
           '.mw-redirectedfrom'
         ]
 
-        // 隐藏不需要的元素
         hideSelectors.forEach(selector => {
           document.querySelectorAll(selector).forEach(el => {
             if (el instanceof HTMLElement) {
@@ -144,7 +140,6 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
           })
         })
 
-        // 优化页面布局
         const content = document.querySelector('.mw-parser-output')
         if (content instanceof HTMLElement) {
           content.style.padding = '20px'
@@ -153,14 +148,19 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
         }
       })
 
-      // 获取主要内容区域
+      // 获取主要内容区域并确保元素存在
       const content = await page.$('.mw-parser-output')
       if (!content) {
-        throw new Error('无法找到页面主要内容')
+        throw new Error('找不到页面主要内容')
       }
 
       // 获取内容区域的尺寸
-      const {x, y, width, height} = await content.boundingBox()
+      const boundingBox = await content.boundingBox()
+      if (!boundingBox) {
+        throw new Error('无法获取内容区域尺寸')
+      }
+
+      const {x, y, width, height} = boundingBox
 
       // 截取内容区域
       const screenshot = await content.screenshot({
@@ -299,7 +299,9 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
         const latest = versions[0]
         const latestRelease = versions.find(v => v.type === 'release')
 
-        return `Minecraft 最新版本信息：\n- 正式版：${latestRelease.id}\n- 快照版：${latest.id}\n- 发布时间：${new Date(latest.releaseTime).toLocaleString()}`
+        const formatDate = (date: string) => new Date(date).toLocaleDateString('zh-CN')
+
+        return `Minecraft 最新版本：\n正式版：${latestRelease.id}（${formatDate(latestRelease.releaseTime)}）\n快照版：${latest.id}（${formatDate(latest.releaseTime)}）`
       } catch (error) {
         return `获取版本信息失败：${error.message}`
       }
@@ -313,7 +315,7 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
 
       for (const [type, ver] of [['snapshot', latest], ['release', release]]) {
         if (versions[type] && ver.id !== versions[type]) {
-          const msg = `MC更新：${ver.id} (${type})\n发布：${new Date(ver.releaseTime).toLocaleString()}`
+          const msg = `发现MC更新：${ver.id} (${type})\n发布于：${new Date(ver.releaseTime).toLocaleString()}`
           config.version.check.groupIds.forEach(gid => ctx.bots.forEach(bot => bot.sendMessage(gid, msg)))
         }
         versions[type] = ver.id
