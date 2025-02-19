@@ -145,7 +145,7 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
             float: none !important;
             margin: 1em auto !important;
             width: 100% !important;
-            max-width: 300px !important;
+            max-width: 300px !重要;
           }
           table, img {
             max-width: 100% !important;
@@ -432,11 +432,16 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
         })
         const pingTime = Date.now() - startTime
 
-        let response = ''
+        const lines: string[] = []
 
-        // 仅在不带参数时显示服务器地址
+        // 显示服务器图标
+        if ('favicon' in client && client.favicon) {
+          lines.push(h.image(client.favicon).toString())
+        }
+
+        // 仅在不带参数且端口不是25565时显示端口
         if (!server) {
-          response = `${host}:${port}\n`
+          lines.push(port === 25565 ? host : `${host}:${port}`)
         }
 
         // 处理MOTD
@@ -449,31 +454,122 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
                   typeof e === 'string' ? e : e.text
                 ).join(''))
               : '无描述信息'
-          response += `${motd.replace(/§[0-9a-fk-or]/g, '')}\n`
+          lines.push(motd.replace(/§[0-9a-fk-or]/g, ''))
         }
 
-        // 处理版本信息和延迟
+        // 获取版本信息和支持范围
+        let versionInfo = ''
         if (client.version) {
-          const versionName = typeof client.version === 'string' ? client.version : client.version.name
-          response += `${versionName} (${pingTime}ms)\n`
-        }
+          const currentVersion = typeof client.version === 'string'
+            ? client.version
+            : client.version.name
 
-        // 处理玩家信息
-        if ('players' in client && client.players) {
-          response += `在线：${client.players.online}/${client.players.max}`
-          if (client.players.sample?.length > 0) {
-            response += `, ${client.players.sample.map(p => p.name).join(', ')}`
+          let minVersion = ''
+          if (typeof client.version === 'object' && client.version.protocol) {
+            minVersion = getVersionFromProtocol(client.version.protocol)
           }
+
+          versionInfo = minVersion && minVersion !== currentVersion
+            ? `${currentVersion}(${minVersion}+)`
+            : currentVersion
+        } else {
+          versionInfo = '未知版本'
         }
 
-        return response.trim()
+        // 状态信息行
+        const playerCount = 'players' in client && client.players
+          ? `${client.players.online}/${client.players.max}`
+          : '0/0'
+
+        lines.push(`${versionInfo} | ${playerCount} | ${pingTime}ms`)
+
+        // 服务器设置信息
+        const settings: string[] = []
+        if ('onlineMode' in client) {
+          settings.push(client.onlineMode ? '正版验证' : '离线模式')
+        }
+        if ('enforceSecureChat' in client) {
+          settings.push(client.enforceSecureChat ? '开启签名' : '无需签名')
+        }
+        if ('whitelist' in client) {
+          settings.push(client.whitelist ? '有白名单' : '无白名单')
+        }
+        if (settings.length) {
+          lines.push(settings.join(' | '))
+        }
+
+        // 如果有在线玩家则单独显示
+        if ('players' in client && client.players?.sample?.length > 0) {
+          lines.push('当前在线：' + client.players.sample.map(p => p.name).join(', '))
+        }
+
+        return lines.join('\n')
       } catch (error) {
         if (error.code === 'ECONNREFUSED') {
-          return `无法连接到服务器 ${host}:${port}`
+          // 错误信息中也遵循同样的规则
+          const addr = port === 25565 ? host : `${host}:${port}`
+          return `无法连接到服务器 ${addr}`
         } else if (error.code === 'ETIMEDOUT') {
           return '服务器连接超时'
         }
         return `查询失败: ${error.message}`
       }
     })
+
+  // 添加协议版本到游戏版本的映射函数
+  function getVersionFromProtocol(protocol: number): string {
+    const protocolMap: Record<number, string> = {
+      764: '1.20.1',
+      763: '1.20',
+      762: '1.19.4',
+      761: '1.19.4-pre1',
+      760: '1.19.3',
+      759: '1.19.2',
+      758: '1.19.1',
+      757: '1.19',
+      756: '1.18.2',
+      755: '1.18.1',
+      754: '1.18',
+      753: '1.17.1',
+      752: '1.16.5',
+      751: '1.16.4',
+      750: '1.16.3',
+      749: '1.16.2',
+      748: '1.16.1',
+      747: '1.16',
+      736: '1.15.2',
+      735: '1.15.1',
+      734: '1.15',
+      498: '1.14.4',
+      497: '1.14.3',
+      496: '1.14.2',
+      495: '1.14.1',
+      494: '1.14',
+      404: '1.13.2',
+      403: '1.13.1',
+      402: '1.13',
+      340: '1.12.2',
+      339: '1.12.1',
+      338: '1.12',
+      316: '1.11.2',
+      315: '1.11',
+      210: '1.10.2',
+      110: '1.9.4',
+      109: '1.9.2',
+      108: '1.9.1',
+      107: '1.9',
+      47: '1.8.9',
+      46: '1.8.8',
+      45: '1.8.7',
+      44: '1.8.6',
+      43: '1.8.5',
+      42: '1.8.4',
+      41: '1.8.3',
+      40: '1.8.2',
+      39: '1.8.1',
+      38: '1.8',
+      // 更老的版本一般用不到，就不添加了
+    }
+    return protocolMap[protocol] || `协议版本${protocol}`
+  }
 }
