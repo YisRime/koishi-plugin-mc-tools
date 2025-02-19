@@ -124,7 +124,7 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
    * 使用 Puppeteer 获取 Wiki 页面截图
    * @param {string} url - 页面 URL
    * @param {LangCode} lang - 语言代码
-   * @returns {Promise<{image: Buffer, height: number, truncated: boolean}>} 截图结果
+   * @returns {Promise<{image: Buffer, height: number}>} 截图结果
    * @throws {Error} 当页面加载失败时抛出错误
    */
   async function captureWiki(url: string, lang: LangCode) {
@@ -243,8 +243,7 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
 
       return {
         image: screenshot,
-        height: dimensions.height,
-        truncated: dimensions.height > 3840
+        height: dimensions.height
       }
 
     } finally {
@@ -296,24 +295,67 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
     const $ = cheerio.load(response.data)
 
     const title = $('#firstHeading').text().trim()
-    const paragraphs = $('#mw-content-text p')
-      .filter((_, el) => {
-        const text = $(el).text().trim()
-        return text && !text.startsWith('[')
-      })
-      .map((_, el) => $(el).text().trim())
-      .get()
 
-    if (!paragraphs.length) {
+    // 初始化内容存储
+    const sections: { title?: string; content: string[] }[] = []
+    let currentSection: { title?: string; content: string[] } = { content: [] }
+
+    // 遍历主内容区域
+    $('#mw-content-text').children().each((_, element) => {
+      const el = $(element)
+
+      // 跳过引用内容
+      if (el.hasClass('quote')) {
+        return
+      }
+
+      // 处理标题
+      if (el.is('h2, h3')) {
+        if (currentSection.content.length) {
+          sections.push(currentSection)
+        }
+        // 创建新部分
+        currentSection = {
+          title: el.find('.mw-headline').text().trim(),
+          content: []
+        }
+      }
+      // 处理段落
+      else if (el.is('p')) {
+        const text = el.text().trim()
+        if (text && !text.startsWith('[')) {
+          currentSection.content.push(text)
+        }
+      }
+    })
+
+    // 添加最后一个部分
+    if (currentSection.content.length) {
+      sections.push(currentSection)
+    }
+
+    // 如果没有内容
+    if (!sections.length) {
       const cleanUrl = pageUrl.split('?')[0]
       return { title, content: `${title}：本页面目前没有内容。`, url: cleanUrl }
     }
 
-    const content = paragraphs.join('\n').slice(0, 600)
+    // 构建格式化的内容
+    const formattedContent = sections
+      .map(section => {
+        const sectionText = section.content.join(' ').slice(0, 200)
+        if (section.title) {
+          return `${section.title}: ${sectionText}${sectionText.length >= 200 ? '...' : ''}`
+        }
+        return sectionText
+      })
+      .join('\n')
+      .slice(0, 400)
+
     const cleanUrl = pageUrl.split('?')[0]
     return {
       title,
-      content: content.length >= 600 ? content + '...' : content,
+      content: formattedContent.length >= 400 ? formattedContent + '...' : formattedContent,
       url: cleanUrl
     }
   }
@@ -354,8 +396,8 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
         return {
           url: displayUrl,
           async getImage() {
-            const { image, truncated } = await captureWiki(pageUrl, lang)
-            return { image, truncated }
+            const { image } = await captureWiki(pageUrl, lang)
+            return { image }
           }
         }
       }
@@ -414,7 +456,7 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
 
         const msg = `Wiki 搜索结果：\n${
           results.map((r, i) => `${i + 1}. ${r.title}`).join('\n')
-        }\n回复序号查看内容（添加 -i 获取截图）`
+        }\n请回复序号查看对应内容\n（使用 -i 后缀以获取页面截图）`
 
         await session.send(msg)
         const response = await session.prompt(10000)
@@ -433,7 +475,7 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
         const displayUrl = buildWikiUrl(result.title, domain)
 
         if (flag?.trim() === 'i') {
-          await session.send(`正在获取页面截图...\n完整内容：${displayUrl}`)
+          await session.send(`正在获取页面...\n完整内容：${displayUrl}`)
           const { image } = await captureWiki(pageUrl, lang)
           return h.image(image, 'image/png')
         }
@@ -453,7 +495,7 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
         if (typeof result === 'string') return result
 
         // 先发送URL
-        await session.send(`正在获取页面截图...\n完整内容：${result.url}`)
+        await session.send(`正在获取页面...\n完整内容：${result.url}`)
 
         // 然后获取并发送图片
         const { image } = await result.getImage()
@@ -567,10 +609,11 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
 
         // 显示服务器地址
         const displayAddr = port === 25565 ? host : `${host}:${port}`
-        lines.push(displayAddr)
+        if (!server) {
+          lines.push(displayAddr)
+        }
 
         // 处理MOTD（增强类型检查）
-        let motd = '无描述信息'
         if (client && 'description' in client && client.description) {
           const extractText = (obj: any): string => {
             if (!obj) return ''
@@ -586,9 +629,10 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
             }
             return ''
           }
-          motd = extractText(client.description).trim() || '无描述信息'
-          motd = motd.replace(/§[0-9a-fk-or]/g, '')
-          lines.push(motd)
+          const motd = extractText(client.description).trim()
+          if (motd) {
+            lines.push(motd.replace(/§[0-9a-fk-or]/g, ''))
+          }
         }
 
         // 版本信息（增强类型检查）
@@ -633,10 +677,11 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
             .filter(p => p && typeof p.name === 'string')
             .map(p => p.name)
           if (playerList.length > 0) {
-            lines.push('当前在线：' + playerList.join(', '))
+            let playerInfo = '当前在线：' + playerList.join(', ')
             if (playerList.length < players.online) {
-              lines.push(`（仅显示 ${playerList.length}/${players.online} 名玩家）`)
+              playerInfo += `（仅显示 ${playerList.length}/${players.online} 名玩家）`
             }
+            lines.push(playerInfo)
           }
         }
 
