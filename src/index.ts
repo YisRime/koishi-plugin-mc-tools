@@ -7,19 +7,21 @@ import * as mc from 'minecraft-protocol'
 export const name = 'mc-tools'
 export const inject = {required: ['puppeteer']}
 
+// 扩展语言支持
 const LANGUAGES = {
-  'zh': '简体中文',
+  'zh': '中文（简体）',
+  'zh-hk': '中文（繁體）',
   'en': 'English',
-  'es': 'Español',
-  'fr': 'Français',
-  'de': 'Deutsch',
-  'it': 'Italiano',
   'ja': '日本語',
   'ko': '한국어',
-  'pl': 'Polski',
+  'fr': 'Français',
+  'de': 'Deutsch',
+  'es': 'Español',
+  'it': 'Italiano',
   'pt': 'Português',
   'ru': 'Русский',
-  'th': 'ไทย',
+  'pl': 'Polski',
+  'nl': 'Nederlands',
   'tr': 'Türkçe'
 } as const
 
@@ -81,11 +83,18 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
   const userLangs = new Map<string, LangCode>()
   const versions = { snapshot: '', release: '' }
 
-  // 修改 getWikiDomain 函数，更新 zh 语言的变体代码
   const getWikiDomain = (lang: LangCode) => {
-    const domain = lang === 'en' ? 'minecraft.wiki' : `${lang}.minecraft.wiki`
-    const variantLang = lang === 'zh' ? 'zh-Hans-CN' : lang
-    return { domain, variantLang }
+    let domain: string
+    let variant: string = ''
+
+    if (lang.startsWith('zh')) {
+      domain = 'zh.minecraft.wiki'
+      variant = lang === 'zh' ? 'zh-cn' : 'zh-hk'
+    } else {
+      domain = lang === 'en' ? 'minecraft.wiki' : `${lang}.minecraft.wiki`
+    }
+
+    return { domain, variant }
   }
 
   async function captureWiki(url: string, lang: LangCode) {
@@ -93,276 +102,294 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
     const page = await context.newPage()
 
     try {
-      await page.setViewport({
-        width: 1000,  // 更改为wiki的默认宽度
-        height: 800,
-        deviceScaleFactor: 1,
-      })
-
-      // 设置请求头
+      // 设置更合适的视口宽度以匹配页面设计
+      await page.setViewport({ width: 1000, height: 800, deviceScaleFactor: 1 })
       await page.setExtraHTTPHeaders({
         'Accept-Language': `${lang},${lang}-*;q=0.9,en;q=0.8`,
-        'Cookie': `language=${lang}; hl=${lang}; uselang=${lang}`,
-        'Cache-Control': 'no-cache'
+        'Cookie': `language=${lang}; hl=${lang}; uselang=${lang}`
       })
 
-      const { variantLang } = getWikiDomain(lang)
-      const finalUrl = `${url}${url.includes('?') ? '&' : '?'}variant=${variantLang}&uselang=${lang}&setlang=${lang}`
-
-      await page.goto(finalUrl, {
+      await page.goto(url, {
         waitUntil: 'networkidle0',
         timeout: config.wiki.timeout
       })
 
-      // 等待主要内容加载
+      // 等待主要内容加载完成
       await page.waitForSelector('#bodyContent', { timeout: config.wiki.timeout })
-      await page.waitForSelector('#mw-content-text', { timeout: config.wiki.timeout })
 
-      // 注入自定义样式并清理页面
+      // 注入优化后的样式
       await page.evaluate(() => {
         const style = document.createElement('style')
         style.textContent = `
-          body { margin: 0; background: white; }
+          body {
+            margin: 0;
+            background: white;
+            font-family: system-ui, -apple-system, sans-serif;
+          }
           #content {
-            margin: 0 !important;
-            padding: 20px !important;
-            border: none !重要;
-          }
-          #mw-page-base, #mw-head-base, #mw-panel,
-          #mw-navigation, #footer, #siteNotice,
-          .mw-indicators, .mw-editsection {
-            display: none !important;
-          }
-          #bodyContent {
-            margin: 0 !important;
-            width: auto !important;
-          }
-          .mw-parser-output {
-            max-width: 960px !important;
-            margin: 0 auto !important;
+            margin: 0;
+            padding: 20px;
+            box-sizing: border-box;
+            width: 1000px;
           }
           .notaninfobox {
             float: none !important;
             margin: 1em auto !important;
-            width: 100% !important;
-            max-width: 300px !重要;
+            width: auto !important;
+            max-width: 300px;
           }
-          table, img {
-            max-width: 100% !important;
-            height: auto !important;
+          .mw-parser-output {
+            max-width: 960px;
+            margin: 0 auto;
+            line-height: 1.6;
+          }
+          img {
+            max-width: 100%;
+            height: auto;
+          }
+          table {
+            margin: 1em auto;
+            border-collapse: collapse;
+          }
+          td, th {
+            padding: 0.5em;
+            border: 1px solid #ccc;
+          }
+          pre {
+            padding: 1em;
+            background: #f5f5f5;
+            border-radius: 4px;
+            overflow-x: auto;
           }
         `
         document.head.appendChild(style)
 
-        // 移除不需要的元素
-        const hideSelectors = [
-          '.mw-indicators',
-          '.mw-editsection',
-          '#toc',
-          '.navbox',
-          '.catlinks',
-          '.printfooter',
-          '#siteNotice',
-          '.noprint',
-          '.mw-jump-link',
-          '.mw-redirectedfrom'
+        // 移除不必要的元素
+        const selectors = [
+          '.mw-editsection',  // 编辑按钮
+          '#mw-navigation',   // 导航菜单
+          '#footer',          // 页脚
+          '.noprint',         // 不打印的元素
+          '#toc',            // 目录
+          '.navbox',         // 导航框
+          '#siteNotice',     // 网站通知
+          '#contentSub',     // 内容子标题
+          '.mw-indicators'    // 右上角指示器
         ]
-        hideSelectors.forEach(selector => {
-          document.querySelectorAll(selector).forEach(el => {
-            el.remove()
-          })
+        selectors.forEach(selector => {
+          document.querySelectorAll(selector).forEach(el => el.remove())
         })
       })
 
-      // 获取内容区域尺寸
+      // 获取内容区域的尺寸
       const dimensions = await page.evaluate(() => {
         const content = document.querySelector('#content')
         if (!content) return null
-
-        // 确保所有图片加载完成
-        const images = Array.from(content.querySelectorAll('img'))
-        images.forEach(img => {
-          if (!img.complete) {
-            img.style.height = '0'
-            img.style.width = 'auto'
-          }
-        })
-
         const rect = content.getBoundingClientRect()
         return {
-          x: Math.floor(rect.x),
-          y: Math.floor(rect.y),
-          width: Math.min(1000, Math.floor(rect.width)),
-          height: Math.floor(rect.height)
+          width: Math.min(1000, Math.ceil(rect.width)),
+          height: Math.ceil(rect.height)
         }
       })
 
-      // 截图
+      if (!dimensions) {
+        throw new Error('无法获取页面内容')
+      }
+
+      // 调整视口以适应完整的内容高度
+      await page.setViewport({
+        width: dimensions.width,
+        height: dimensions.height,
+        deviceScaleFactor: 1
+      })
+
       const screenshot = await page.screenshot({
-        clip: {
-          x: dimensions.x,
-          y: dimensions.y,
-          width: dimensions.width,
-          height: Math.min(dimensions.height, 3840)
-        },
         type: 'png',
-        omitBackground: true
+        omitBackground: true,
+        fullPage: false
       })
 
       return {
         image: screenshot,
         height: dimensions.height,
+        // 如果内容过长则返回 true
         truncated: dimensions.height > 3840
       }
 
-    } catch (error) {
-      throw new Error(`${error.message}`)
     } finally {
       await context.close()
     }
   }
 
-  async function searchWiki(keyword: string, lang: LangCode) {
-    const { domain, variantLang } = getWikiDomain(lang)
-    const searchUrl = `https://${domain}/api.php?action=opensearch&search=${encodeURIComponent(keyword)}&limit=${config.wiki.searchResultLimit}&variant=${variantLang}&uselang=${lang}&setlang=${lang}`
+  async function searchWiki(keyword: string) {
+    const { domain } = getWikiDomain('zh')  // 使用简体中文进行搜索
+    try {
+      const searchUrl = `https://${domain}/api.php?action=opensearch&search=${encodeURIComponent(keyword)}&limit=${config.wiki.searchResultLimit}&variant=zh-cn`
+      const { data } = await axios.get(searchUrl, {
+        params: { variant: 'zh-cn' },  // 确保使用简体中文
+        timeout: config.wiki.timeout
+      })
 
-    const { data } = await axios.get(searchUrl, {
-      headers: {
-        'Accept-Language': `${lang},${lang}-*;q=0.9,en;q=0.8`,
-        'Cookie': `language=${lang}; hl=${lang}; uselang=${lang}`
-      }
-    })
-
-    const [_, titles, , urls] = data
-    return titles.map((title, i) => ({ title, url: urls[i] }))
+      const [_, titles, urls] = data
+      if (!titles?.length) return []
+      return titles.map((title, i) => ({ title, url: urls[i] }))
+    } catch (error) {
+      ctx.logger('mc-tools').warn(`Wiki搜索失败: ${error.message}`)
+      throw new Error('Wiki搜索失败，请稍后重试')
+    }
   }
 
-  // 添加获取Wiki内容的辅助函数
-  async function getWikiContent(pageUrl: string) {
-    const response = await axios.get(pageUrl)
+  // 修改 getWikiContent 函数，添加语言参数支持
+  async function getWikiContent(pageUrl: string, lang: LangCode) {
+    const { variant } = getWikiDomain(lang)
+    const response = await axios.get(pageUrl, {
+      params: {
+        variant: lang === 'zh' ? 'zh-cn' : variant,  // 确保zh使用简体中文
+        uselang: lang,
+        setlang: lang
+      }
+    })
     const $ = cheerio.load(response.data)
 
+    const title = $('#firstHeading').text().trim()
     const paragraphs = $('#mw-content-text p')
-      .filter((_, el) => $(el).text().trim() !== '')
+      .filter((_, el) => {
+        const text = $(el).text().trim()
+        return text && !text.startsWith('[')
+      })
       .map((_, el) => $(el).text().trim())
       .get()
-      .join('\n\n')
 
-    if (!paragraphs) {
-      return '本页面目前没有内容。'
+    if (!paragraphs.length) {
+      return { title, content: '本页面目前没有内容。', url: pageUrl }
     }
 
-    const content = paragraphs.length > 600
-      ? paragraphs.slice(0, 600) + '...'
-      : paragraphs
-
-    return content
+    const content = paragraphs.join('\n\n').slice(0, 600)
+    return {
+      title,
+      content: content.length >= 600 ? content + '...' : content,
+      url: pageUrl
+    }
   }
 
   // Wiki commands
-  ctx.command('mcwiki', 'Minecraft Wiki 查询')
-    .usage('输入 mcwiki <关键词> 直接查询内容\n使用子命令获取更多功能')
-    .example('mcwiki 末影龙 - 查询末影龙的信息')
-    .subcommand('.search <keyword:text>', '搜索 Wiki 页面')
-    .subcommand('.shot <keyword:text>', '获取 Wiki 页面截图')
-    .subcommand('.lang <lang>', '设置 Wiki 浏览语言')
-    .action(async ({ session }, keyword) => {
-      if (!keyword) return '请输入要查询的内容'
-      try {
-        const lang = userLangs.get(session.userId) || config.wiki.defaultLanguage
-        const results = await searchWiki(keyword, lang)
+  const mcwiki = ctx.command('mcwiki', 'Minecraft Wiki 查询')
+    .usage('mcwiki <关键词> - 直接查询内容\nmcwiki.search <关键词> - 搜索并选择\nmcwiki.shot <关键词> - 获取页面截图')
 
-        if (!results.length) return '未找到相关结果'
+  // 统一的 Wiki 页面处理函数
+  async function handleWikiPage(keyword: string, userId: string, mode: 'text' | 'image' | 'search' = 'text') {
+    if (!keyword) return '请输入要查询的内容'
 
-        // 直接获取第一个搜索结果的内容
-        const result = results[0]
-        const { domain } = getWikiDomain(lang)
-        const pageUrl = `https://${domain}/w/${encodeURIComponent(result.title)}`
+    try {
+      const lang = userLangs.get(userId) || config.wiki.defaultLanguage
+      const results = await searchWiki(keyword)
 
-        const content = await getWikiContent(pageUrl)
-        return `${content}\n链接：${pageUrl}`
+      if (!results.length) return '未找到相关结果'
 
-      } catch (error) {
-        return `查询失败: ${error.message}`
+      const { domain, variant } = getWikiDomain(lang)
+
+      // 搜索模式特殊处理
+      if (mode === 'search') {
+        return {
+          results,
+          domain,
+          lang
+        }
       }
-    })
 
-  // 注册子指令的处理函数
-  ctx.command('mcwiki/search')
+      const result = results[0]
+      const pageUrl = variant
+        ? `https://${domain}/w/${encodeURIComponent(result.title)}?variant=${variant}`
+        : `https://${domain}/w/${encodeURIComponent(result.title)}`
+
+      // 根据模式返回不同内容
+      if (mode === 'image') {
+        const { image, truncated } = await captureWiki(pageUrl, lang)
+        return {
+          image,
+          truncated,
+          pageUrl
+        }
+      }
+
+      const { title, content, url } = await getWikiContent(pageUrl, lang)
+      return `【${title}】\n\n${content}\n\n链接：${url}`
+
+    } catch (error) {
+      const action = mode === 'image' ? '截图' : mode === 'search' ? '搜索' : '查询'
+      throw new Error(`${action}失败: ${error.message}`)
+    }
+  }
+
+  mcwiki.action(async ({ session }, keyword) => {
+    try {
+      const result = await handleWikiPage(keyword, session.userId)
+      return result
+    } catch (error) {
+      return error.message
+    }
+  })
+
+  mcwiki.subcommand('.search <keyword:text>', '搜索 Wiki 页面')
     .action(async ({ session }, keyword) => {
-      if (!keyword) return '请输入要搜索的关键词'
       try {
-        const lang = userLangs.get(session.userId) || config.wiki.defaultLanguage
-        const results = await searchWiki(keyword, lang)
+        const searchResult = await handleWikiPage(keyword, session.userId, 'search') as any
+        if (typeof searchResult === 'string') return searchResult
 
-        if (!results.length) return '未找到相关结果'
+        const { results, domain, lang } = searchResult
+        const { variant } = getWikiDomain(lang)
 
-        let msg = '搜索结果如下：\n' + results.map((r, i) => `${i + 1}. ${r.title}`).join('\n')
-        msg += '\n输入序号：查看文字内容\n输入（序号-i）：获取页面截图'
+        const msg = '搜索结果如下：\n' +
+          results.map((r, i) => `${i + 1}. ${r.title}`).join('\n') +
+          '\n\n回复序号查看内容，或在序号后添加 -i 获取截图（如：1-i）'
 
         await session.send(msg)
         const response = await session.prompt(config.wiki.timeout)
-        if (!response) return '搜索超时，已取消'
 
-        // 解析用户输入
+        if (!response) return '操作超时'
+
         const [input, flag] = response.split('-')
-        const num = parseInt(input)
+        const index = parseInt(input) - 1
 
-        if (isNaN(num) || num < 1 || num > results.length) {
-          return '序号无效'
+        if (isNaN(index) || index < 0 || index >= results.length) {
+          return '请输入有效的序号'
         }
 
-        const result = results[num - 1]
-        const pageUrl = `https://${getWikiDomain(lang).domain}/w/${encodeURIComponent(result.title)}`
+        const result = results[index]
+        const pageUrl = variant
+          ? `https://${domain}/w/${encodeURIComponent(result.title)}?variant=${variant}`
+          : `https://${domain}/w/${encodeURIComponent(result.title)}`
 
-        // 如果有 -i 标记，返回截图
         if (flag?.trim() === 'i') {
-          try {
-            const { image, height } = await captureWiki(pageUrl, lang)
-            if (height > 3840) {
-              await session.send(`页面内容过长，完整页面: ${pageUrl}`)
-            }
-            return h.image(image, 'image/png')
-          } catch (error) {
-            return `截图失败: ${error.message}`
+          const { image, truncated } = await captureWiki(pageUrl, lang)
+          if (truncated) {
+            await session.send(`页面内容过长，完整页面: ${pageUrl}`)
           }
+          return h.image(image, 'image/png')
         }
 
-        // 否则返回文字内容
-        const content = await getWikiContent(pageUrl)
-        return `${content}\n链接：${pageUrl}`
+        const { title, content, url } = await getWikiContent(pageUrl, lang)
+        return `【${title}】\n\n${content}\n\n链接：${url}`
 
       } catch (error) {
-        return `搜索失败: ${error.message}`
+        return error.message
       }
     })
 
-  ctx.command('mcwiki/shot')
+  mcwiki.subcommand('.shot <keyword:text>', '获取 Wiki 页面截图')
     .action(async ({ session }, keyword) => {
-      if (!keyword) return '请输入要截图的页面标题或关键词'
       try {
-        const lang = userLangs.get(session.userId) || config.wiki.defaultLanguage
-        const { domain } = getWikiDomain(lang)
-        const pageUrl = `https://${domain}/w/${encodeURIComponent(keyword)}`
+        const result = await handleWikiPage(keyword, session.userId, 'image') as any
+        if (typeof result === 'string') return result
 
-        const { image, truncated } = await captureWiki(pageUrl, lang)
-
+        const { image, truncated, pageUrl } = result
         if (truncated) {
           await session.send(`页面内容过长，完整页面: ${pageUrl}`)
         }
-
         return h.image(image, 'image/png')
       } catch (error) {
-        return `截图失败: ${error.message}`
+        return error.message
       }
-    })
-
-  ctx.command('mcwiki/lang')
-    .action(({ session }, lang: LangCode) => {
-      if (!lang) return `当前浏览语言：${LANGUAGES[userLangs.get(session.userId) || config.wiki.defaultLanguage]}\n可选语言：\n${Object.entries(LANGUAGES).map(([c, n]) => `${c} - ${n}`).join('\n')}`
-      if (!(lang in LANGUAGES)) return '暂不支持该语言，请选择其他语言代码'
-      userLangs.set(session.userId, lang)
-      return `Wiki 浏览语言已设置为：${LANGUAGES[lang]}`
     })
 
   // Version check
@@ -384,20 +411,46 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
     })
 
   async function checkVersion() {
-    try {
-      const { data } = await axios.get('https://launchermeta.mojang.com/mc/game/version_manifest.json')
-      const latest = data.versions[0]
-      const release = data.versions.find(v => v.type === 'release')
+    const retryCount = 3
+    const retryDelay = 30000 // 30秒
 
-      for (const [type, ver] of [['snapshot', latest], ['release', release]]) {
-        if (versions[type] && ver.id !== versions[type]) {
-          const msg = `发现MC更新：${ver.id} (${type})\n发布于：${new Date(ver.releaseTime).toLocaleString()}`
-          config.versionCheck.groups.forEach(gid => ctx.bots.forEach(bot => bot.sendMessage(gid, msg)))
+    for (let i = 0; i < retryCount; i++) {
+      try {
+        const { data } = await axios.get('https://launchermeta.mojang.com/mc/game/version_manifest.json', {
+          timeout: 10000
+        })
+
+        const latest = data.versions[0]
+        const release = data.versions.find(v => v.type === 'release')
+
+        if (!latest || !release) {
+          throw new Error('无效的版本数据')
         }
-        versions[type] = ver.id
+
+        for (const [type, ver] of [['snapshot', latest], ['release', release]]) {
+          if (versions[type] && ver.id !== versions[type]) {
+            const msg = `发现MC更新：${ver.id} (${type})\n发布时间：${new Date(ver.releaseTime).toLocaleString('zh-CN')}`
+            for (const gid of config.versionCheck.groups) {
+              for (const bot of ctx.bots) {
+                try {
+                  await bot.sendMessage(gid, msg)
+                } catch (e) {
+                  ctx.logger('mc-tools').warn(`发送更新通知失败 (群:${gid}):`, e)
+                }
+              }
+            }
+          }
+          versions[type] = ver.id
+        }
+        break
+      } catch (error) {
+        if (i === retryCount - 1) {
+          ctx.logger('mc-tools').warn('版本检查失败（已达最大重试次数）：', error)
+        } else {
+          ctx.logger('mc-tools').warn(`版本检查失败（将在${retryDelay/1000}秒后重试）：`, error)
+          await new Promise(resolve => setTimeout(resolve, retryDelay))
+        }
       }
-    } catch (error) {
-      ctx.logger('mc-tools').warn('版本检查失败：', error)
     }
   }
 
@@ -445,17 +498,20 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
         }
 
         // 处理MOTD
+        let motd = '无描述信息'
         if ('description' in client && client.description) {
-          const motd = typeof client.description === 'string'
-            ? client.description
-            : typeof client.description === 'object'
-              ? client.description.text ||
-                (client.description.extra?.map(e =>
-                  typeof e === 'string' ? e : e.text
-                ).join(''))
-              : '无描述信息'
-          lines.push(motd.replace(/§[0-9a-fk-or]/g, ''))
+          if (typeof client.description === 'string') {
+            motd = client.description
+          } else if (typeof client.description === 'object') {
+            motd = client.description.text ||
+                   (Array.isArray(client.description.extra)
+                    ? client.description.extra
+                        .map(e => typeof e === 'string' ? e : (e.text || ''))
+                        .join('')
+                    : '')
+          }
         }
+        motd = motd.replace(/§[0-9a-fk-or]/g, '').trim() || '无描述信息'
 
         // 获取版本信息和支持范围
         let versionInfo = ''
