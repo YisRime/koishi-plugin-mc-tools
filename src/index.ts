@@ -512,7 +512,7 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
 
   // Mod 功能相关代码
   const modwiki = ctx.command('modwiki', 'MCMOD 模组百科查询')
-    .usage('modwiki <关键词> 直接查询\nmodwiki.search <关键词> 搜索并选择\nmodwiki.latest 查看最新更新\nmodwiki.test <关键词> 测试API返回\nmodwiki.link <ID> 查看相关链接\nmodwiki.relate <ID> 查看关联模组')
+    .usage('modwiki <关键词> 直接查询\nmodwiki.search <关键词> 搜索并选择\nmodwiki.latest 查看最新更新\nmodwiki.link <ID> 查看相关链接\nmodwiki.relate <ID> 查看关联模组')
 
   modwiki.action(async ({ }, keyword) => {
     if (!keyword) return '请输入要查询的模组关键词'
@@ -630,21 +630,6 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
           const date = new Date(mod.update_time).toLocaleDateString('zh-CN')
           return `${i + 1}. ${mod.title}\n更新时间：${date}\n${mod.description || ''}`
         }).join('\n\n')
-      } catch (error) {
-        return handleError(error)
-      }
-    })
-
-  modwiki.subcommand('.test <keyword:text>', '获取搜索结果原始数据')
-    .action(async ({ }, keyword) => {
-      if (!checkSearchCooldown()) return '搜索太频繁，请稍后再试'
-
-      try {
-        const results = await axios.get(`${config.wiki.mcmodApiBase}/s/key=${encodeURIComponent(keyword)}`)
-        if (!results.data?.length) return '未找到相关模组'
-
-        // 直接返回搜索结果的原始数据
-        return JSON.stringify(results.data, null, 2)
       } catch (error) {
         return handleError(error)
       }
