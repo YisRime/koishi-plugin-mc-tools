@@ -1,6 +1,8 @@
+import { h } from 'koishi'
 import axios from 'axios';
 import * as cheerio from 'cheerio'
 
+// 1. 常量和类型定义
 export const LANGUAGES = {
   'zh': '中文（简体）',
   'zh-hk': '中文（繁體）',
@@ -28,7 +30,7 @@ export interface MinecraftToolsConfig {
     minSectionLength: number
     sectionPreviewLength: number
     totalPreviewLength: number
-    mcmodApiBase: string
+    searchDescLength: number
   }
   server: {
     host: string
@@ -41,13 +43,7 @@ export interface MinecraftToolsConfig {
   }
 }
 
-export function checkSearchCooldown(lastSearchTime: number): boolean {
-  const now = Date.now()
-  const SEARCH_COOLDOWN = 1000
-  if (now - lastSearchTime < SEARCH_COOLDOWN) return false
-  return true
-}
-
+// 2. 基础工具函数
 export function handleError(error: any): string {
   if (!error) return '未知错误'
   const message = error.message || String(error)
@@ -66,6 +62,29 @@ export function handleError(error: any): string {
   return message
 }
 
+export function extractServerText(obj: any): string {
+  if (!obj) return ''
+  if (typeof obj === 'string') return obj
+  if (typeof obj === 'object') {
+    if ('text' in obj) return obj.text
+    if ('extra' in obj && Array.isArray(obj.extra)) {
+      return obj.extra.map(extractServerText).join('')
+    }
+    if (Array.isArray(obj)) {
+      return obj.map(extractServerText).join('')
+    }
+  }
+  return ''
+}
+
+export function checkSearchCooldown(lastSearchTime: number): number | false {
+  const now = Date.now()
+  const SEARCH_COOLDOWN = 1000
+  if (now - lastSearchTime < SEARCH_COOLDOWN) return false
+  return now
+}
+
+// 3. 配置和处理函数
 export function getWikiDomain(lang: LangCode) {
   let domain: string
   let variant: string = ''
@@ -90,13 +109,14 @@ export function getTitleLine(data: any): string {
 
   const parts = []
 
-  if (data.title) parts.push(data.title)
-  if (data.short_name) parts.push(`(${data.short_name})`)
-  if (data.subtitle) parts.push(`| ${data.subtitle}`)
+  if (data.short_name) parts.push(`${data.short_name}`)
+  if (data.subtitle) parts.push(` ${data.subtitle} | `)
+  if (data.title) parts.push(`${data.title}`)
 
   return parts.join(' ')
 }
 
+// 4. 服务器相关函数
 export function getVersionFromProtocol(protocol: number): string {
   const protocolMap: Record<number, string> = {
     764: '1.20.1',
@@ -138,82 +158,6 @@ export function getVersionFromProtocol(protocol: number): string {
   return `未知版本(协议:${protocol})`
 }
 
-export async function searchMcmod(keyword: string, apiBase: string) {
-  const results = await axios.get(`${apiBase}/s/key=${encodeURIComponent(keyword)}`)
-  if (!results.data?.length) return null
-  return results.data
-}
-
-export async function getMcmodInfo(id: number, type: string, apiBase: string) {
-  const { data } = await axios.get(`${apiBase}/d/${type}/${id}`)
-  return data
-}
-
-export async function formatModInfo(result: any, config: MinecraftToolsConfig) {
-  if (!result.data?.mcmod_id) {
-    return `${result.title}\n${result.description}`
-  }
-
-  try {
-    const type = result.address?.includes('/modpack/') ? 'modpack' : 'class'
-    const { data } = await axios.get(`${config.wiki.mcmodApiBase}/d/${type}/${result.data.mcmod_id}`)
-
-    const lines = []
-
-    if (data.cover_image) {
-      lines.push(`![cover image](${data.cover_image})`)
-    }
-
-    lines.push(getTitleLine(data))
-
-    const infoItems = []
-    if (data.operating_environment) infoItems.push(`运行环境：${data.operating_environment}`)
-
-    if (data.supported_versions) {
-      const versions = Object.entries(data.supported_versions)
-        .filter(([_, vers]) => Array.isArray(vers) && vers.length)
-        .map(([platform, vers]) => {
-          const sortedVers = (vers as string[]).sort((a, b) => {
-            return /^\d/.test(a) && /^\d/.test(b) ? b.localeCompare(a, undefined, { numeric: true }) : 0
-          })
-          return `${platform}(${sortedVers.join(', ')})`
-        })
-
-      if (versions.length) {
-        infoItems.push(`支持版本：${versions.join(' | ')}`)
-      }
-    }
-
-    if (infoItems.length) {
-      lines.push('', ...infoItems)
-    }
-
-    if (result.address) {
-      lines.push('', `详情页面：${result.address}`)
-    }
-
-    return lines.join('\n')
-
-  } catch (error) {
-    throw new Error(`获取${result.address?.includes('/modpack/') ? '整合包' : '模组'}详情失败: ${handleError(error)}`)
-  }
-}
-
-export function extractServerText(obj: any): string {
-  if (!obj) return ''
-  if (typeof obj === 'string') return obj
-  if (typeof obj === 'object') {
-    if ('text' in obj) return obj.text
-    if ('extra' in obj && Array.isArray(obj.extra)) {
-      return obj.extra.map(extractServerText).join('')
-    }
-    if (Array.isArray(obj)) {
-      return obj.map(extractServerText).join('')
-    }
-  }
-  return ''
-}
-
 export function formatServerPlayers(players: any) {
   if (!players) return { online: 0, max: 0 }
   return {
@@ -237,6 +181,37 @@ export function getServerSettings(client: any) {
   return settings
 }
 
+export async function checkVersion(versions: { snapshot: string, release: string }, ctx: any, config: MinecraftToolsConfig) {
+  try {
+    const { data } = await axios.get('https://launchermeta.mojang.com/mc/game/version_manifest.json', {
+      timeout: 10000
+    })
+    const latest = data.versions[0]
+    const release = data.versions.find(v => v.type === 'release')
+
+    if (!latest || !release) {
+      throw new Error('无效的版本数据')
+    }
+
+    for (const [type, ver] of [['snapshot', latest], ['release', release]]) {
+      if (versions[type] && ver.id !== versions[type]) {
+        const msg = `发现MC更新：${ver.id} (${type})\n发布时间：${new Date(ver.releaseTime).toLocaleString('zh-CN')}`
+        for (const gid of config.versionCheck.groups) {
+          for (const bot of ctx.bots) {
+            await bot.sendMessage(gid, msg).catch(e => {
+              ctx.logger('mc-tools').warn(`发送更新通知失败 (群:${gid}):`, e)
+            })
+          }
+        }
+      }
+      versions[type] = ver.id
+    }
+  } catch (error) {
+    ctx.logger('mc-tools').error(`版本检查失败: ${handleError(error)}`)
+  }
+}
+
+// 5. Wiki 相关函数
 export async function searchWiki(keyword: string, searchResultLimit: number, pageTimeout: number) {
   const { domain } = getWikiDomain('zh')
   try {
@@ -324,6 +299,115 @@ export async function getWikiContent(pageUrl: string, lang: LangCode, config: Mi
     title,
     content: formattedContent.length >= config.wiki.totalPreviewLength ? formattedContent + '...' : formattedContent,
     url: cleanUrl
+  }
+}
+
+export async function searchMcmod(keyword: string, apiBase: string) {
+  const results = await axios.get(`${apiBase}/s/key=${encodeURIComponent(keyword)}`)
+  if (!results.data?.length) return null
+  return results.data
+}
+
+export async function getMcmodInfo(id: number, type: string, apiBase: string) {
+  const { data } = await axios.get(`${apiBase}/d/${type}/${id}`)
+  return data
+}
+
+export async function formatModInfo(result: any, config: MinecraftToolsConfig) {
+  if (!result.data?.mcmod_id) {
+    return `${result.title}\n${result.description}`
+  }
+
+  try {
+    const type = result.address?.includes('/modpack/') ? 'modpack' : 'class'
+    const { data } = await axios.get(`wiki/d/${type}/${result.data.mcmod_id}`)
+
+    const lines = []
+
+    if (data.cover_image) {
+      lines.push(h.image(data.cover_image).toString())
+    }
+
+    lines.push(getTitleLine(data))
+
+    const infoItems = []
+    if (data.operating_environment) infoItems.push(`运行环境：${data.operating_environment}`)
+
+    if (data.supported_versions) {
+      const versions = Object.entries(data.supported_versions)
+        .filter(([_, vers]) => Array.isArray(vers) && vers.length)
+        .map(([platform, vers]) => {
+          const sortedVers = (vers as string[]).sort((a, b) => {
+            return /^\d/.test(a) && /^\d/.test(b) ? b.localeCompare(a, undefined, { numeric: true }) : 0
+          })
+          return `${platform}(${sortedVers.join(', ')})`
+        })
+
+      if (versions.length) {
+        infoItems.push(`支持版本：${versions.join(' | ')}`)
+      }
+    }
+
+    if (infoItems.length) {
+      lines.push('', ...infoItems)
+    }
+
+    if (result.address) {
+      lines.push('', `详情页面：${result.address}`)
+    }
+
+    return lines.join('\n')
+
+  } catch (error) {
+    throw new Error(`获取${result.address?.includes('/modpack/') ? '整合包' : '模组'}详情失败: ${handleError(error)}`)
+  }
+}
+
+// 6. 主要业务逻辑函数
+export async function handleWikiPage(keyword: string, userId: string, config: MinecraftToolsConfig, ctx: any, userLangs: Map<string, LangCode>, mode: 'text' | 'image' | 'search' = 'text') {
+  if (!keyword) return '请输入要查询的内容关键词'
+
+  try {
+    const lang = userLangs.get(userId) || config.wiki.defaultLanguage
+    const results = await searchWiki(keyword, config.wiki.searchResultLimit, config.wiki.pageTimeout)
+
+    if (!results.length) return `${keyword}：本页面目前没有内容。`
+
+    const { domain, variant } = getWikiDomain(lang)
+
+    if (mode === 'search') {
+      return {
+        results,
+        domain,
+        lang
+      }
+    }
+
+    const result = results[0]
+    const pageUrl = buildWikiUrl(result.title, domain, variant, true)
+    const displayUrl = buildWikiUrl(result.title, domain)
+
+    if (mode === 'image') {
+      return {
+        url: displayUrl,
+        async getImage() {
+          const context = await ctx.puppeteer.browser.createBrowserContext()
+          const page = await context.newPage()
+          try {
+            const { image } = await captureWiki(page, pageUrl, lang, config)
+            return { image }
+          } finally {
+            await context.close()
+          }
+        }
+      }
+    }
+
+    const { title, content, url } = await getWikiContent(pageUrl, lang, config)
+    return `『${title}』${content}\n详细内容：${url}`
+
+  } catch (error) {
+    return handleError(error)
   }
 }
 
