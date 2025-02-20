@@ -12,6 +12,11 @@ Minecraft(我的世界)工具箱插件,提供Wiki查询、版本检查、服务�
   - `mcwiki.shot <关键词>` - 获取Wiki页面截图
   - `mcwiki.lang [语言]` - 设置Wiki显示语言
 
+- MCMOD百科查询
+  - `modwiki <关键词>` - 直接查询模组信息
+  - `modwiki.search <关键词>` - 搜索并选择模组
+  - `modwiki.latest` - 查看最新更新的模组
+
 - 版本检查
   - `mcver` - 获取Minecraft最新版本信息
   - 自动检查版本更新并推送通知(可配置)
