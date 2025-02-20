@@ -32,6 +32,9 @@ export interface MinecraftToolsConfig {
     defaultLanguage: LangCode
     pageTimeout: number
     searchResultLimit: number
+    minSectionLength: number
+    sectionPreviewLength: number
+    totalPreviewLength: number
   }
   versionCheck: {
     enabled: boolean
@@ -55,6 +58,15 @@ export const Config: Schema<MinecraftToolsConfig> = Schema.object({
     searchResultLimit: Schema.number()
       .default(10)
       .description('搜索结果最大显示数量'),
+    minSectionLength: Schema.number()
+      .default(12)
+      .description('段落最小字数'),
+    sectionPreviewLength: Schema.number()
+      .default(50)
+      .description('非首段预览字数'),
+    totalPreviewLength: Schema.number()
+      .default(500)
+      .description('总预览字数限制'),
   }).description('Wiki 相关设置'),
 
   versionCheck: Schema.object({
@@ -301,37 +313,40 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
     let currentSection: { title?: string; content: string[] } = { content: [] }
 
     // 遍历主内容区域
-    $('#mw-content-text').children().each((_, element) => {
+    $('#mw-content-text .mw-parser-output').children().each((_, element) => {
       const el = $(element)
 
-      // 跳过引用内容
-      if (el.hasClass('quote')) {
-        return
-      }
-
-      // 处理标题
-      if (el.is('h2, h3')) {
+      // 处理标题 (h2, h3, h4)
+      if (el.is('h2, h3, h4')) {
         if (currentSection.content.length) {
-          sections.push(currentSection)
+          const totalLength = currentSection.content.join(' ').length
+          if (totalLength >= config.wiki.minSectionLength) {
+            sections.push(currentSection)
+          }
         }
-        // 创建新部分
         currentSection = {
           title: el.find('.mw-headline').text().trim(),
           content: []
         }
       }
-      // 处理段落
-      else if (el.is('p')) {
+      // 处理段落和列表
+      else if (el.is('p, ul, ol')) {
         const text = el.text().trim()
-        if (text && !text.startsWith('[')) {
-          currentSection.content.push(text)
+        // 跳过引用、图片说明和空段落
+        if (text && !text.startsWith('[') && !text.startsWith('跳转') && !el.hasClass('quote')) {
+          // 清理多余空白
+          const cleanText = text.replace(/\s+/g, ' ')
+          currentSection.content.push(cleanText)
         }
       }
     })
 
-    // 添加最后一个部分
+    // 添加最后一个部分(如果内容足够长)
     if (currentSection.content.length) {
-      sections.push(currentSection)
+      const totalLength = currentSection.content.join(' ').length
+      if (totalLength >= config.wiki.minSectionLength) {
+        sections.push(currentSection)
+      }
     }
 
     // 如果没有内容
@@ -340,24 +355,48 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
       return { title, content: `${title}：本页面目前没有内容。`, url: cleanUrl }
     }
 
-    // 构建格式化的内容
+    // 构建格式化的内容，对首段不限制字数，后续部分保持原有限制
     const formattedContent = sections
-      .map(section => {
-        const sectionText = section.content.join(' ').slice(0, 200)
+      .map((section, index) => {
+        const sectionText = index === 0
+          ? section.content.join(' ')
+          : section.content.join(' ').slice(0, config.wiki.sectionPreviewLength)
         if (section.title) {
-          return `${section.title}: ${sectionText}${sectionText.length >= 200 ? '...' : ''}`
+          return `${section.title} | ${sectionText}${sectionText.length >= config.wiki.sectionPreviewLength && index > 0 ? '...' : ''}`
         }
         return sectionText
       })
       .join('\n')
-      .slice(0, 400)
+      .slice(0, config.wiki.totalPreviewLength)
 
     const cleanUrl = pageUrl.split('?')[0]
     return {
       title,
-      content: formattedContent.length >= 400 ? formattedContent + '...' : formattedContent,
+      content: formattedContent.length >= config.wiki.totalPreviewLength ? formattedContent + '...' : formattedContent,
       url: cleanUrl
     }
+  }
+
+  /**
+   * 统一错误处理
+   */
+  function handleError(error: any): string {
+    if (!error) return '未知错误'
+    const message = error.message || String(error)
+
+    // 网络错误映射
+    const networkErrors = {
+      ECONNREFUSED: '无法连接服务器',
+      ETIMEDOUT: '连接超时',
+      ENOTFOUND: '找不到服务器',
+      ECONNRESET: '连接被重置',
+    }
+
+    if (error.code in networkErrors) {
+      return networkErrors[error.code]
+    }
+
+    return message
   }
 
   /**
@@ -406,12 +445,7 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
       return `『${title}』${content}\n详细内容：${url}`
 
     } catch (error) {
-      const action = {
-        'image': '页面截图',
-        'search': '搜索条目',
-        'text': '内容查询'
-      }[mode]
-      throw new Error(`${action}失败：${error.message}`)
+      return handleError(error)
     }
   }
 
@@ -518,54 +552,40 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
 
         return `Minecraft 最新版本：\n正式版：${latestRelease.id}（${formatDate(latestRelease.releaseTime)}）\n快照版：${latest.id}（${formatDate(latest.releaseTime)}）`
       } catch (error) {
-        return `获取版本信息失败：${error.message}`
+        return handleError(error)
       }
     })
 
   /**
    * 检查 Minecraft 版本更新
-   * @returns {Promise<void>}
    */
   async function checkVersion() {
-    const retryCount = 3
-    const retryDelay = 30000
+    try {
+      const { data } = await axios.get('https://launchermeta.mojang.com/mc/game/version_manifest.json', {
+        timeout: 10000
+      })
+      const latest = data.versions[0]
+      const release = data.versions.find(v => v.type === 'release')
 
-    for (let i = 0; i < retryCount; i++) {
-      try {
-        const { data } = await axios.get('https://launchermeta.mojang.com/mc/game/version_manifest.json', {
-          timeout: 10000
-        })
+      if (!latest || !release) {
+        throw new Error('无效的版本数据')
+      }
 
-        const latest = data.versions[0]
-        const release = data.versions.find(v => v.type === 'release')
-
-        if (!latest || !release) {
-          throw new Error('无效的版本数据')
-        }
-        for (const [type, ver] of [['snapshot', latest], ['release', release]]) {
-          if (versions[type] && ver.id !== versions[type]) {
-            const msg = `发现MC更新：${ver.id} (${type})\n发布时间：${new Date(ver.releaseTime).toLocaleString('zh-CN')}`
-            for (const gid of config.versionCheck.groups) {
-              for (const bot of ctx.bots) {
-                try {
-                  await bot.sendMessage(gid, msg)
-                } catch (e) {
-                  ctx.logger('mc-tools').warn(`发送更新通知失败 (群:${gid}):`, e)
-                }
-              }
+      for (const [type, ver] of [['snapshot', latest], ['release', release]]) {
+        if (versions[type] && ver.id !== versions[type]) {
+          const msg = `发现MC更新：${ver.id} (${type})\n发布时间：${new Date(ver.releaseTime).toLocaleString('zh-CN')}`
+          for (const gid of config.versionCheck.groups) {
+            for (const bot of ctx.bots) {
+              await bot.sendMessage(gid, msg).catch(e => {
+                ctx.logger('mc-tools').warn(`发送更新通知失败 (群:${gid}):`, e)
+              })
             }
           }
-          versions[type] = ver.id
         }
-        break
-      } catch (error) {
-        if (i === retryCount - 1) {
-          ctx.logger('mc-tools').warn('版本检查失败（已达最大重试次数）：', error)
-        } else {
-          ctx.logger('mc-tools').warn(`版本检查失败（将在${retryDelay/1000}秒后重试）：`, error)
-          await new Promise(resolve => setTimeout(resolve, retryDelay))
-        }
+        versions[type] = ver.id
       }
+    } catch (error) {
+      ctx.logger('mc-tools').error(`版本检查失败: ${handleError(error)}`)
     }
   }
 
@@ -687,18 +707,7 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
 
         return lines.join('\n')
       } catch (error) {
-        if (!error) return '未知错误'
-
-        if (error.code === 'ECONNREFUSED') {
-          return `无法连接到服务器 ${host}:${port} (连接被拒绝)`
-        }
-        if (error.code === 'ETIMEDOUT') {
-          return `连接服务器超时 ${host}:${port}`
-        }
-        if (error.code === 'ENOTFOUND') {
-          return `无法解析服务器地址 ${host}`
-        }
-        return `查询失败: ${error.message || '未知错误'}`
+        return `服务器查询失败: ${handleError(error)}`
       }
     })
 
