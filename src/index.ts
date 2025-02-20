@@ -512,7 +512,7 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
 
   // Mod 功能相关代码
   const modwiki = ctx.command('modwiki', 'MCMOD 模组百科查询')
-    .usage('modwiki <关键词> 直接查询\nmodwiki.search <关键词> 搜索并选择\nmodwiki.latest 查看最新更新\nmodwiki.link <ID> 查看相关链接\nmodwiki.relate <ID> 查看关联模组')
+    .usage('modwiki <关键词> 直接查询\nmodwiki.search <关键词> 搜索并选择\nmodwiki.link <ID> 查看相关链接\nmodwiki.relate <ID> 查看关联模组')
 
   modwiki.action(async ({ }, keyword) => {
     if (!keyword) return '请输入要查询的模组关键词'
@@ -561,16 +561,18 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
     return `${shortName}${subtitle}${subtitle ? ' | ' : ''}${data.title}`
   }
 
-  modwiki.subcommand('.link <id:number>', '查看模组相关链接')
-    .action(async ({ }, id) => {
+  modwiki.subcommand('.link <id:number> [type:string]', '查看模组/整合包相关链接')
+    .usage('type: class(默认) 或 modpack')
+    .action(async ({ }, id, type = 'class') => {
       if (!checkSearchCooldown()) return '请求太频繁，请稍后再试'
+      if (type !== 'class' && type !== 'modpack') return '类型必须是 class 或 modpack'
 
       try {
-        const detail = await axios.get(`${config.wiki.mcmodApiBase}/d/class/${id}`)
+        const detail = await axios.get(`${config.wiki.mcmodApiBase}/d/${type}/${id}`)
         const data = detail.data
 
         if (!data.related_links?.length) {
-          return '该模组没有相关链接'
+          return `该${type === 'modpack' ? '整合包' : '模组'}没有相关链接`
         }
 
         const lines = [`${getTitleLine(data)} | 相关链接：\n`]
@@ -584,21 +586,22 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
       }
     })
 
-  modwiki.subcommand('.relate <id:number>', '查看关联模组')
-    .action(async ({ }, id) => {
+  modwiki.subcommand('.relate <id:number> [type:string]', '查看模组/整合包关联内容')
+    .usage('type: class(默认) 或 modpack')
+    .action(async ({ }, id, type = 'class') => {
       if (!checkSearchCooldown()) return '请求太频繁，请稍后再试'
+      if (type !== 'class' && type !== 'modpack') return '类型必须是 class 或 modpack'
 
       try {
-        const detail = await axios.get(`${config.wiki.mcmodApiBase}/d/class/${id}`)
+        const detail = await axios.get(`${config.wiki.mcmodApiBase}/d/${type}/${id}`)
         const data = detail.data
 
         if (!data.mod_relations) {
-          return '该模组没有关联模组'
+          return `该${type === 'modpack' ? '整合包' : '模组'}没有关联内容`
         }
 
         const lines = [`${getTitleLine(data)} | 关联模组：`]
 
-        // 遍历所有版本的关联
         for (const [version, relations] of Object.entries(data.mod_relations)) {
           if (!Array.isArray(relations) || relations.length === 0) continue
 
@@ -620,50 +623,40 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
       }
     })
 
-  modwiki.subcommand('.latest', '查看最新更新的模组')
-    .action(async () => {
-      if (!checkSearchCooldown()) return '请求太频繁，请稍后再试'
-
-      try {
-        const { data } = await axios.get(`${config.wiki.mcmodApiBase}/latest`)
-        return data.slice(0, 5).map((mod, i) => {
-          const date = new Date(mod.update_time).toLocaleDateString('zh-CN')
-          return `${i + 1}. ${mod.title}\n更新时间：${date}\n${mod.description || ''}`
-        }).join('\n\n')
-      } catch (error) {
-        return handleError(error)
-      }
-    })
-
-  // 修改 getModInfo 使用相同的 getTitleLine 函数
   async function getModInfo(result: any) {
     if (!result.data?.mcmod_id) {
       return `${result.title}\n${result.description}`
     }
 
     try {
-      const detail = await axios.get(`${config.wiki.mcmodApiBase}/d/class/${result.data.mcmod_id}`)
+      const type = result.address?.includes('/modpack/') ? 'modpack' : 'class'
+      const detail = await axios.get(`${config.wiki.mcmodApiBase}/d/${type}/${result.data.mcmod_id}`)
       const data = detail.data
 
       const lines = []
 
-      // 添加封面图片显示
       if (data.cover_image) {
         lines.push(h.image(data.cover_image).toString())
       }
 
-      lines.push(getTitleLine(data), '')  // 标题和空行
+      lines.push(getTitleLine(data), '')
+
+      if (data.related_links?.length) {
+        lines.push('相关链接：')
+        data.related_links.forEach(link => {
+          lines.push(`- ${link.text}: ${link.url}`)
+        })
+        lines.push('')
+      }
 
       if (data.operating_environment) lines.push(`运行环境：${data.operating_environment}`)
 
-      // 版本信息处理 - 合并所有平台的版本
       if (data.supported_versions) {
         const allVersions: string[] = []
 
         for (const [platform, versions] of Object.entries(data.supported_versions)) {
           if (!Array.isArray(versions) || versions.length === 0) continue
 
-          // 对版本号进行排序（除了"远古版本"这样的特殊标记）
           const sortedVersions = versions.sort((a, b) => {
             if (!/^\d/.test(a) || !/^\d/.test(b)) return 0
             return b.localeCompare(a, undefined, { numeric: true })
@@ -675,16 +668,13 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
         if (allVersions.length > 0) {
           lines.push(`支持版本：${allVersions.join(' | ')}`)
         }
-      } else if (data.supported_versions?.length) {
-        // 向后兼容旧的版本格式
-        lines.push(`支持版本：${data.supported_versions.join(', ')}`)
       }
 
       if (result.address) lines.push(`详情页面：${result.address}`)
 
       return lines.join('\n')
     } catch (error) {
-      throw new Error(`获取模组详情失败: ${handleError(error)}`)
+      throw new Error(`获取${result.address?.includes('/modpack/') ? '整合包' : '模组'}详情失败: ${handleError(error)}`)
     }
   }
 
@@ -891,8 +881,7 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
       const nextProtocol = protocols[i + 1]
 
       if (protocol > currentProtocol) {
-        // 高于最新已知版本
-        return `~${protocolMap[currentProtocol]}+`
+        // 高于最新已知版本        return `~${protocolMap[currentProtocol]}+`
       } else if (nextProtocol && protocol > nextProtocol && protocol < currentProtocol) {
         // 在两个已知版本之间
         return `~${protocolMap[nextProtocol]}-${protocolMap[currentProtocol]}`
