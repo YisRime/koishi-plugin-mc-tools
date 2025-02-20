@@ -1,52 +1,30 @@
 import { Context, Schema, h } from 'koishi'
 import axios from 'axios'
-import * as cheerio from 'cheerio'
 import {} from 'koishi-plugin-puppeteer'
 import * as mc from 'minecraft-protocol'
+import {
+  checkSearchCooldown,
+  handleError,
+  getWikiDomain,
+  buildWikiUrl,
+  getTitleLine,
+  getVersionFromProtocol,
+  MinecraftToolsConfig,
+  LANGUAGES,
+  LangCode,
+  searchMcmod,
+  formatModInfo,
+  extractServerText,
+  formatServerPlayers,
+  getServerSettings,
+  searchWiki,
+  getWikiContent,
+  captureWiki
+} from './utils'
 
 export const name = 'mc-tools'
 export const inject = {required: ['puppeteer']}
 
-// 扩展语言支持
-const LANGUAGES = {
-  'zh': '中文（简体）',
-  'zh-hk': '中文（繁體）',
-  'en': 'English',
-  'ja': '日本語',
-  'ko': '한국어',
-  'fr': 'Français',
-  'de': 'Deutsch',
-  'es': 'Español',
-  'it': 'Italiano',
-  'pt': 'Português',
-  'ru': 'Русский',
-  'pl': 'Polski',
-  'nl': 'Nederlands',
-  'tr': 'Türkçe'
-} as const
-
-type LangCode = keyof typeof LANGUAGES
-
-export interface MinecraftToolsConfig {
-  wiki: {
-    defaultLanguage: LangCode
-    pageTimeout: number
-    searchResultLimit: number
-    minSectionLength: number
-    sectionPreviewLength: number
-    totalPreviewLength: number
-    mcmodApiBase: string
-  }
-  server: {
-    host: string
-    port: number
-  }
-  versionCheck: {
-    enabled: boolean
-    groups: string[]
-    interval: number
-  }
-}
 
 export const Config: Schema<MinecraftToolsConfig> = Schema.object({
   wiki: Schema.object({
@@ -104,33 +82,15 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
   const userLangs = new Map<string, LangCode>()
   const versions = { snapshot: '', release: '' }
   let lastSearchTime = 0
-  const SEARCH_COOLDOWN = 1000
 
   // 通用工具函数
-  function checkSearchCooldown(): boolean {
-    const now = Date.now()
-    if (now - lastSearchTime < SEARCH_COOLDOWN) return false
-    lastSearchTime = now
-    return true
-  }
-
-  function handleError(error: any): string {
-    if (!error) return '未知错误'
-    const message = error.message || String(error)
-
-    // 网络错误映射
-    const networkErrors = {
-      ECONNREFUSED: '无法连接服务器',
-      ETIMEDOUT: '连接超时',
-      ENOTFOUND: '找不到服务器',
-      ECONNRESET: '连接被重置',
+  function checkCooldown(): boolean {
+    const result = checkSearchCooldown(lastSearchTime)
+    if (typeof result === 'number') {
+      lastSearchTime = result
+      return true
     }
-
-    if (error.code in networkErrors) {
-      return networkErrors[error.code]
-    }
-
-    return message
+    return false
   }
 
   // Wiki 功能相关代码
@@ -195,11 +155,17 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
 
         if (flag?.trim() === 'i') {
           await session.send(`正在获取页面...\n完整内容：${displayUrl}`)
-          const { image } = await captureWiki(pageUrl, lang)
-          return h.image(image, 'image/png')
+          const context = await ctx.puppeteer.browser.createBrowserContext()
+          const page = await context.newPage()
+          try {
+            const { image } = await captureWiki(page, pageUrl, lang, config)
+            return h.image(image, 'image/png')
+          } finally {
+            await context.close()
+          }
         }
 
-        const { title, content, url } = await getWikiContent(pageUrl, lang)
+        const { title, content, url } = await getWikiContent(pageUrl, lang, config)
         return `『${title}』${content}\n详细内容：${url}`
 
       } catch (error) {
@@ -229,7 +195,7 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
 
     try {
       const lang = userLangs.get(userId) || config.wiki.defaultLanguage
-      const results = await searchWiki(keyword)
+      const results = await searchWiki(keyword, config.wiki.searchResultLimit, config.wiki.pageTimeout)
 
       if (!results.length) return `${keyword}：本页面目前没有内容。`
 
@@ -247,18 +213,23 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
       const pageUrl = buildWikiUrl(result.title, domain, variant, true)
       const displayUrl = buildWikiUrl(result.title, domain)
 
-      // 根据模式返回不同内容
       if (mode === 'image') {
         return {
           url: displayUrl,
           async getImage() {
-            const { image } = await captureWiki(pageUrl, lang)
-            return { image }
+            const context = await ctx.puppeteer.browser.createBrowserContext()
+            const page = await context.newPage()
+            try {
+              const { image } = await captureWiki(page, pageUrl, lang, config)
+              return { image }
+            } finally {
+              await context.close()
+            }
           }
         }
       }
 
-      const { title, content, url } = await getWikiContent(pageUrl, lang)
+      const { title, content, url } = await getWikiContent(pageUrl, lang, config)
       return `『${title}』${content}\n详细内容：${url}`
 
     } catch (error) {
@@ -266,415 +237,99 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
     }
   }
 
-  async function searchWiki(keyword: string) {
-    const { domain } = getWikiDomain('zh')
-    try {
-      const searchUrl = `https://${domain}/api.php?action=opensearch&search=${encodeURIComponent(keyword)}&limit=${config.wiki.searchResultLimit}&variant=zh-cn`
-      const { data } = await axios.get(searchUrl, {
-        params: { variant: 'zh-cn' },
-        timeout: config.wiki.pageTimeout * 1000
-      })
-
-      const [_, titles, urls] = data
-      if (!titles?.length) return []
-      return titles.map((title, i) => ({ title, url: urls[i] }))
-    } catch (error) {
-      ctx.logger('mc-tools').warn(`Wiki搜索失败: ${error.message}`)
-      throw new Error('搜索失败，请稍后重试')
-    }
-  }
-
-  async function getWikiContent(pageUrl: string, lang: LangCode) {
-    const { variant } = getWikiDomain(lang)
-    const requestUrl = pageUrl.includes('?') ? pageUrl : `${pageUrl}?variant=${variant}`
-
-    const response = await axios.get(requestUrl, {
-      params: {
-        uselang: lang,
-        setlang: lang
-      }
-    })
-    const $ = cheerio.load(response.data)
-
-    const title = $('#firstHeading').text().trim()
-
-    // 初始化内容存储
-    const sections: { title?: string; content: string[] }[] = []
-    let currentSection: { title?: string; content: string[] } = { content: [] }
-
-    // 遍历主内容区域
-    $('#mw-content-text .mw-parser-output').children().each((_, element) => {
-      const el = $(element)
-
-      // 处理标题 (h2, h3, h4)
-      if (el.is('h2, h3, h4')) {
-        if (currentSection.content.length) {
-          const totalLength = currentSection.content.join(' ').length
-          if (totalLength >= config.wiki.minSectionLength) {
-            sections.push(currentSection)
-          }
-        }
-        currentSection = {
-          title: el.find('.mw-headline').text().trim(),
-          content: []
-        }
-      }
-      // 处理段落和列表
-      else if (el.is('p, ul, ol')) {
-        const text = el.text().trim()
-        // 跳过引用、图片说明和空段落
-        if (text && !text.startsWith('[') && !text.startsWith('跳转') && !el.hasClass('quote')) {
-          // 清理多余空白
-          const cleanText = text.replace(/\s+/g, ' ')
-          currentSection.content.push(cleanText)
-        }
-      }
-    })
-
-    // 添加最后一个部分(如果内容足够长)
-    if (currentSection.content.length) {
-      const totalLength = currentSection.content.join(' ').length
-      if (totalLength >= config.wiki.minSectionLength) {
-        sections.push(currentSection)
-      }
-    }
-
-    // 如果没有内容
-    if (!sections.length) {
-      const cleanUrl = pageUrl.split('?')[0]
-      return { title, content: `${title}：本页面目前没有内容。`, url: cleanUrl }
-    }
-
-    // 构建格式化的内容，对首段不限制字数，后续部分保持原有限制
-    const formattedContent = sections
-      .map((section, index) => {
-        const sectionText = index === 0
-          ? section.content.join(' ')
-          : section.content.join(' ').slice(0, config.wiki.sectionPreviewLength)
-        if (section.title) {
-          return `${section.title} | ${sectionText}${sectionText.length >= config.wiki.sectionPreviewLength && index > 0 ? '...' : ''}`
-        }
-        return sectionText
-      })
-      .join('\n')
-      .slice(0, config.wiki.totalPreviewLength)
-
-    const cleanUrl = pageUrl.split('?')[0]
-    return {
-      title,
-      content: formattedContent.length >= config.wiki.totalPreviewLength ? formattedContent + '...' : formattedContent,
-      url: cleanUrl
-    }
-  }
-
-  async function captureWiki(url: string, lang: LangCode) {
-    const context = await ctx.puppeteer.browser.createBrowserContext()
-    const page = await context.newPage()
-
-    try {
-      // 设置更合适的视口宽度以匹配页面设计
-      await page.setViewport({ width: 1000, height: 800, deviceScaleFactor: 1 })
-      await page.setExtraHTTPHeaders({
-        'Accept-Language': `${lang},${lang}-*;q=0.9,en;q=0.8`,
-        'Cookie': `language=${lang}; hl=${lang}; uselang=${lang}`
-      })
-
-      await page.goto(url, {
-        waitUntil: 'networkidle0',
-        timeout: config.wiki.pageTimeout * 1000
-      })
-
-      // 等待主要内容加载完成
-      await page.waitForSelector('#bodyContent', { timeout: config.wiki.pageTimeout * 1000 })
-
-      // 注入优化后的样式
-      await page.evaluate(() => {
-        const style = document.createElement('style')
-        style.textContent = `
-          body {
-            margin: 0;
-            background: white;
-            font-family: system-ui, -apple-system, sans-serif;
-          }
-          #content {
-            margin: 0;
-            padding: 20px;
-            box-sizing: border-box;
-            width: 1000px;
-          }
-          .notaninfobox {
-            float: none !important;
-            margin: 1em auto !important;
-            width: auto !重要;
-            max-width: 300px;
-          }
-          .mw-parser-output {
-            max-width: 960px;
-            margin: 0 auto;
-            line-height: 1.6;
-          }
-          img {
-            max-width: 100%;
-            height: auto;
-          }
-          table {
-            margin: 1em auto;
-            border-collapse: collapse;
-          }
-          td, th {
-            padding: 0.5em;
-            border: 1px solid #ccc;
-          }
-          pre {
-            padding: 1em;
-            background: #f5f5f5;
-            border-radius: 4px;
-            overflow-x: auto;
-          }
-        `
-        document.head.appendChild(style)
-
-        // 移除不必要的元素
-        const selectors = [
-          '.mw-editsection',  // 编辑按钮
-          '#mw-navigation',   // 导航菜单
-          '#footer',          // 页脚
-          '.noprint',         // 不打印的元素
-          '#toc',            // 目录
-          '.navbox',         // 导航框
-          '#siteNotice',     // 网站通知
-          '#contentSub',     // 内容子标题
-          '.mw-indicators',   // 右上角指示器
-          '.sister-wiki',     // 姊妹维基链接
-          '.external'         // 外部链接
-        ]
-        selectors.forEach(selector => {
-          document.querySelectorAll(selector).forEach(el => el.remove())
-        })
-      })
-
-      // 获取内容区域的尺寸
-      const dimensions = await page.evaluate(() => {
-        const content = document.querySelector('#content')
-        if (!content) return null
-        const rect = content.getBoundingClientRect()
-        return {
-          width: Math.min(1000, Math.ceil(rect.width)),
-          height: Math.ceil(rect.height)
-        }
-      })
-
-      if (!dimensions) {
-        throw new Error('无法获取页面内容')
-      }
-
-      // 调整视口以适应完整的内容高度
-      await page.setViewport({
-        width: dimensions.width,
-        height: dimensions.height,
-        deviceScaleFactor: 1
-      })
-
-      const screenshot = await page.screenshot({
-        type: 'png',
-        omitBackground: true,
-        fullPage: false
-      })
-
-      return {
-        image: screenshot,
-        height: dimensions.height
-      }
-
-    } finally {
-      await context.close()
-    }
-  }
-
-  function getWikiDomain(lang: LangCode) {
-    let domain: string
-    let variant: string = ''
-
-    if (lang.startsWith('zh')) {
-      domain = 'zh.minecraft.wiki'
-      variant = lang === 'zh' ? 'zh-cn' : 'zh-hk'
-    } else {
-      domain = lang === 'en' ? 'minecraft.wiki' : `${lang}.minecraft.wiki`
-    }
-
-    return { domain, variant }
-  }
-
-  function buildWikiUrl(title: string, domain: string, variant?: string, includeVariant = false) {
-    const baseUrl = `https://${domain}/w/${encodeURIComponent(title)}`
-    return includeVariant && variant ? `${baseUrl}?variant=${variant}` : baseUrl
-  }
-
   // Mod 功能相关代码
   const modwiki = ctx.command('modwiki', 'MCMOD 模组百科查询')
-    .usage('modwiki <关键词> 直接查询\nmodwiki.search <关键词> 搜索并选择\nmodwiki.link <ID> 查看相关链接\nmodwiki.relate <ID> 查看关联模组')
+    .usage('modwiki <关键词> - 直接查询\nmodwiki.search <关键词> - 搜索并选择\nmodwiki.link <ID> [type] - 查看相关链接\nmodwiki.relate <ID> [type] - 查看关联内容')
 
   modwiki.action(async ({ }, keyword) => {
     if (!keyword) return '请输入要查询的模组关键词'
-    if (!checkSearchCooldown()) return '搜索太频繁，请稍后再试'
+    if (!checkCooldown()) return '搜索太频繁，请稍后再试'
 
-    try {
-      const results = await axios.get(`${config.wiki.mcmodApiBase}/s/key=${encodeURIComponent(keyword)}`)
-      if (!results.data?.length) return '未找到相关模组'
-      return await getModInfo(results.data[0])
-    } catch (error) {
-      return handleError(error)
-    }
+    return await searchAndGetModInfo(keyword, true)
   })
 
   modwiki.subcommand('.search <keyword:text>', '搜索模组')
     .action(async ({ session }, keyword) => {
-      if (!checkSearchCooldown()) return '搜索太频繁，请稍后再试'
-
-      try {
-        const results = await axios.get(`${config.wiki.mcmodApiBase}/s/key=${encodeURIComponent(keyword)}`)
-        if (!results.data?.length) return '未找到相关模组'
-
-        const msg = '搜索结果：\n' + results.data
-          .map((r, i) => `${i + 1}. ${r.title}${r.data?.mcmod_id ? ` (ID: ${r.data.mcmod_id})` : ''}`)
-          .join('\n') + '\n请回复序号查看详情'
-
-        await session.send(msg)
-        const response = await session.prompt(10000)
-        if (!response) return '操作超时'
-
-        const index = parseInt(response) - 1
-        if (isNaN(index) || index < 0 || index >= results.data.length) {
-          return '请输入有效的序号'
-        }
-
-        return await getModInfo(results.data[index])
-      } catch (error) {
-        return handleError(error)
-      }
+      if (!checkCooldown()) return '搜索太频繁，请稍后再试'
+      return await searchAndGetModInfo(keyword, false, session)
     })
 
-  // 添加此辅助函数用于生成统一的标题行
-  function getTitleLine(data: any): string {
-    const shortName = data.short_name ? `${data.short_name}` : ''
-    const subtitle = data.subtitle || ''
-    return `${shortName}${subtitle}${subtitle ? ' | ' : ''}${data.title}`
+  modwiki.subcommand('.link <id:number> [type:string]', '查看相关链接')
+    .usage('type: class(模组) 或 modpack(整合包)')
+    .action(async ({ }, id, type) => await getModRelatedInfo(id, type, 'links'))
+
+  modwiki.subcommand('.relate <id:number> [type:string]', '查看关联内容')
+    .usage('type: class(模组) 或 modpack(整合包)')
+    .action(async ({ }, id, type) => await getModRelatedInfo(id, type, 'relations'))
+
+  // 封装的搜索和获取信息函数
+  async function searchAndGetModInfo(keyword: string, direct = false, session?: any) {
+    try {
+      const results = await searchMcmod(keyword, config.wiki.mcmodApiBase)
+      if (!results) return '未找到相关内容'
+
+      if (direct) return await formatModInfo(results[0], config)
+
+      const msg = results.map((r, i) => {
+        const id = r.data?.mcmod_id ? ` (ID: ${r.data.mcmod_id})` : ''
+        const type = r.address?.includes('/modpack/') ? '[整合包]' : '[模组]'
+        return `${i + 1}. ${type} ${r.title}${id}`
+      }).join('\n')
+
+      await session.send(`搜索结果：\n${msg}\n请回复序号查看详情`)
+      const response = await session.prompt(10000)
+
+      if (!response) return '操作超时'
+      const index = parseInt(response) - 1
+      if (isNaN(index) || index < 0 || index >= results.length) {
+        return '请输入有效的序号'
+      }
+
+      return await formatModInfo(results[index], config)
+    } catch (error) {
+      return handleError(error)
+    }
   }
 
-  modwiki.subcommand('.link <id:number> [type:string]', '查看模组/整合包相关链接')
-    .usage('type: class(默认) 或 modpack')
-    .action(async ({ }, id, type = 'class') => {
-      if (!checkSearchCooldown()) return '请求太频繁，请稍后再试'
-      if (type !== 'class' && type !== 'modpack') return '类型必须是 class 或 modpack'
-
-      try {
-        const detail = await axios.get(`${config.wiki.mcmodApiBase}/d/${type}/${id}`)
-        const data = detail.data
-
-        if (!data.related_links?.length) {
-          return `该${type === 'modpack' ? '整合包' : '模组'}没有相关链接`
-        }
-
-        const lines = [`${getTitleLine(data)} | 相关链接：\n`]
-        data.related_links.forEach(link => {
-          lines.push(`- ${link.text}: ${link.url}`)
-        })
-
-        return lines.join('\n')
-      } catch (error) {
-        return handleError(error)
-      }
-    })
-
-  modwiki.subcommand('.relate <id:number> [type:string]', '查看模组/整合包关联内容')
-    .usage('type: class(默认) 或 modpack')
-    .action(async ({ }, id, type = 'class') => {
-      if (!checkSearchCooldown()) return '请求太频繁，请稍后再试'
-      if (type !== 'class' && type !== 'modpack') return '类型必须是 class 或 modpack'
-
-      try {
-        const detail = await axios.get(`${config.wiki.mcmodApiBase}/d/${type}/${id}`)
-        const data = detail.data
-
-        if (!data.mod_relations) {
-          return `该${type === 'modpack' ? '整合包' : '模组'}没有关联内容`
-        }
-
-        const lines = [`${getTitleLine(data)} | 关联模组：`]
-
-        for (const [version, relations] of Object.entries(data.mod_relations)) {
-          if (!Array.isArray(relations) || relations.length === 0) continue
-
-          lines.push(`\n${version}：`)
-          for (const relation of relations) {
-            if (relation.mods?.length) {
-              lines.push(`- ${relation.relation_type}`)
-              relation.mods.forEach(mod => {
-                const modId = mod.link.match(/\/class\/(\d+)\.html/)?.[1] || ''
-                lines.push(`  • ${mod.name}${modId ? ` (ID: ${modId})` : ''}`)
-              })
-            }
-          }
-        }
-
-        return lines.join('\n')
-      } catch (error) {
-        return handleError(error)
-      }
-    })
-
-  async function getModInfo(result: any) {
-    if (!result.data?.mcmod_id) {
-      return `${result.title}\n${result.description}`
-    }
+  async function getModRelatedInfo(id: number, type = 'class', infoType: 'links' | 'relations') {
+    if (!checkCooldown()) return '请求太频繁，请稍后再试'
+    if (type !== 'class' && type !== 'modpack') return '类型必须是 class(模组) 或 modpack(整合包)'
 
     try {
-      const type = result.address?.includes('/modpack/') ? 'modpack' : 'class'
-      const detail = await axios.get(`${config.wiki.mcmodApiBase}/d/${type}/${result.data.mcmod_id}`)
-      const data = detail.data
+      const { data } = await axios.get(`${config.wiki.mcmodApiBase}/d/${type}/${id}`)
+      const title = getTitleLine(data)
 
-      const lines = []
+      if (infoType === 'links') {
+        if (!data.related_links?.length) return `该${type === 'modpack' ? '整合包' : '模组'}没有相关链接`
 
-      if (data.cover_image) {
-        lines.push(h.image(data.cover_image).toString())
+        return [
+          `${title} | 相关链接：`,
+          ...data.related_links.map(link => `- ${link.text}: ${link.url}`)
+        ].join('\n')
       }
 
-      lines.push(getTitleLine(data), '')
+      if (!data.mod_relations) return `该${type === 'modpack' ? '整合包' : '模组'}没有关联内容`
 
-      if (data.related_links?.length) {
-        lines.push('相关链接：')
-        data.related_links.forEach(link => {
-          lines.push(`- ${link.text}: ${link.url}`)
-        })
-        lines.push('')
-      }
+      const lines = [`${title} | 关联模组：`]
 
-      if (data.operating_environment) lines.push(`运行环境：${data.operating_environment}`)
+      Object.entries(data.mod_relations).forEach(([version, relations]) => {
+        if (!Array.isArray(relations) || !relations.length) return
 
-      if (data.supported_versions) {
-        const allVersions: string[] = []
+        lines.push(`\n${version}：`)
+        relations.forEach(relation => {
+          if (!relation.mods?.length) return
 
-        for (const [platform, versions] of Object.entries(data.supported_versions)) {
-          if (!Array.isArray(versions) || versions.length === 0) continue
-
-          const sortedVersions = versions.sort((a, b) => {
-            if (!/^\d/.test(a) || !/^\d/.test(b)) return 0
-            return b.localeCompare(a, undefined, { numeric: true })
+          lines.push(`- ${relation.relation_type}`)
+          relation.mods.forEach(mod => {
+            const modId = mod.link.match(/\/class\/(\d+)\.html/)?.[1] || ''
+            lines.push(`  • ${mod.name}${modId ? ` (ID: ${modId})` : ''}`)
           })
-
-          allVersions.push(`${platform}(${sortedVersions.join(', ')})`)
-        }
-
-        if (allVersions.length > 0) {
-          lines.push(`支持版本：${allVersions.join(' | ')}`)
-        }
-      }
-
-      if (result.address) lines.push(`详情页面：${result.address}`)
+        })
+      })
 
       return lines.join('\n')
     } catch (error) {
-      throw new Error(`获取${result.address?.includes('/modpack/') ? '整合包' : '模组'}详情失败: ${handleError(error)}`)
+      return handleError(error)
     }
   }
 
@@ -760,40 +415,22 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
 
         const lines: string[] = []
 
-        // 显示服务器图标（检查base64格式）
-        if (client && 'favicon' in client && typeof client.favicon === 'string' && client.favicon.startsWith('data:image/png;base64,')) {
+        if (client && 'favicon' in client && client.favicon?.startsWith('data:image/png;base64,')) {
           lines.push(h.image(client.favicon).toString())
         }
 
-        // 显示服务器地址
         const displayAddr = port === 25565 ? host : `${host}:${port}`
         if (!server) {
           lines.push(displayAddr)
         }
 
-        // 处理MOTD（增强类型检查）
-        if (client && 'description' in client && client.description) {
-          const extractText = (obj: any): string => {
-            if (!obj) return ''
-            if (typeof obj === 'string') return obj
-            if (typeof obj === 'object') {
-              if ('text' in obj) return obj.text
-              if ('extra' in obj && Array.isArray(obj.extra)) {
-                return obj.extra.map(extractText).join('')
-              }
-              if (Array.isArray(obj)) {
-                return obj.map(extractText).join('')
-              }
-            }
-            return ''
-          }
-          const motd = extractText(client.description).trim()
+        if ('description' in client && client.description) {
+          const motd = extractServerText(client.description).trim()
           if (motd) {
             lines.push(motd.replace(/§[0-9a-fk-or]/g, ''))
           }
         }
 
-        // 版本信息（增强类型检查）
         let versionInfo = '未知版本'
         if (client?.version) {
           const currentVersion = typeof client.version === 'object'
@@ -809,28 +446,15 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
             : currentVersion
         }
 
-        // 玩家信息（增强类型检查）
-        const players = ('players' in client ? client.players : { online: 0, max: 0 })
-        const playerCount = `${players.online ?? 0}/${players.max ?? 0}`
-        lines.push(`${versionInfo} | ${playerCount} | ${pingTime}ms`)
+        const players = 'players' in client ? formatServerPlayers(client.players) : { online: 0, max: 0 }
+        lines.push(`${versionInfo} | ${players.online}/${players.max} | ${pingTime}ms`)
 
-        // 服务器设置（增强类型检查和默认值）
-        const settings: string[] = []
-        if ('onlineMode' in client) {
-          settings.push(client.onlineMode ? '正版验证' : '离线模式')
-        }
-        if ('enforceSecureChat' in client) {
-          settings.push(client.enforceSecureChat ? '开启签名' : '无需签名')
-        }
-        if ('whitelist' in client) {
-          settings.push(client.whitelist ? '有白名单' : '无白名单')
-        }
+        const settings = getServerSettings(client)
         if (settings.length) {
           lines.push(settings.join(' | '))
         }
 
-        // 在线玩家列表（增强类型检查）
-        if (players?.sample?.length > 0) {
+        if (players.sample?.length > 0) {
           const playerList = players.sample
             .filter(p => p && typeof p.name === 'string')
             .map(p => p.name)
@@ -848,50 +472,4 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
         return `服务器查询失败: ${handleError(error)}`
       }
     })
-
-  function getVersionFromProtocol(protocol: number): string {
-    // 只保留指定的关键版本
-    const protocolMap: Record<number, string> = {
-      764: '1.20.1',
-      762: '1.19.4',
-      756: '1.18.2',
-      753: '1.17.1',
-      752: '1.16.5',
-      736: '1.15.2',
-      498: '1.14.4',
-      404: '1.13.2',
-      340: '1.12.2',
-      316: '1.11.2',
-      210: '1.10.2',
-      110: '1.9.4',
-      47: '1.8.9'
-    }
-
-    // 精确匹配
-    if (protocol in protocolMap) {
-      return protocolMap[protocol]
-    }
-
-    // 按协议号排序，用于版本推测
-    const protocols = Object.keys(protocolMap).map(Number).sort((a, b) => b - a)
-
-    // 版本推测逻辑
-    for (let i = 0; i < protocols.length; i++) {
-      const currentProtocol = protocols[i]
-      const nextProtocol = protocols[i + 1]
-
-      if (protocol > currentProtocol) {
-        // 高于最新已知版本        return `~${protocolMap[currentProtocol]}+`
-      } else if (nextProtocol && protocol > nextProtocol && protocol < currentProtocol) {
-        // 在两个已知版本之间
-        return `~${protocolMap[nextProtocol]}-${protocolMap[currentProtocol]}`
-      }
-    }
-
-    if (protocol < 47) {
-      return '~1.8.9'
-    }
-
-    return `未知版本(协议:${protocol})`
-  }
 }
