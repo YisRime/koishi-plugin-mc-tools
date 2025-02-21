@@ -13,12 +13,17 @@ import {
   parseServerMessage,
   parseServerPlayerStats,
   parseServerConfiguration,
-  fetchWikiArticleContent,
-  captureWikiPageScreenshot,
   checkMinecraftUpdate,
-  processWikiRequest,
   constructWikiUrl,
 } from './utils'
+import {
+  processModSearchResult,
+  processItemSearchResult,
+  processPostSearchResult,
+  processWikiRequest,
+  fetchWikiArticleContent,
+  captureWikiPageScreenshot,
+} from './wiki'
 
 export const name = 'mc-tools'
 export const inject = {required: ['puppeteer']}
@@ -32,6 +37,9 @@ export const Config: Schema<MinecraftToolsConfig> = Schema.object({
     pageTimeout: Schema.number()
       .default(30)
       .description('页面超时时间（秒）'),
+    searchTimeout: Schema.number()
+      .default(10)
+      .description('搜索选择超时时间（秒）'),
     searchResultLimit: Schema.number()
       .default(10)
       .description('搜索结果最大显示数量'),
@@ -125,7 +133,7 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
         }\n请回复序号查看对应内容\n（使用 -i 后缀以获取页面截图）`
 
         await session.send(searchResultMessage)
-        const response = await session.prompt(10000)
+        const response = await session.prompt(config.wiki.searchTimeout * 1000)
 
         if (!response) return '操作超时'
 
@@ -269,310 +277,8 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
       }
     })
 
-  // 通用的格式化详情函数
-  const formatModItemDetails = ($: cheerio.CheerioAPI, isModpack = false) => {
-    const contentSections: string[] = []
-
-    // 提取标题信息
-    const shortName = $('.short-name').first().text().trim()
-    const title = $('.class-title h3').first().text().trim()
-    const enTitle = $('.class-title h4').first().text().trim()
-
-    // 获取状态文本（仅适用于mod）
-    const modStatusLabels: string[] = []
-    if (!isModpack) {
-      $('.class-official-group .class-status').each((_, elem) => {
-        modStatusLabels.push($(elem).text().trim())
-      })
-      $('.class-official-group .class-source').each((_, elem) => {
-        modStatusLabels.push($(elem).text().trim())
-      })
-    }
-
-    // 组合标题
-    const formattedTitle = `${shortName} ${enTitle} | ${title}${!isModpack && modStatusLabels.length ? ` (${modStatusLabels.join(' | ')})` : ''}`
-    contentSections.push(formattedTitle)
-
-    // 提取封面图片
-    const coverImage = $('.class-cover-image img').first()
-    if (coverImage.length) {
-      const imgSrc = coverImage.attr('src')
-      if (imgSrc) {
-        const fullImgSrc = imgSrc.startsWith('http') ? imgSrc : `https:${imgSrc}`
-        contentSections.push(h.image(fullImgSrc).toString())
-      }
-    }
-
-    // 提取信息
-    $('.class-info-left .col-lg-4').each((_, elem) => {
-      const text = $(elem).text().trim()
-        .replace(/\s+/g, ' ')
-        .replace(/：/g, ': ')
-
-      if (isModpack) {
-        // 整合包只保留特定信息
-        if (text.includes('整合包类型') ||
-            text.includes('运作方式') ||
-            text.includes('打包方式')) {
-          contentSections.push(text)
-        }
-      } else {
-        // mod只保留运行环境信息
-        if (text.includes('运行环境')) {
-          contentSections.push(text)
-        }
-      }
-    })
-
-    return contentSections
-  }
-
-  // 通用的版本信息格式化函数
-  const formatModVersionInfo = ($: cheerio.CheerioAPI, isModpack = false) => {
-    const contentSections: string[] = []
-
-    if (isModpack) {
-      // 整合包版本信息处理
-      const versionInfo: string[] = []
-      $('.mcver ul li').each((_, elem) => {
-        const text = $(elem).text().trim()
-        if (text && !text.includes('Forge:') && text.match(/^\d/)) {
-          versionInfo.push(text)
-        }
-      })
-
-      if (versionInfo.length) {
-        contentSections.push('支持版本:')
-        contentSections.push(versionInfo.join(', '))
-      }
-    } else {
-      // MOD版本信息处理
-      const versionInfo: Record<string, string[]> = {}
-      $('.mcver ul').each((_, elem) => {
-        const loaderText = $(elem).find('li:first').text().trim()
-        const versions: string[] = []
-
-        $(elem).find('a').each((_, verElem) => {
-          const version = $(verElem).text().trim()
-          if (version.match(/^\d/)) {
-            versions.push(version)
-          }
-        })
-
-        if (versions.length > 0) {
-          const loader = loaderText.split(':')[0].trim()
-          versionInfo[loader] = versions
-        }
-      })
-
-      const versionTexts = Object.entries(versionInfo)
-        .filter(([_, vers]) => vers.length > 0)
-        .map(([loader, vers]) => `${loader}: ${vers.join('\n')}`)
-
-      if (versionTexts.length) {
-        contentSections.push('支持版本:')
-        contentSections.push(versionTexts.join('\n'))
-      }
-    }
-
-    return contentSections
-  }
-
-  // 修改 formatModContent 函数
-  const formatModDescription = ($: cheerio.CheerioAPI, totalPreviewLength: number, type: 'mod' | 'modpack' | 'item' = 'mod') => {
-    const contentSections: string[] = []
-
-    if (type === 'item') {
-      // 处理物品名称和图标
-      const itemName = $('.itemname .name h5').text().trim()
-      if (itemName) contentSections.push(itemName)
-
-      const itemIcon = $('.item-info-table img').first()
-      if (itemIcon.length) {
-        const imgSrc = itemIcon.attr('src')
-        if (imgSrc) {
-          const fullImgSrc = imgSrc.startsWith('http') ? imgSrc : `https:${imgSrc}`
-          contentSections.push(h.image(fullImgSrc).toString())
-        }
-      }
-
-      // 添加合成表处理
-      $('.TableBlock').each((_, elem) => {
-        const $table = $(elem)
-        const bgImage = $table.css('background-image')
-        if (bgImage) {
-          // 获取合成表的项目
-          const items: {x: number, y: number, img: string}[] = []
-          $table.find('.item-table-hover').each((_, item) => {
-            const $item = $(item)
-            const style = $item.attr('style') || ''
-            const marginMatch = style.match(/margin:(\d+)px\s+0\s+0\s+(\d+)px/)
-            if (marginMatch) {
-              const img = $item.find('img').first()
-              const imgSrc = img.attr('src')
-              if (imgSrc) {
-                items.push({
-                  x: parseInt(marginMatch[2]),
-                  y: parseInt(marginMatch[1]),
-                  img: imgSrc.startsWith('http') ? imgSrc : `https:${imgSrc}`
-                })
-              }
-            }
-          })
-
-          if (items.length > 0) {
-            // TODO: 这里可以添加合成表整体截图的逻辑
-            contentSections.push('合成配方:')
-            for (const item of items) {
-              contentSections.push(h.image(item.img).toString())
-            }
-          }
-        }
-      })
-
-      contentSections.push('\n物品介绍:')
-    } else {
-      // 处理 mod/整合包详情
-      contentSections.push(
-        ...formatModItemDetails($, type === 'modpack'),
-        ...formatModVersionInfo($, type === 'modpack')
-      )
-    }
-
-    // 处理内容区域
-    const contentArea = type === 'item' ? $('.item-content.common-text') : $('.common-text')
-
-    if (contentArea.length) {
-      if (type !== 'item') {
-        contentSections.push(`\n${type === 'modpack' ? '整合包' : '模组'}介绍:`)
-      }
-
-      let totalLength = 0
-      let skipNext = false
-
-      contentArea.children().each((_, elem) => {
-        const $elem = $(elem)
-
-        // 统一应用字数限制
-        if (totalLength >= totalPreviewLength) return false
-
-        if (skipNext) {
-          skipNext = false
-          return
-        }
-
-        // 处理图片
-        const figure = $elem.find('.figure')
-        if (figure.length) {
-          const img = figure.find('img')
-          if (img.length) {
-            let imgSrc = img.attr('data-src') || img.attr('src')
-            if (imgSrc && !imgSrc.startsWith('http')) {
-              imgSrc = `https:${imgSrc}`
-            }
-            if (imgSrc) {
-              contentSections.push(h.image(imgSrc).toString())
-            }
-          }
-          return
-        }
-
-        if ($elem.is('p, ol, ul')) {
-          const title = $elem.find('span.common-text-title')
-          if (title.length) {
-            const nextP = $elem.next('p')
-            if (nextP.length) {
-              const nextText = nextP.clone()
-                .find('script,.figure').remove().end()
-                .text()
-                .trim()
-                .replace(/\s+/g, ' ')
-                .replace(/\[(\w+)\]/g, '')
-
-              if (nextText) {
-                let combinedText = `『${title.text().trim()}』${nextText}`
-                const remainingChars = totalPreviewLength - totalLength
-                if (combinedText.length > remainingChars) {
-                  combinedText = combinedText.slice(0, remainingChars) + '......'
-                  totalLength = totalPreviewLength
-                } else {
-                  totalLength += combinedText.length
-                }
-                contentSections.push(combinedText)
-                skipNext = true
-              } else {
-                contentSections.push(`『${title.text().trim()}』`)
-              }
-              return
-            } else {
-              contentSections.push(`『${title.text().trim()}』`)
-              return
-            }
-          }
-
-          let text = $elem.clone()
-            .find('script,.figure').remove().end()
-            .text()
-            .trim()
-            .replace(/\s+/g, ' ')
-            .replace(/\[(\w+)\]/g, '')
-
-          if (text) {
-            const remainingChars = totalPreviewLength - totalLength
-            if (text.length > remainingChars) {
-              text = text.slice(0, remainingChars) + '......'
-              totalLength = totalPreviewLength
-            } else {
-              totalLength += text.length
-            }
-            contentSections.push(text)
-          }
-        }
-      })
-    }
-
-    return contentSections
-  }
-
-  // 修改搜索结果处理函数
-  const processModSearchResult = async (url: string) => {
-    const response = await axios.get(url)
-    const $ = cheerio.load(response.data)
-    const contentSections: string[] = []
-    const isModpack = url.includes('/modpack/')
-
-    contentSections.push(
-      ...formatModItemDetails($, isModpack),
-      ...formatModVersionInfo($, isModpack),
-      ...formatModDescription($, config.wiki.totalPreviewLength, isModpack ? 'modpack' : 'mod')
-    )
-
-    contentSections.push(`\n详细内容: ${url}`)
-
-    return contentSections
-      .filter(Boolean)
-      .join('\n')
-      .replace(/\n{3,}/g, '\n\n')
-      .trim()
-  }
-
-  // 修改 processItemSearchResult 函数以使用新的 formatModDescription
-  const processItemSearchResult = async (url: string) => {
-    const response = await axios.get(url)
-    const $ = cheerio.load(response.data)
-    const contentSections = formatModDescription($, config.wiki.totalPreviewLength, 'item')
-
-    contentSections.push(`\n详细内容: ${url}`)
-
-    return contentSections
-      .filter(Boolean)
-      .join('\n')
-      .replace(/\n{3,}/g, '\n\n')
-      .trim()
-  }
-
   // 修改 modwiki 命令实现
-  const modWikiCommand = ctx.command('modwiki <keyword:text>', 'MCMOD搜索(支持模组/整合包/物品)')
+  const modWikiCommand = ctx.command('modwiki <keyword:text>', 'MCMOD搜索(支持模组/整合包/物品/教程)')
     .action(async ({ }, keyword) => {
       if (!keyword) return '请输入要查询的关键词'
 
@@ -585,15 +291,18 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
         const modMatch = searchHtml.match(/href="(https:\/\/www\.mcmod\.cn\/class\/\d+\.html)"/)
         const modpackMatch = searchHtml.match(/href="(https:\/\/www\.mcmod\.cn\/modpack\/\d+\.html)"/)
         const itemMatch = searchHtml.match(/href="(https:\/\/www\.mcmod\.cn\/item\/\d+\.html)"/)
+        const postMatch = searchHtml.match(/href="(https:\/\/www\.mcmod\.cn\/post\/\d+\.html)"/)
 
-        const detailUrl = modMatch?.[1] || modpackMatch?.[1] || itemMatch?.[1]
+        const detailUrl = modMatch?.[1] || modpackMatch?.[1] || itemMatch?.[1] || postMatch?.[1]
         if (!detailUrl) return '未找到相关内容'
 
         // 根据URL类型选择相应的处理函数
-        if (detailUrl.includes('/item/')) {
-          return await processItemSearchResult(detailUrl)
+        if (detailUrl.includes('/post/')) {
+          return await processPostSearchResult(detailUrl, config.wiki.totalPreviewLength)
+        } else if (detailUrl.includes('/item/')) {
+          return await processItemSearchResult(detailUrl, config.wiki.totalPreviewLength)
         } else {
-          return await processModSearchResult(detailUrl)
+          return await processModSearchResult(detailUrl, config.wiki.totalPreviewLength)
         }
 
       } catch (error) {
@@ -626,6 +335,8 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
             type = 'MOD'
           } else if (url.includes('/item/')) {
             type = '物品'
+          } else if (url.includes('/post/')) {
+            type = '教程'
           }
 
           let desc = config.wiki.searchDescLength > 0 ? $item.find('.body').text().trim()
@@ -652,11 +363,11 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
 
         const searchResultMessage = searchResults
           .slice(0, config.wiki.searchResultLimit)
-          .map((r, i) => `${i + 1}. [${r.type}] ${r.title}${r.desc ? `\n  ${r.desc}` : ''}`)
+          .map((r, i) => `${i + 1}. ${r.title}${r.desc ? `\n    ${r.desc}` : ''}`)
           .join('\n')
 
         await session.send(`MCMOD 搜索结果：\n${searchResultMessage}\n请回复序号查看详细内容`)
-        const response = await session.prompt(10000)
+        const response = await session.prompt(config.wiki.searchTimeout * 1000)
 
         if (!response) return '操作超时'
 
@@ -667,10 +378,12 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
 
         const selectedResult = searchResults[index]
         // 根据类型选择处理函数
-        if (selectedResult.url.includes('/item/')) {
-          return await processItemSearchResult(selectedResult.url)
+        if (selectedResult.url.includes('/post/')) {
+          return await processPostSearchResult(selectedResult.url, config.wiki.totalPreviewLength)
+        } else if (selectedResult.url.includes('/item/')) {
+          return await processItemSearchResult(selectedResult.url, config.wiki.totalPreviewLength)
         } else {
-          return await processModSearchResult(selectedResult.url)
+          return await processModSearchResult(selectedResult.url, config.wiki.totalPreviewLength)
         }
 
       } catch (error) {
