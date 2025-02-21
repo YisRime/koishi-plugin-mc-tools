@@ -294,7 +294,8 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
     if (coverImage.length) {
       const imgSrc = coverImage.attr('src')
       if (imgSrc) {
-        sections.push(h.image(imgSrc).toString())
+        const fullImgSrc = imgSrc.startsWith('http') ? imgSrc : `https:${imgSrc}`
+        sections.push(h.image(fullImgSrc).toString())
       }
     }
 
@@ -442,7 +443,8 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
     if (coverImage.length) {
       const imgSrc = coverImage.attr('src')
       if (imgSrc) {
-        sections.push(h.image(imgSrc).toString())
+        const fullImgSrc = imgSrc.startsWith('http') ? imgSrc : `https:${imgSrc}`
+        sections.push(h.image(fullImgSrc).toString())
       }
     }
 
