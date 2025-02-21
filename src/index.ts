@@ -11,19 +11,14 @@ import {
   fetchMinecraftVersions,
 } from './utils'
 import {
-  processModSearchResult,
-  processItemSearchResult,
-  processPostSearchResult,
   searchMCMOD,
   processMCMODContent
 } from './modwiki'
 import {
-  constructWikiUrl,
-  getWikiConfiguration,
   processWikiRequest,
-  fetchWikiArticleContent,
-  captureWikiPageScreenshot,
-} from './wiki'
+  getWikiConfiguration,
+  constructUrl,
+} from './mcwiki'
 
 export const name = 'mc-tools'
 export const inject = {required: ['puppeteer']}
@@ -33,92 +28,71 @@ export const Config: Schema<MinecraftToolsConfig> = Schema.object({
   wiki: Schema.object({
     defaultLanguage: Schema.union(Object.keys(LANGUAGES) as LangCode[])
       .default('zh')
-      .description('默认的 Wiki 浏览语言'),
+      .description('Wiki 显示语言'),
     pageTimeout: Schema.number()
       .default(30)
-      .description('页面超时时间（秒）'),
+      .description('Wiki 页面加载超时时间，单位：秒'),
     searchTimeout: Schema.number()
       .default(10)
-      .description('搜索选择超时时间（秒）'),
+      .description('搜索结果选择等待时间，超时将取消操作，单位：秒'),
     searchResultLimit: Schema.number()
       .default(10)
-      .description('搜索结果最大显示数量'),
+      .description('Wiki 和 MCMOD 搜索结果的最大显示数量'),
     minSectionLength: Schema.number()
       .default(12)
-      .description('段落最小字数'),
+      .description('Wiki 段落的最小字数，低于此字数的段落将被忽略'),
     sectionPreviewLength: Schema.number()
       .default(50)
-      .description('非首段预览字数'),
+      .description('除 Wiki 首段外，其他段落的预览字数上限'),
     totalPreviewLength: Schema.number()
       .default(500)
-      .description('总预览字数限制'),
+      .description('整个预览内容的总字数上限'),
     searchDescLength: Schema.number()
       .default(60)
-      .description('MCMOD搜索结果描述的最大字数'),
+      .description('MCMOD 搜索结果中每个条目描述的最大字数'),
     imageEnabled: Schema.boolean()
       .default(true)
-      .description('是否启用图片显示'),
-    imagePriority: Schema.number()
-      .default(1)
-      .description('图片显示优先级(0-3)'),
-    imageMaxWidth: Schema.number()
-      .default(800)
-      .description('图片最大宽度'),
-    imageQuality: Schema.number()
-      .default(80)
-      .description('图片质量(1-100)'),
-    cleanupTags: Schema.array(Schema.string())
-      .default(['script', 'style', 'meta'])
-      .description('需要清理的HTML标签')
-  }).description('Wiki与模组百科相关设置'),
+      .description('是否启用 Wiki 页面截图功能')
+  }).description('Minecraft Wiki 与 MCMOD 查询相关设置'),
 
   versionCheck: Schema.object({
     enabled: Schema.boolean()
       .default(false)
-      .description('是否启用版本更新检查'),
+      .description('是否启用 Minecraft 版本更新检查功能'),
     groups: Schema.array(Schema.string())
       .default([])
-      .description('接收版本更新通知的群组 ID'),
+      .description('接收版本更新通知的群组 ID 列表'),
     interval: Schema.number()
       .default(60)
-      .description('版本检查间隔时间（分钟）'),
+      .description('版本检查间隔时间，单位：分钟'),
     notifyOnSnapshot: Schema.boolean()
       .default(true)
-      .description('快照版本更新时通知'),
+      .description('是否在发现新快照版本时发送通知'),
     notifyOnRelease: Schema.boolean()
       .default(true)
-      .description('正式版本更新时通知')
-  }).description('版本更新检查设置'),
+      .description('是否在发现新正式版本时发送通知')
+  }).description('Minecraft 版本更新检查设置'),
 
   server: Schema.object({
     host: Schema.string()
-      .description('默认服务器地址')
+      .description('默认的 Minecraft 服务器地址，当未指定地址时使用此值')
       .default('localhost'),
     port: Schema.number()
-      .description('默认服务器端口')
+      .description('默认的服务器端口，标准端口为 25565')
       .default(25565),
-    queryTimeout: Schema.number()
-      .default(5)
-      .description('查询超时时间(秒)'),
-    retryAttempts: Schema.number()
-      .default(2)
-      .description('重试次数'),
-    retryDelay: Schema.number()
-      .default(1)
-      .description('重试间隔(秒)'),
     showPlayers: Schema.boolean()
       .default(true)
-      .description('显示在线玩家'),
+      .description('是否显示在线玩家列表'),
     showSettings: Schema.boolean()
       .default(true)
-      .description('显示服务器设置'),
+      .description('是否显示服务器设置（如正版验证、白名单状态等）'),
     showPing: Schema.boolean()
       .default(true)
-      .description('显示延迟信息'),
+      .description('是否显示服务器延迟时间'),
     showIcon: Schema.boolean()
       .default(true)
-      .description('显示服务器图标')
-  }).description('默认的 Minecraft 服务器配置')
+      .description('是否显示服务器图标（如果有）')
+  }).description('Minecraft 服务器查询相关设置')
 })
 
 /**
@@ -127,117 +101,195 @@ export const Config: Schema<MinecraftToolsConfig> = Schema.object({
  * @param {MinecraftToolsConfig} config - 插件配置
  */
 export function apply(ctx: Context, config: MinecraftToolsConfig) {
-  const userLangs = new Map<string, LangCode>()
-  const versions = { snapshot: '', release: '' }
+  const state = {
+    versions: { snapshot: '', release: '' }
+  }
 
-  // Wiki 功能相关代码
+  // 分离命令处理逻辑
+  setupWikiCommands(ctx, config)
+  setupModWikiCommands(ctx, config)
+  setupServerCommands(ctx, config)
+  setupVersionCommands(ctx)
+
+  // 版本更新检查
+  if (config.versionCheck.enabled && config.versionCheck.groups.length) {
+    setupVersionCheck(ctx, config, state.versions)
+  }
+}
+
+function setupWikiCommands(ctx: Context, config: MinecraftToolsConfig) {
   const mcwiki = ctx.command('mcwiki', 'Minecraft Wiki 查询')
-    .usage(`mcwiki <关键词> - 直接查询内容\nmcwiki.search <关键词> - 搜索并选择条目\nmcwiki.shot <关键词> - 获取页面截图\nmcwiki.lang <语言> - 设置显示语言`)
+    .usage(`mcwiki <关键词> - 直接查询内容\nmcwiki.search <关键词> - 搜索并选择条目\nmcwiki.shot <关键词> - 获取页面截图`)
 
-  mcwiki.subcommand('.lang [language:string]', '设置Wiki显示语言')
-    .action(({ session }, language) => {
-      if (!language) {
-        const currentLang = userLangs.get(session.userId) || config.wiki.defaultLanguage
-        const langList = Object.entries(LANGUAGES)
-          .map(([code, name]) => `${code}: ${name}${code === currentLang ? ' (当前)' : ''}`)
-          .join('\n')
-        return `当前支持的语言：\n${langList}`
+  mcwiki.action(async ({ }, keyword) => {
+      try {
+        const result = await processWikiRequest(keyword, config)
+        if (typeof result === 'string') {
+          return h.text(result)
+        } else if (result && typeof result.getImage === 'function') {
+          const { image } = await result.getImage()
+          return h.image(image, 'image/png')
+        }
+        return h.text('')
+      } catch (error) {
+        return h.text(error.message)
       }
-
-      if (!(language in LANGUAGES)) {
-        return `不支持的语言代码。支持的语言代码：${Object.keys(LANGUAGES).join(', ')}`
-      }
-
-      userLangs.set(session.userId, language as LangCode)
-      return `已将 Wiki 显示语言设置为${LANGUAGES[language as LangCode]}`
     })
-
-  mcwiki.action(async ({ session }, keyword) => {
-    try {
-      const result = await processWikiRequest(keyword, session.userId, config, ctx, userLangs)
-      return result
-    } catch (error) {
-      return error.message
-    }
-  })
 
   mcwiki.subcommand('.search <keyword:text>', '搜索 Wiki 页面')
-    .action(async ({ session }, keyword) => {
-      try {
-        const searchResult = await processWikiRequest(keyword, session.userId, config, ctx, userLangs, 'search') as any
-        if (typeof searchResult === 'string') return searchResult
+      .action(async ({ session }, keyword) => {
+        try {
+          const searchResult = await processWikiRequest(keyword, config, ctx, 'search') as any
+          if (typeof searchResult === 'string') return h.text(searchResult)
 
-        const { results, domain, lang } = searchResult
-        const { variant } = getWikiConfiguration(lang)
+          const { results, domain, variant } = searchResult
+          const wikiConfig = { domain, variant, baseApiUrl: '' }
+          const searchResultMessage = `Wiki 搜索结果：\n${
+            results.map((r, i) => `${i + 1}. ${r.title}`).join('\n')
+          }\n请回复序号查看对应内容\n（使用 -i 后缀以获取页面截图）`
 
-        const searchResultMessage = `Wiki 搜索结果：\n${
-          results.map((r, i) => `${i + 1}. ${r.title}`).join('\n')
-        }\n请回复序号查看对应内容\n（使用 -i 后缀以获取页面截图）`
+          await session.send(searchResultMessage)
+          const response = await session.prompt(config.wiki.searchTimeout * 1000)
 
-        await session.send(searchResultMessage)
-        const response = await session.prompt(config.wiki.searchTimeout * 1000)
+          if (!response) return h.text('操作超时')
 
-        if (!response) return '操作超时'
+          const [input, flag] = response.split('-')
+          const index = parseInt(input) - 1
 
-        const [input, flag] = response.split('-')
-        const index = parseInt(input) - 1
-
-        if (isNaN(index) || index < 0 || index >= results.length) {
-          return '请输入有效的序号'
-        }
-
-        const result = results[index]
-        const pageUrl = constructWikiUrl(result.title, domain, variant, true)
-        const displayUrl = constructWikiUrl(result.title, domain)
-
-        if (flag?.trim() === 'i') {
-          await session.send(`正在获取页面...\n完整内容：${displayUrl}`)
-          const context = await ctx.puppeteer.browser.createBrowserContext()
-          const page = await context.newPage()
-          try {
-            const { image } = await captureWikiPageScreenshot(page, pageUrl, lang, config)
-            return h.image(image, 'image/png')
-          } finally {
-            await context.close()
+          if (isNaN(index) || index < 0 || index >= results.length) {
+            return h.text('请输入有效的序号')
           }
+
+          const result = results[index]
+
+          if (flag?.trim() === 'i') {
+            if (!config.wiki.imageEnabled) {
+              return h.text('图片功能已禁用')
+            }
+            await session.send(`正在获取页面...\n完整内容：${constructUrl(wikiConfig, `/w/${encodeURIComponent(result.title)}`)}`)
+            const resultImage = await processWikiRequest(keyword, config, ctx, 'image')
+            if (typeof resultImage === 'string') {
+              return h.text(resultImage)
+            } else if (resultImage && typeof resultImage.getImage === 'function') {
+              const { image } = await resultImage.getImage()
+              return h.image(image, 'image/png')
+            }
+            return h.text('')
+          }
+
+          const wikiDetails = await processWikiRequest(keyword, config)
+          if (typeof wikiDetails === 'string') {
+            return h.text(wikiDetails)
+          } else if (wikiDetails && typeof wikiDetails.getImage === 'function') {
+            const { image } = await wikiDetails.getImage()
+            return h.image(image, 'image/png')
+          }
+          return h.text('')
+        } catch (error) {
+          return h.text(error.message)
         }
+      })
 
-        const { title, content, url } = await fetchWikiArticleContent(pageUrl, lang, config)
-        return `『${title}』${content}\n详细内容：${url}`
+  mcwiki.subcommand('.shot <keyword:text>', '获取 Wiki 页面截图')
+      .action(async ({ session }, keyword) => {
+        if (!config.wiki.imageEnabled) {
+          return h.text('图片功能已禁用')
+        }
+        try {
+          const result = await processWikiRequest(keyword, config, ctx, 'image') as any
+          if (typeof result === 'string') return h.text(result)
 
+          await session.send(`正在获取页面...\n完整内容：${result.url}`)
+          const { image } = await result.getImage()
+          return h.image(image, 'image/png')
+        } catch (error) {
+          return h.text(error.message)
+        }
+      })
+}
+
+function setupModWikiCommands(ctx: Context, config: MinecraftToolsConfig) {
+  const modWikiCommand = ctx.command('modwiki <keyword:text>', 'MCMOD搜索(支持模组/整合包/物品/教程)')
+    .usage(`modwiki <关键词> - 直接查询内容\nmodwiki.search <关键词> - 搜索并选择条目\nmodwiki.shot <关键词> - 获取页面截图`)
+    .action(async ({ }, keyword) => {
+      if (!keyword) return h.text('请输入要查询的关键词')
+
+      try {
+        const results = await searchMCMOD(keyword, config.wiki)
+        if (!results.length) return h.text('未找到相关内容')
+
+        const result = results[0]
+        const content = await processMCMODContent(result.url, config.wiki)
+        if (typeof content === 'string') {
+          return h.text(content)
+        } else if (content && typeof content.getImage === 'function') {
+          const { image } = await content.getImage()
+          return h.image(image, 'image/png')
+        }
+        return h.text('')
       } catch (error) {
-        return error.message
+        return h.text(formatErrorMessage(error))
       }
     })
 
-  mcwiki.subcommand('.shot <keyword:text>', '获取 Wiki 页面截图')
+  modWikiCommand.subcommand('.shot <keyword:text>', '获取 MCMOD 页面截图')
     .action(async ({ session }, keyword) => {
       if (!config.wiki.imageEnabled) {
         return '图片功能已禁用'
       }
+
       try {
-        const result = await processWikiRequest(keyword, session.userId, config, ctx, userLangs, 'image') as any
-        if (typeof result === 'string') return result
+        const results = await searchMCMOD(keyword, config.wiki)
+        if (!results.length) return '未找到相关内容'
 
-        // 先发送URL
-        await session.send(`正在获取页面...\n完整内容：${result.url}`)
-
-        // 然后获取并发送图片
+        await session.send(`正在获取页面...\n完整内容：${results[0].url}`)
+        const result = await processMCMODContent(results[0].url, config.wiki, ctx, 'image') as any
         const { image } = await result.getImage()
         return h.image(image, 'image/png')
       } catch (error) {
-        return error.message
+        return formatErrorMessage(error)
       }
     })
 
-  // 版本更新检查
-  if (config.versionCheck.enabled && config.versionCheck.groups.length) {
-    checkMinecraftUpdate(versions, ctx, config)
-    setInterval(() => checkMinecraftUpdate(versions, ctx, config), config.versionCheck.interval * 60 * 1000)
-  }
+  modWikiCommand.subcommand('.search <keyword:text>', 'MCMOD搜索并返回列表')
+      .action(async ({ session }, keyword) => {
+        if (!keyword) return h.text('请输入要查询的关键词')
 
-  // 服务器状态查询命令改为
-  ctx.command('mcinfo [server]', '查询 MC 服务器状态')
+        try {
+          const results = await searchMCMOD(keyword, config.wiki)
+          if (!results.length) return h.text('未找到相关内容')
+
+          const searchResultMessage = results
+            .slice(0, config.wiki.searchResultLimit)
+            .map((r, i) => `${i + 1}. ${r.title}${r.desc ? `\n    ${r.desc}` : ''}`)
+            .join('\n')
+
+          await session.send(`MCMOD 搜索结果：\n${searchResultMessage}\n请回复序号查看详细内容`)
+          const response = await session.prompt(config.wiki.searchTimeout * 1000)
+
+          if (!response) return h.text('操作超时')
+
+          const index = parseInt(response) - 1
+          if (isNaN(index) || index < 0 || index >= results.length) {
+            return h.text('请输入有效的序号')
+          }
+
+          const content = await processMCMODContent(results[index].url, config.wiki)
+          if (typeof content === 'string') {
+            return h.text(content)
+          } else if (content && typeof content.getImage === 'function') {
+            const { image } = await content.getImage()
+            return h.image(image, 'image/png')
+          }
+          return h.text('')
+        } catch (error) {
+          return h.text(formatErrorMessage(error))
+        }
+      })
+}
+
+function setupServerCommands(ctx: Context, config: MinecraftToolsConfig) {
+  ctx.command('mcinfo [server]', '查询 Minecraft 服务器状态')
     .action(async (_, server) => {
       let host = config.server.host
       let port = config.server.port
@@ -248,14 +300,14 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
         if (parts[1]) {
           const parsedPort = parseInt(parts[1])
           if (isNaN(parsedPort) || parsedPort < 1 || parsedPort > 65535) {
-            return '端口必须是1-65535之间的数字'
+            return '服务器端口必须是 1-65535 之间的数字'
           }
           port = parsedPort
         }
       }
 
       const displayAddr = port === 25565 ? host : `${host}:${port}`
-      const result = await queryServerStatus(host, port, config)
+      const result = await queryServerStatus(host, port, config.server)
 
       if (!result.success) {
         return `服务器查询失败: ${result.error}`
@@ -263,60 +315,10 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
 
       return !server ? `${displayAddr}\n${result.data}` : result.data
     })
+}
 
-  // 修改 modwiki 命令实现
-  const modWikiCommand = ctx.command('modwiki <keyword:text>', 'MCMOD搜索(支持模组/整合包/物品/教程)')
-    .action(async ({ }, keyword) => {
-      if (!keyword) return '请输入要查询的关键词'
-
-      try {
-        const results = await searchMCMOD(keyword, config.wiki)
-        if (!results.length) return '未找到相关内容'
-
-        const result = results[0]
-        const contentProcessor = result.url.includes('/post/') ? processPostSearchResult :
-                               result.url.includes('/item/') ? processItemSearchResult :
-                               processModSearchResult
-
-        return await contentProcessor(result.url, config.wiki)
-      } catch (error) {
-        return formatErrorMessage(error)
-      }
-    })
-
-  // 修改 search 子命令实现
-  modWikiCommand.subcommand('.search <keyword:text>', 'MCMOD搜索并返回列表')
-    .action(async ({ session }, keyword) => {
-      if (!keyword) return '请输入要查询的关键词'
-
-      try {
-        const results = await searchMCMOD(keyword, config.wiki)
-        if (!results.length) return '未找到相关内容'
-
-        const searchResultMessage = results
-          .slice(0, config.wiki.searchResultLimit)
-          .map((r, i) => `${i + 1}. ${r.title}${r.desc ? `\n    ${r.desc}` : ''}`)
-          .join('\n')
-
-        await session.send(`MCMOD 搜索结果：\n${searchResultMessage}\n请回复序号查看详细内容`)
-        const response = await session.prompt(config.wiki.searchTimeout * 1000)
-
-        if (!response) return '操作超时'
-
-        const index = parseInt(response) - 1
-        if (isNaN(index) || index < 0 || index >= results.length) {
-          return '请输入有效的序号'
-        }
-
-        return await processMCMODContent(results[index].url, config.wiki)
-
-      } catch (error) {
-        return formatErrorMessage(error)
-      }
-    })
-
-  // 添加获取最新版本命令
-  ctx.command('mcver', '获取 Minecraft 最新版本')
+function setupVersionCommands(ctx: Context) {
+  ctx.command('mcver', '获取 Minecraft 最新版本信息')
     .action(async () => {
       try {
         const { latest, release } = await fetchMinecraftVersions()
@@ -324,7 +326,12 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
 
         return `Minecraft 最新版本：\n正式版：${release.id}（${formatDate(release.releaseTime)}）\n快照版：${latest.id}（${formatDate(latest.releaseTime)}）`
       } catch (error) {
-        return `获取版本信息失败：${formatErrorMessage(error)}`
+        return `Minecraft 版本信息获取失败：${formatErrorMessage(error)}`
       }
     })
+}
+
+function setupVersionCheck(ctx: Context, config: MinecraftToolsConfig, versions: any) {
+  checkMinecraftUpdate(versions, ctx, config)
+  setInterval(() => checkMinecraftUpdate(versions, ctx, config), config.versionCheck.interval * 60 * 1000)
 }
