@@ -379,18 +379,81 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
   }
 
   // 修改 formatModContent 函数
-  const formatModDescription = ($: cheerio.CheerioAPI, totalPreviewLength: number, isModpack = false) => {
+  const formatModDescription = ($: cheerio.CheerioAPI, totalPreviewLength: number, type: 'mod' | 'modpack' | 'item' = 'mod') => {
     const contentSections: string[] = []
-    const contentArea = $('.common-text')
+
+    if (type === 'item') {
+      // 处理物品名称和图标
+      const itemName = $('.itemname .name h5').text().trim()
+      if (itemName) contentSections.push(itemName)
+
+      const itemIcon = $('.item-info-table img').first()
+      if (itemIcon.length) {
+        const imgSrc = itemIcon.attr('src')
+        if (imgSrc) {
+          const fullImgSrc = imgSrc.startsWith('http') ? imgSrc : `https:${imgSrc}`
+          contentSections.push(h.image(fullImgSrc).toString())
+        }
+      }
+
+      // 添加合成表处理
+      $('.TableBlock').each((_, elem) => {
+        const $table = $(elem)
+        const bgImage = $table.css('background-image')
+        if (bgImage) {
+          // 获取合成表的项目
+          const items: {x: number, y: number, img: string}[] = []
+          $table.find('.item-table-hover').each((_, item) => {
+            const $item = $(item)
+            const style = $item.attr('style') || ''
+            const marginMatch = style.match(/margin:(\d+)px\s+0\s+0\s+(\d+)px/)
+            if (marginMatch) {
+              const img = $item.find('img').first()
+              const imgSrc = img.attr('src')
+              if (imgSrc) {
+                items.push({
+                  x: parseInt(marginMatch[2]),
+                  y: parseInt(marginMatch[1]),
+                  img: imgSrc.startsWith('http') ? imgSrc : `https:${imgSrc}`
+                })
+              }
+            }
+          })
+
+          if (items.length > 0) {
+            // TODO: 这里可以添加合成表整体截图的逻辑
+            contentSections.push('合成配方:')
+            for (const item of items) {
+              contentSections.push(h.image(item.img).toString())
+            }
+          }
+        }
+      })
+
+      contentSections.push('\n物品介绍:')
+    } else {
+      // 处理 mod/整合包详情
+      contentSections.push(
+        ...formatModItemDetails($, type === 'modpack'),
+        ...formatModVersionInfo($, type === 'modpack')
+      )
+    }
+
+    // 处理内容区域
+    const contentArea = type === 'item' ? $('.item-content.common-text') : $('.common-text')
 
     if (contentArea.length) {
-      contentSections.push(`\n${isModpack ? '整合包' : '模组'}介绍:`)
+      if (type !== 'item') {
+        contentSections.push(`\n${type === 'modpack' ? '整合包' : '模组'}介绍:`)
+      }
+
       let totalLength = 0
       let skipNext = false
 
       contentArea.children().each((_, elem) => {
         const $elem = $(elem)
 
+        // 统一应用字数限制
         if (totalLength >= totalPreviewLength) return false
 
         if (skipNext) {
@@ -414,7 +477,7 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
           return
         }
 
-        if ($elem.is('p')) {
+        if ($elem.is('p, ol, ul')) {
           const title = $elem.find('span.common-text-title')
           if (title.length) {
             const nextP = $elem.next('p')
@@ -427,7 +490,15 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
                 .replace(/\[(\w+)\]/g, '')
 
               if (nextText) {
-                contentSections.push(`『${title.text().trim()}』${nextText}`)
+                let combinedText = `『${title.text().trim()}』${nextText}`
+                const remainingChars = totalPreviewLength - totalLength
+                if (combinedText.length > remainingChars) {
+                  combinedText = combinedText.slice(0, remainingChars) + '......'
+                  totalLength = totalPreviewLength
+                } else {
+                  totalLength += combinedText.length
+                }
+                contentSections.push(combinedText)
                 skipNext = true
               } else {
                 contentSections.push(`『${title.text().trim()}』`)
@@ -473,7 +544,7 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
     contentSections.push(
       ...formatModItemDetails($, isModpack),
       ...formatModVersionInfo($, isModpack),
-      ...formatModDescription($, config.wiki.totalPreviewLength, isModpack)
+      ...formatModDescription($, config.wiki.totalPreviewLength, isModpack ? 'modpack' : 'mod')
     )
 
     contentSections.push(`\n详细内容: ${url}`)
@@ -485,8 +556,23 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
       .trim()
   }
 
+  // 修改 processItemSearchResult 函数以使用新的 formatModDescription
+  const processItemSearchResult = async (url: string) => {
+    const response = await axios.get(url)
+    const $ = cheerio.load(response.data)
+    const contentSections = formatModDescription($, config.wiki.totalPreviewLength, 'item')
+
+    contentSections.push(`\n详细内容: ${url}`)
+
+    return contentSections
+      .filter(Boolean)
+      .join('\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim()
+  }
+
   // 修改 modwiki 命令实现
-  const modWikiCommand = ctx.command('modwiki <keyword:text>', 'MCMOD直接搜索')
+  const modWikiCommand = ctx.command('modwiki <keyword:text>', 'MCMOD搜索(支持模组/整合包/物品)')
     .action(async ({ }, keyword) => {
       if (!keyword) return '请输入要查询的关键词'
 
@@ -495,19 +581,25 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
         const searchResponse = await axios.get(searchUrl)
         const searchHtml = searchResponse.data
 
-        // 同时匹配mod和整合包的链接
+        // 匹配mod、整合包和物品的链接
         const modMatch = searchHtml.match(/href="(https:\/\/www\.mcmod\.cn\/class\/\d+\.html)"/)
         const modpackMatch = searchHtml.match(/href="(https:\/\/www\.mcmod\.cn\/modpack\/\d+\.html)"/)
+        const itemMatch = searchHtml.match(/href="(https:\/\/www\.mcmod\.cn\/item\/\d+\.html)"/)
 
-        const modDetailUrl = modMatch?.[1] || modpackMatch?.[1]
-        if (!modDetailUrl) return '未找到相关内容'
+        const detailUrl = modMatch?.[1] || modpackMatch?.[1] || itemMatch?.[1]
+        if (!detailUrl) return '未找到相关内容'
 
-        return await processModSearchResult(modDetailUrl)
+        // 根据URL类型选择相应的处理函数
+        if (detailUrl.includes('/item/')) {
+          return await processItemSearchResult(detailUrl)
+        } else {
+          return await processModSearchResult(detailUrl)
+        }
 
       } catch (error) {
         return formatErrorMessage(error)
       }
-  })
+    })
 
   // 修改 search 子命令实现
   modWikiCommand.subcommand('.search <keyword:text>', 'MCMOD搜索并返回列表')
@@ -525,7 +617,16 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
           const titleEl = $item.find('.head a').last()
           const title = titleEl.text().trim()
           const url = titleEl.attr('href') || ''
-          const type = url.includes('/modpack/') ? '整合包' : 'MOD'
+
+          // 根据URL判断类型
+          let type = '未知'
+          if (url.includes('/modpack/')) {
+            type = '整合包'
+          } else if (url.includes('/class/')) {
+            type = 'MOD'
+          } else if (url.includes('/item/')) {
+            type = '物品'
+          }
 
           let desc = config.wiki.searchDescLength > 0 ? $item.find('.body').text().trim()
             .replace(/\[(\w+)[^\]]*\]/g, '')
@@ -551,7 +652,7 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
 
         const searchResultMessage = searchResults
           .slice(0, config.wiki.searchResultLimit)
-          .map((r, i) => `${i + 1}. ${r.title}${r.desc ? `\n  ${r.desc}` : ''}`)
+          .map((r, i) => `${i + 1}. [${r.type}] ${r.title}${r.desc ? `\n  ${r.desc}` : ''}`)
           .join('\n')
 
         await session.send(`MCMOD 搜索结果：\n${searchResultMessage}\n请回复序号查看详细内容`)
@@ -565,7 +666,12 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
         }
 
         const selectedResult = searchResults[index]
-        return await processModSearchResult(selectedResult.url)
+        // 根据类型选择处理函数
+        if (selectedResult.url.includes('/item/')) {
+          return await processItemSearchResult(selectedResult.url)
+        } else {
+          return await processModSearchResult(selectedResult.url)
+        }
 
       } catch (error) {
         return formatErrorMessage(error)
