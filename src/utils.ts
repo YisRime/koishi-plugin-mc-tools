@@ -1,4 +1,6 @@
+import { h } from 'koishi'
 import axios from 'axios';
+import * as mc from 'minecraft-protocol'
 
 // 1. 常量和类型定义
 export const LANGUAGES = {
@@ -30,15 +32,29 @@ export interface MinecraftToolsConfig {
     sectionPreviewLength: number
     totalPreviewLength: number
     searchDescLength: number
+    imageEnabled: boolean
+    imagePriority: number
+    imageMaxWidth: number
+    imageQuality: number
+    cleanupTags: string[]
   }
   server: {
     host: string
     port: number
+    queryTimeout: number
+    retryAttempts: number
+    retryDelay: number
+    showPlayers: boolean
+    showSettings: boolean
+    showPing: boolean
+    showIcon: boolean
   }
   versionCheck: {
     enabled: boolean
     groups: string[]
     interval: number
+    notifyOnSnapshot: boolean
+    notifyOnRelease: boolean
   }
 }
 
@@ -81,38 +97,6 @@ export function isSearchAllowed(lastSearchTime: number): number | false {
   const SEARCH_COOLDOWN = 1000
   if (now - lastSearchTime < SEARCH_COOLDOWN) return false
   return now
-}
-
-// 3. 配置和处理函数
-export function getWikiConfiguration(lang: LangCode) {
-  let domain: string
-  let variant: string = ''
-
-  if (lang.startsWith('zh')) {
-    domain = 'zh.minecraft.wiki'
-    variant = lang === 'zh' ? 'zh-cn' : 'zh-hk'
-  } else {
-    domain = lang === 'en' ? 'minecraft.wiki' : `${lang}.minecraft.wiki`
-  }
-
-  return { domain, variant }
-}
-
-export function constructWikiUrl(title: string, domain: string, variant?: string, includeVariant = false) {
-  const baseUrl = `https://${domain}/w/${encodeURIComponent(title)}`
-  return includeVariant && variant ? `${baseUrl}?variant=${variant}` : baseUrl
-}
-
-export function formatArticleTitle(data: any): string {
-  if (!data) return '未知条目'
-
-  const parts = []
-
-  if (data.short_name) parts.push(`${data.short_name}`)
-  if (data.subtitle) parts.push(` ${data.subtitle} | `)
-  if (data.title) parts.push(`${data.title}`)
-
-  return parts.join(' ')
 }
 
 // 4. 服务器相关函数
@@ -180,32 +164,136 @@ export function parseServerConfiguration(client: any) {
   return settings
 }
 
+export interface VersionData {
+  id: string
+  type: string
+  releaseTime: string
+}
+
+export async function fetchMinecraftVersions(timeout = 10000) {
+  const { data } = await axios.get('https://launchermeta.mojang.com/mc/game/version_manifest.json', {
+    timeout
+  })
+
+  const latest = data.versions[0]
+  const release = data.versions.find(v => v.type === 'release')
+
+  if (!latest || !release) {
+    throw new Error('无效的版本数据')
+  }
+
+  return { latest, release, versions: data.versions }
+}
+
 export async function checkMinecraftUpdate(versions: { snapshot: string, release: string }, ctx: any, config: MinecraftToolsConfig) {
-  try {
-    const { data } = await axios.get('https://launchermeta.mojang.com/mc/game/version_manifest.json', {
-      timeout: 10000
-    })
-    const latest = data.versions[0]
-    const release = data.versions.find(v => v.type === 'release')
+  const retryCount = 3
+  const retryDelay = 30000
 
-    if (!latest || !release) {
-      throw new Error('无效的版本数据')
-    }
+  for (let i = 0; i < retryCount; i++) {
+    try {
+      const { latest, release } = await fetchMinecraftVersions()
 
-    for (const [type, ver] of [['snapshot', latest], ['release', release]]) {
-      if (versions[type] && ver.id !== versions[type]) {
-        const msg = `发现MC更新：${ver.id} (${type})\n发布时间：${new Date(ver.releaseTime).toLocaleString('zh-CN')}`
-        for (const gid of config.versionCheck.groups) {
-          for (const bot of ctx.bots) {
-            await bot.sendMessage(gid, msg).catch(e => {
-              ctx.logger('mc-tools').warn(`发送更新通知失败 (群:${gid}):`, e)
-            })
+      for (const [type, ver] of [['snapshot', latest], ['release', release]]) {
+        if (versions[type] && ver.id !== versions[type] &&
+            ((type === 'snapshot' && config.versionCheck.notifyOnSnapshot) ||
+             (type === 'release' && config.versionCheck.notifyOnRelease))) {
+          const msg = `发现MC更新：${ver.id} (${type})\n发布时间：${new Date(ver.releaseTime).toLocaleString('zh-CN')}`
+          for (const gid of config.versionCheck.groups) {
+            for (const bot of ctx.bots) {
+              await bot.sendMessage(gid, msg).catch(e => {
+                ctx.logger('mc-tools').warn(`发送更新通知失败 (群:${gid}):`, e)
+              })
+            }
           }
         }
+        versions[type] = ver.id
       }
-      versions[type] = ver.id
+      break
+    } catch (error) {
+      if (i === retryCount - 1) {
+        ctx.logger('mc-tools').warn('版本检查失败（已达最大重试次数）：', error)
+      } else {
+        ctx.logger('mc-tools').warn(`版本检查失败（将在${retryDelay/1000}秒后重试）：`, error)
+        await new Promise(resolve => setTimeout(resolve, retryDelay))
+      }
     }
+  }
+}
+
+export async function queryServerStatus(host: string, port: number, config: MinecraftToolsConfig) {
+  try {
+    const startTime = Date.now()
+    const client = await mc.ping({
+      host,
+      port,
+    })
+    const pingTime = Date.now() - startTime
+
+    const lines: string[] = []
+
+    if (config.server.showIcon && client && 'favicon' in client && client.favicon?.startsWith('data:image/png;base64,')) {
+      lines.push(h.image(client.favicon).toString())
+    }
+
+    if ('description' in client && client.description) {
+      const motd = parseServerMessage(client.description).trim()
+      if (motd) {
+        lines.push(motd.replace(/§[0-9a-fk-or]/g, ''))
+      }
+    }
+
+    let versionInfo = '未知版本'
+    if (client?.version) {
+      const currentVersion = typeof client.version === 'object'
+        ? (client.version.name || '未知版本')
+        : String(client.version)
+
+      const protocol = typeof client.version === 'object'
+        ? client.version.protocol
+        : null
+
+      versionInfo = protocol
+        ? `${currentVersion}(${getMinecraftVersionFromProtocol(protocol)})`
+        : currentVersion
+    }
+
+    const players = 'players' in client ? parseServerPlayerStats(client.players) : { online: 0, max: 0 }
+    const statusParts = [versionInfo, `${players.online}/${players.max}`]
+    if (config.server.showPing) {
+      statusParts.push(`${pingTime}ms`)
+    }
+    lines.push(statusParts.join(' | '))
+
+    if (config.server.showSettings) {
+      const settings = parseServerConfiguration(client)
+      if (settings.length) {
+        lines.push(settings.join(' | '))
+      }
+    }
+
+    if (config.server.showPlayers && players.sample?.length > 0) {
+      const playerList = players.sample
+        .filter(p => p && typeof p.name === 'string')
+        .map(p => p.name)
+      if (playerList.length > 0) {
+        let playerInfo = '当前在线：' + playerList.join(', ')
+        if (playerList.length < players.online) {
+          playerInfo += `（仅显示 ${playerList.length}/${players.online} 名玩家）`
+        }
+        lines.push(playerInfo)
+      }
+    }
+
+    return { success: true, data: lines.join('\n') }
   } catch (error) {
-    ctx.logger('mc-tools').error(`版本检查失败: ${formatErrorMessage(error)}`)
+    if (config.server.retryAttempts > 0) {
+      await new Promise(resolve => setTimeout(resolve, config.server.retryDelay * 1000))
+      try {
+        return await queryServerStatus(host, port, { ...config, server: { ...config.server, retryAttempts: config.server.retryAttempts - 1 } })
+      } catch (retryError) {
+        return { success: false, error: formatErrorMessage(error) }
+      }
+    }
+    return { success: false, error: formatErrorMessage(error) }
   }
 }

@@ -1,25 +1,25 @@
 import { Context, Schema, h } from 'koishi'
-import axios from 'axios'
-import * as cheerio from 'cheerio'
 import {} from 'koishi-plugin-puppeteer'
-import * as mc from 'minecraft-protocol'
+
 import {
   formatErrorMessage,
-  getWikiConfiguration,
-  getMinecraftVersionFromProtocol,
   MinecraftToolsConfig,
   LANGUAGES,
   LangCode,
-  parseServerMessage,
-  parseServerPlayerStats,
-  parseServerConfiguration,
   checkMinecraftUpdate,
-  constructWikiUrl,
+  queryServerStatus,
+  fetchMinecraftVersions,
 } from './utils'
 import {
   processModSearchResult,
   processItemSearchResult,
   processPostSearchResult,
+  searchMCMOD,
+  processMCMODContent
+} from './modwiki'
+import {
+  constructWikiUrl,
+  getWikiConfiguration,
   processWikiRequest,
   fetchWikiArticleContent,
   captureWikiPageScreenshot,
@@ -55,6 +55,21 @@ export const Config: Schema<MinecraftToolsConfig> = Schema.object({
     searchDescLength: Schema.number()
       .default(60)
       .description('MCMOD搜索结果描述的最大字数'),
+    imageEnabled: Schema.boolean()
+      .default(true)
+      .description('是否启用图片显示'),
+    imagePriority: Schema.number()
+      .default(1)
+      .description('图片显示优先级(0-3)'),
+    imageMaxWidth: Schema.number()
+      .default(800)
+      .description('图片最大宽度'),
+    imageQuality: Schema.number()
+      .default(80)
+      .description('图片质量(1-100)'),
+    cleanupTags: Schema.array(Schema.string())
+      .default(['script', 'style', 'meta'])
+      .description('需要清理的HTML标签')
   }).description('Wiki与模组百科相关设置'),
 
   versionCheck: Schema.object({
@@ -66,7 +81,13 @@ export const Config: Schema<MinecraftToolsConfig> = Schema.object({
       .description('接收版本更新通知的群组 ID'),
     interval: Schema.number()
       .default(60)
-      .description('版本检查间隔时间（分钟）')
+      .description('版本检查间隔时间（分钟）'),
+    notifyOnSnapshot: Schema.boolean()
+      .default(true)
+      .description('快照版本更新时通知'),
+    notifyOnRelease: Schema.boolean()
+      .default(true)
+      .description('正式版本更新时通知')
   }).description('版本更新检查设置'),
 
   server: Schema.object({
@@ -75,7 +96,28 @@ export const Config: Schema<MinecraftToolsConfig> = Schema.object({
       .default('localhost'),
     port: Schema.number()
       .description('默认服务器端口')
-      .default(25565)
+      .default(25565),
+    queryTimeout: Schema.number()
+      .default(5)
+      .description('查询超时时间(秒)'),
+    retryAttempts: Schema.number()
+      .default(2)
+      .description('重试次数'),
+    retryDelay: Schema.number()
+      .default(1)
+      .description('重试间隔(秒)'),
+    showPlayers: Schema.boolean()
+      .default(true)
+      .description('显示在线玩家'),
+    showSettings: Schema.boolean()
+      .default(true)
+      .description('显示服务器设置'),
+    showPing: Schema.boolean()
+      .default(true)
+      .description('显示延迟信息'),
+    showIcon: Schema.boolean()
+      .default(true)
+      .description('显示服务器图标')
   }).description('默认的 Minecraft 服务器配置')
 })
 
@@ -170,6 +212,9 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
 
   mcwiki.subcommand('.shot <keyword:text>', '获取 Wiki 页面截图')
     .action(async ({ session }, keyword) => {
+      if (!config.wiki.imageEnabled) {
+        return '图片功能已禁用'
+      }
       try {
         const result = await processWikiRequest(keyword, session.userId, config, ctx, userLangs, 'image') as any
         if (typeof result === 'string') return result
@@ -191,7 +236,7 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
     setInterval(() => checkMinecraftUpdate(versions, ctx, config), config.versionCheck.interval * 60 * 1000)
   }
 
-  // 服务器状态查询
+  // 服务器状态查询命令改为
   ctx.command('mcinfo [server]', '查询 MC 服务器状态')
     .action(async (_, server) => {
       let host = config.server.host
@@ -209,72 +254,14 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
         }
       }
 
-      try {
-        const startTime = Date.now()
-        const client = await mc.ping({
-          host,
-          port
-        })
-        const pingTime = Date.now() - startTime
+      const displayAddr = port === 25565 ? host : `${host}:${port}`
+      const result = await queryServerStatus(host, port, config)
 
-        const lines: string[] = []
-
-        if (client && 'favicon' in client && client.favicon?.startsWith('data:image/png;base64,')) {
-          lines.push(h.image(client.favicon).toString())
-        }
-
-        const displayAddr = port === 25565 ? host : `${host}:${port}`
-        if (!server) {
-          lines.push(displayAddr)
-        }
-
-        if ('description' in client && client.description) {
-          const motd = parseServerMessage(client.description).trim()
-          if (motd) {
-            lines.push(motd.replace(/§[0-9a-fk-or]/g, ''))
-          }
-        }
-
-        let versionInfo = '未知版本'
-        if (client?.version) {
-          const currentVersion = typeof client.version === 'object'
-            ? (client.version.name || '未知版本')
-            : String(client.version)
-
-          const protocol = typeof client.version === 'object'
-            ? client.version.protocol
-            : null
-
-          versionInfo = protocol
-            ? `${currentVersion}(${getMinecraftVersionFromProtocol(protocol)})`
-            : currentVersion
-        }
-
-        const players = 'players' in client ? parseServerPlayerStats(client.players) : { online: 0, max: 0 }
-        lines.push(`${versionInfo} | ${players.online}/${players.max} | ${pingTime}ms`)
-
-        const settings = parseServerConfiguration(client)
-        if (settings.length) {
-          lines.push(settings.join(' | '))
-        }
-
-        if (players.sample?.length > 0) {
-          const playerList = players.sample
-            .filter(p => p && typeof p.name === 'string')
-            .map(p => p.name)
-          if (playerList.length > 0) {
-            let playerInfo = '当前在线：' + playerList.join(', ')
-            if (playerList.length < players.online) {
-              playerInfo += `（仅显示 ${playerList.length}/${players.online} 名玩家）`
-            }
-            lines.push(playerInfo)
-          }
-        }
-
-        return lines.join('\n')
-      } catch (error) {
-        return `服务器查询失败: ${formatErrorMessage(error)}`
+      if (!result.success) {
+        return `服务器查询失败: ${result.error}`
       }
+
+      return !server ? `${displayAddr}\n${result.data}` : result.data
     })
 
   // 修改 modwiki 命令实现
@@ -283,28 +270,15 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
       if (!keyword) return '请输入要查询的关键词'
 
       try {
-        const searchUrl = `https://search.mcmod.cn/s?key=${encodeURIComponent(keyword)}`
-        const searchResponse = await axios.get(searchUrl)
-        const searchHtml = searchResponse.data
+        const results = await searchMCMOD(keyword, config.wiki)
+        if (!results.length) return '未找到相关内容'
 
-        // 匹配mod、整合包和物品的链接
-        const modMatch = searchHtml.match(/href="(https:\/\/www\.mcmod\.cn\/class\/\d+\.html)"/)
-        const modpackMatch = searchHtml.match(/href="(https:\/\/www\.mcmod\.cn\/modpack\/\d+\.html)"/)
-        const itemMatch = searchHtml.match(/href="(https:\/\/www\.mcmod\.cn\/item\/\d+\.html)"/)
-        const postMatch = searchHtml.match(/href="(https:\/\/www\.mcmod\.cn\/post\/\d+\.html)"/)
+        const result = results[0]
+        const contentProcessor = result.url.includes('/post/') ? processPostSearchResult :
+                               result.url.includes('/item/') ? processItemSearchResult :
+                               processModSearchResult
 
-        const detailUrl = modMatch?.[1] || modpackMatch?.[1] || itemMatch?.[1] || postMatch?.[1]
-        if (!detailUrl) return '未找到相关内容'
-
-        // 根据URL类型选择相应的处理函数
-        if (detailUrl.includes('/post/')) {
-          return await processPostSearchResult(detailUrl, config.wiki.totalPreviewLength)
-        } else if (detailUrl.includes('/item/')) {
-          return await processItemSearchResult(detailUrl, config.wiki.totalPreviewLength)
-        } else {
-          return await processModSearchResult(detailUrl, config.wiki.totalPreviewLength)
-        }
-
+        return await contentProcessor(result.url, config.wiki)
       } catch (error) {
         return formatErrorMessage(error)
       }
@@ -316,52 +290,10 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
       if (!keyword) return '请输入要查询的关键词'
 
       try {
-        const searchUrl = `https://search.mcmod.cn/s?key=${encodeURIComponent(keyword)}`
-        const searchResponse = await axios.get(searchUrl)
-        const $ = cheerio.load(searchResponse.data)
+        const results = await searchMCMOD(keyword, config.wiki)
+        if (!results.length) return '未找到相关内容'
 
-        const searchResults: { title: string, url: string, desc: string, type: string }[] = []
-        $('.result-item').each((_, item) => {
-          const $item = $(item)
-          const titleEl = $item.find('.head a').last()
-          const title = titleEl.text().trim()
-          const url = titleEl.attr('href') || ''
-
-          // 根据URL判断类型
-          let type = '未知'
-          if (url.includes('/modpack/')) {
-            type = '整合包'
-          } else if (url.includes('/class/')) {
-            type = 'MOD'
-          } else if (url.includes('/item/')) {
-            type = '物品'
-          } else if (url.includes('/post/')) {
-            type = '教程'
-          }
-
-          let desc = config.wiki.searchDescLength > 0 ? $item.find('.body').text().trim()
-            .replace(/\[(\w+)[^\]]*\]/g, '')
-            .replace(/data:image\/\w+;base64,[a-zA-Z0-9+/=]+/g, '')
-            .replace(/\s+/g, ' ')
-            .trim() : ''
-
-          if (desc && desc.length > config.wiki.searchDescLength) {
-            desc = desc.slice(0, config.wiki.searchDescLength) + '...'
-          }
-
-          if (title && url) {
-            searchResults.push({
-              title,
-              url: url.startsWith('http') ? url : `https://www.mcmod.cn${url}`,
-              desc: desc || '',
-              type
-            })
-          }
-        })
-
-        if (!searchResults.length) return '未找到相关内容'
-
-        const searchResultMessage = searchResults
+        const searchResultMessage = results
           .slice(0, config.wiki.searchResultLimit)
           .map((r, i) => `${i + 1}. ${r.title}${r.desc ? `\n    ${r.desc}` : ''}`)
           .join('\n')
@@ -372,22 +304,27 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
         if (!response) return '操作超时'
 
         const index = parseInt(response) - 1
-        if (isNaN(index) || index < 0 || index >= searchResults.length) {
+        if (isNaN(index) || index < 0 || index >= results.length) {
           return '请输入有效的序号'
         }
 
-        const selectedResult = searchResults[index]
-        // 根据类型选择处理函数
-        if (selectedResult.url.includes('/post/')) {
-          return await processPostSearchResult(selectedResult.url, config.wiki.totalPreviewLength)
-        } else if (selectedResult.url.includes('/item/')) {
-          return await processItemSearchResult(selectedResult.url, config.wiki.totalPreviewLength)
-        } else {
-          return await processModSearchResult(selectedResult.url, config.wiki.totalPreviewLength)
-        }
+        return await processMCMODContent(results[index].url, config.wiki)
 
       } catch (error) {
         return formatErrorMessage(error)
+      }
+    })
+
+  // 添加获取最新版本命令
+  ctx.command('mcver', '获取 Minecraft 最新版本')
+    .action(async () => {
+      try {
+        const { latest, release } = await fetchMinecraftVersions()
+        const formatDate = (date: string) => new Date(date).toLocaleDateString('zh-CN')
+
+        return `Minecraft 最新版本：\n正式版：${release.id}（${formatDate(release.releaseTime)}）\n快照版：${latest.id}（${formatDate(latest.releaseTime)}）`
+      } catch (error) {
+        return `获取版本信息失败：${formatErrorMessage(error)}`
       }
     })
 }
