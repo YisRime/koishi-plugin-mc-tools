@@ -211,7 +211,7 @@ function setupWikiCommands(ctx: Context, config: MinecraftToolsConfig) {
 function setupModWikiCommands(ctx: Context, config: MinecraftToolsConfig) {
   const modWikiCommand = ctx.command('modwiki <keyword:text>', 'MCMOD搜索(支持模组/整合包/物品/教程)')
     .usage(`modwiki <关键词> - 直接查询内容\nmodwiki.search <关键词> - 搜索并选择条目\nmodwiki.shot <关键词> - 获取页面截图`)
-    .action(async ({ }, keyword) => {
+    .action(async ({ session }, keyword) => {
       if (!keyword) return h.text('请输入要查询的关键词')
 
       try {
@@ -222,7 +222,7 @@ function setupModWikiCommands(ctx: Context, config: MinecraftToolsConfig) {
         const content = await processMCMODContent(result.url, config.wiki)
         if (typeof content === 'string') {
           return h.text(content)
-        } else if (content && typeof content.getImage === 'function') {
+        } else if ('getImage' in content) {
           const { image } = await content.getImage()
           return h.image(image, 'image/png')
         }
@@ -277,7 +277,7 @@ function setupModWikiCommands(ctx: Context, config: MinecraftToolsConfig) {
           const content = await processMCMODContent(results[index].url, config.wiki)
           if (typeof content === 'string') {
             return h.text(content)
-          } else if (content && typeof content.getImage === 'function') {
+          } else if ('getImage' in content) {
             const { image } = await content.getImage()
             return h.image(image, 'image/png')
           }

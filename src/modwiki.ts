@@ -18,10 +18,13 @@ interface SearchResult {
   type: 'mod' | 'modpack' | 'item' | 'post' | 'unknown'
 }
 
+// 修改sections类型定义，将图片URL作为特殊类型存储
+type ContentSection = string | { type: 'image', url: string }
+
 // 统一的内容处理器
 async function processContent(url: string, config: ModwikiConfig) {
   const $ = await fetchAndParse(url)
-  const sections: Array<string | { url: string, toString(): string }> = []
+  const sections: ContentSection[] = []
 
   const type = getContentType(url)
   const contentHandler = contentHandlers[type]
@@ -49,7 +52,7 @@ function getContentType(url: string): SearchResult['type'] {
   return 'unknown'
 }
 
-function processCommonText($: cheerio.CheerioAPI, selector: string, sections: string[], maxLength: number) {
+function processCommonText($: cheerio.CheerioAPI, selector: string, sections: ContentSection[], maxLength: number) {
   let totalLength = 0
 
   $(selector).children().each((_, elem) => {
@@ -65,7 +68,8 @@ function processCommonText($: cheerio.CheerioAPI, selector: string, sections: st
 
     const img = $elem.find('img').first()
     if (img.length) {
-      addImageToSections(img, sections)
+      const imageUrl = processImage(img)
+      if (imageUrl) sections.push({ type: 'image', url: imageUrl })
     }
   })
 }
@@ -84,7 +88,7 @@ function processTextContent($elem: cheerio.Cheerio<any>): string {
   return title.length ? `『${title.text().trim()}』${text}` : text
 }
 
-function addContentToSections(sections: string[], text: string, currentLength: number, maxLength: number): number {
+function addContentToSections(sections: ContentSection[], text: string, currentLength: number, maxLength: number): number {
   const remainingLength = maxLength - currentLength
   if (text.length > remainingLength) {
     sections.push(text.slice(0, remainingLength) + '...')
@@ -95,27 +99,24 @@ function addContentToSections(sections: string[], text: string, currentLength: n
   }
 }
 
-function addImageToSections($img: cheerio.Cheerio<any>, sections: string[]) {
+// 通用的图片处理函数
+function processImage($img: cheerio.Cheerio<any>): string {
   const imgSrc = $img.attr('data-src') || $img.attr('src')
-  if (imgSrc) {
-    // 修复图片URL问题,处理 i.mcmod.cn 域名
-    const fullSrc = imgSrc.startsWith('//i.mcmod.cn') ?
-                   `https:${imgSrc.replace(/@\d+x\d+\.jpg$/, '')}` : // 移除尺寸后缀
-                   imgSrc.startsWith('//') ? `https:${imgSrc}` :
-                   imgSrc.startsWith('/') ? `https://www.mcmod.cn${imgSrc}` :
-                   imgSrc.startsWith('http') ? imgSrc :
-                   `https:${imgSrc}`
+  if (!imgSrc) return ''
 
-    sections.push(h.image(fullSrc).toString())
-  }
+  return imgSrc.startsWith('//i.mcmod.cn') ? `https:${imgSrc.replace(/@\d+x\d+\.jpg$/, '')}` : // 移除尺寸后缀
+         imgSrc.startsWith('//') ? `https:${imgSrc}` :
+         imgSrc.startsWith('/') ? `https://www.mcmod.cn${imgSrc}` :
+         imgSrc.startsWith('http') ? imgSrc :
+         `https:${imgSrc}`
 }
 
 // 各类型内容处理器
 const contentHandlers = {
-  mod: async ($: cheerio.CheerioAPI, sections: string[], maxLength: number) => {
+  mod: async ($: cheerio.CheerioAPI, sections: ContentSection[], maxLength: number) => {
     const basicInfo = extractModBasicInfo($)
     sections.push(basicInfo.title)
-    if (basicInfo.cover) sections.push(basicInfo.cover.toString())
+    if (basicInfo.cover) sections.push(basicInfo.cover)
 
     // 运行环境信息
     $('.class-info-left .col-lg-4').each((_, elem) => {
@@ -133,10 +134,10 @@ const contentHandlers = {
     processCommonText($, '.common-text', sections, maxLength)
   },
 
-  modpack: async ($: cheerio.CheerioAPI, sections: string[], maxLength: number) => {
+  modpack: async ($: cheerio.CheerioAPI, sections: ContentSection[], maxLength: number) => {
     const basicInfo = extractModBasicInfo($)
     sections.push(basicInfo.title)
-    if (basicInfo.cover) sections.push(basicInfo.cover.toString())
+    if (basicInfo.cover) sections.push(basicInfo.cover)
 
     // 整合包信息
     $('.class-info-left .col-lg-4').each((_, elem) => {
@@ -158,16 +159,21 @@ const contentHandlers = {
     processCommonText($, '.common-text', sections, maxLength)
   },
 
-  item: async ($: cheerio.CheerioAPI, sections: string[], maxLength: number) => {
+  item: async ($: cheerio.CheerioAPI, sections: ContentSection[], maxLength: number) => {
     const itemName = $('.itemname .name h5').text().trim()
     if (itemName) sections.push(itemName)
 
-    addImageToSections($('.item-info-table img').first(), sections)
+    const itemImage = $('.item-info-table img').first()
+    if (itemImage.length) {
+      const imageUrl = processImage(itemImage)
+      if (imageUrl) sections.push({ type: 'image', url: imageUrl })
+    }
+
     sections.push('\n物品介绍:')
     processCommonText($, '.item-content.common-text', sections, maxLength)
   },
 
-  post: async ($: cheerio.CheerioAPI, sections: string[], maxLength: number) => {
+  post: async ($: cheerio.CheerioAPI, sections: ContentSection[], maxLength: number) => {
     const title = $('.postname h5').text().trim()
     if (title) sections.push(title)
     processCommonText($, 'div.text', sections, maxLength)
@@ -186,17 +192,12 @@ function extractModBasicInfo($: cheerio.CheerioAPI) {
   const formattedTitle = `${shortName} ${enTitle} | ${title}${statusLabels.length ? ` (${statusLabels.join(' | ')})` : ''}`
 
   const coverImage = $('.class-cover-image img').first()
-  const coverSrc = coverImage.attr('data-src') || coverImage.attr('src')
-  const cover = coverImage.length && coverSrc ?
-    h.image(coverSrc.startsWith('//i.mcmod.cn') ?
-         `https:${coverSrc.replace(/@\d+x\d+\.jpg$/, '')}` : // 移除尺寸后缀
-         coverSrc.startsWith('//') ? `https:${coverSrc}` :
-         coverSrc.startsWith('/') ? `https://www.mcmod.cn${coverSrc}` :
-         coverSrc.startsWith('http') ? coverSrc :
-         `https:${coverSrc}`
-    ) : null
+  const coverUrl = coverImage.length ? processImage(coverImage) : null
 
-  return { title: formattedTitle, cover }
+  return {
+    title: formattedTitle,
+    cover: coverUrl ? { type: 'image' as const, url: coverUrl } : null
+  }
 }
 
 function extractModVersions($: cheerio.CheerioAPI) {
@@ -218,13 +219,11 @@ function extractModVersions($: cheerio.CheerioAPI) {
 }
 
 // 格式化最终输出
-function formatContentSections(sections: Array<string | Element | { url: string; toString(): string }>, url: string) {
-  return sections
-    .filter(Boolean)
-    .map(section => section)
-    .join('\n')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim() + `\n\n详细内容: ${url}`
+function formatContentSections(sections: ContentSection[], url: string) {
+  return {
+    sections: sections.filter(Boolean),
+    url
+  }
 }
 
 // 统一的导出接口
@@ -325,7 +324,18 @@ export async function processMCMODContent(
       }
     }
 
-    return await processContent(url, config)
+    const result = await processContent(url, config)
+    const elements = result.sections.map(section => {
+      if (typeof section === 'string') return section
+      if (section.type === 'image') return h.image(section.url)
+      return ''
+    })
+
+    return h(() => [
+      ...elements,
+      `\n\n详细内容: ${result.url}`
+    ])
+
   } catch (error) {
     const type = {
       mod: 'MOD',
