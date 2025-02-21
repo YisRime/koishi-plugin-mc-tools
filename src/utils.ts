@@ -44,7 +44,7 @@ export interface MinecraftToolsConfig {
 }
 
 // 2. 基础工具函数
-export function handleError(error: any): string {
+export function formatErrorMessage(error: any): string {
   if (!error) return '未知错误'
   const message = error.message || String(error)
 
@@ -62,22 +62,22 @@ export function handleError(error: any): string {
   return message
 }
 
-export function extractServerText(obj: any): string {
+export function parseServerMessage(obj: any): string {
   if (!obj) return ''
   if (typeof obj === 'string') return obj
   if (typeof obj === 'object') {
     if ('text' in obj) return obj.text
     if ('extra' in obj && Array.isArray(obj.extra)) {
-      return obj.extra.map(extractServerText).join('')
+      return obj.extra.map(parseServerMessage).join('')
     }
     if (Array.isArray(obj)) {
-      return obj.map(extractServerText).join('')
+      return obj.map(parseServerMessage).join('')
     }
   }
   return ''
 }
 
-export function checkSearchCooldown(lastSearchTime: number): number | false {
+export function isSearchAllowed(lastSearchTime: number): number | false {
   const now = Date.now()
   const SEARCH_COOLDOWN = 1000
   if (now - lastSearchTime < SEARCH_COOLDOWN) return false
@@ -85,7 +85,7 @@ export function checkSearchCooldown(lastSearchTime: number): number | false {
 }
 
 // 3. 配置和处理函数
-export function getWikiDomain(lang: LangCode) {
+export function getWikiConfiguration(lang: LangCode) {
   let domain: string
   let variant: string = ''
 
@@ -99,12 +99,12 @@ export function getWikiDomain(lang: LangCode) {
   return { domain, variant }
 }
 
-export function buildWikiUrl(title: string, domain: string, variant?: string, includeVariant = false) {
+export function constructWikiUrl(title: string, domain: string, variant?: string, includeVariant = false) {
   const baseUrl = `https://${domain}/w/${encodeURIComponent(title)}`
   return includeVariant && variant ? `${baseUrl}?variant=${variant}` : baseUrl
 }
 
-export function getTitleLine(data: any): string {
+export function formatArticleTitle(data: any): string {
   if (!data) return '未知条目'
 
   const parts = []
@@ -117,7 +117,7 @@ export function getTitleLine(data: any): string {
 }
 
 // 4. 服务器相关函数
-export function getVersionFromProtocol(protocol: number): string {
+export function getMinecraftVersionFromProtocol(protocol: number): string {
   const protocolMap: Record<number, string> = {
     764: '1.20.1',
     762: '1.19.4',
@@ -158,7 +158,7 @@ export function getVersionFromProtocol(protocol: number): string {
   return `未知版本(协议:${protocol})`
 }
 
-export function formatServerPlayers(players: any) {
+export function parseServerPlayerStats(players: any) {
   if (!players) return { online: 0, max: 0 }
   return {
     online: players.online ?? 0,
@@ -167,7 +167,7 @@ export function formatServerPlayers(players: any) {
   }
 }
 
-export function getServerSettings(client: any) {
+export function parseServerConfiguration(client: any) {
   const settings: string[] = []
   if ('onlineMode' in client) {
     settings.push(client.onlineMode ? '正版验证' : '离线模式')
@@ -181,7 +181,7 @@ export function getServerSettings(client: any) {
   return settings
 }
 
-export async function checkVersion(versions: { snapshot: string, release: string }, ctx: any, config: MinecraftToolsConfig) {
+export async function checkMinecraftUpdate(versions: { snapshot: string, release: string }, ctx: any, config: MinecraftToolsConfig) {
   try {
     const { data } = await axios.get('https://launchermeta.mojang.com/mc/game/version_manifest.json', {
       timeout: 10000
@@ -207,13 +207,13 @@ export async function checkVersion(versions: { snapshot: string, release: string
       versions[type] = ver.id
     }
   } catch (error) {
-    ctx.logger('mc-tools').error(`版本检查失败: ${handleError(error)}`)
+    ctx.logger('mc-tools').error(`版本检查失败: ${formatErrorMessage(error)}`)
   }
 }
 
 // 5. Wiki 相关函数
-export async function searchWiki(keyword: string, searchResultLimit: number, pageTimeout: number) {
-  const { domain } = getWikiDomain('zh')
+export async function searchWikiArticles(keyword: string, searchResultLimit: number, pageTimeout: number) {
+  const { domain } = getWikiConfiguration('zh')
   try {
     const searchUrl = `https://${domain}/api.php?action=opensearch&search=${encodeURIComponent(keyword)}&limit=${searchResultLimit}&variant=zh-cn`
     const { data } = await axios.get(searchUrl, {
@@ -229,8 +229,8 @@ export async function searchWiki(keyword: string, searchResultLimit: number, pag
   }
 }
 
-export async function getWikiContent(pageUrl: string, lang: LangCode, config: MinecraftToolsConfig) {
-  const { variant } = getWikiDomain(lang)
+export async function fetchWikiArticleContent(pageUrl: string, lang: LangCode, config: MinecraftToolsConfig) {
+  const { variant } = getWikiConfiguration(lang)
   const requestUrl = pageUrl.includes('?') ? pageUrl : `${pageUrl}?variant=${variant}`
 
   const response = await axios.get(requestUrl, {
@@ -302,18 +302,18 @@ export async function getWikiContent(pageUrl: string, lang: LangCode, config: Mi
   }
 }
 
-export async function searchMcmod(keyword: string, apiBase: string) {
+export async function searchModDatabase(keyword: string, apiBase: string) {
   const results = await axios.get(`${apiBase}/s/key=${encodeURIComponent(keyword)}`)
   if (!results.data?.length) return null
   return results.data
 }
 
-export async function getMcmodInfo(id: number, type: string, apiBase: string) {
+export async function fetchModDetails(id: number, type: string, apiBase: string) {
   const { data } = await axios.get(`${apiBase}/d/${type}/${id}`)
   return data
 }
 
-export async function formatModInfo(result: any, config: MinecraftToolsConfig) {
+export async function formatModDetails(result: any, config: MinecraftToolsConfig) {
   if (!result.data?.mcmod_id) {
     return `${result.title}\n${result.description}`
   }
@@ -328,7 +328,7 @@ export async function formatModInfo(result: any, config: MinecraftToolsConfig) {
       lines.push(h.image(data.cover_image).toString())
     }
 
-    lines.push(getTitleLine(data))
+    lines.push(formatArticleTitle(data))
 
     const infoItems = []
     if (data.operating_environment) infoItems.push(`运行环境：${data.operating_environment}`)
@@ -359,21 +359,21 @@ export async function formatModInfo(result: any, config: MinecraftToolsConfig) {
     return lines.join('\n')
 
   } catch (error) {
-    throw new Error(`获取${result.address?.includes('/modpack/') ? '整合包' : '模组'}详情失败: ${handleError(error)}`)
+    throw new Error(`获取${result.address?.includes('/modpack/') ? '整合包' : '模组'}详情失败: ${formatErrorMessage(error)}`)
   }
 }
 
 // 6. 主要业务逻辑函数
-export async function handleWikiPage(keyword: string, userId: string, config: MinecraftToolsConfig, ctx: any, userLangs: Map<string, LangCode>, mode: 'text' | 'image' | 'search' = 'text') {
+export async function processWikiRequest(keyword: string, userId: string, config: MinecraftToolsConfig, ctx: any, userLangs: Map<string, LangCode>, mode: 'text' | 'image' | 'search' = 'text') {
   if (!keyword) return '请输入要查询的内容关键词'
 
   try {
     const lang = userLangs.get(userId) || config.wiki.defaultLanguage
-    const results = await searchWiki(keyword, config.wiki.searchResultLimit, config.wiki.pageTimeout)
+    const results = await searchWikiArticles(keyword, config.wiki.searchResultLimit, config.wiki.pageTimeout)
 
     if (!results.length) return `${keyword}：本页面目前没有内容。`
 
-    const { domain, variant } = getWikiDomain(lang)
+    const { domain, variant } = getWikiConfiguration(lang)
 
     if (mode === 'search') {
       return {
@@ -384,8 +384,8 @@ export async function handleWikiPage(keyword: string, userId: string, config: Mi
     }
 
     const result = results[0]
-    const pageUrl = buildWikiUrl(result.title, domain, variant, true)
-    const displayUrl = buildWikiUrl(result.title, domain)
+    const pageUrl = constructWikiUrl(result.title, domain, variant, true)
+    const displayUrl = constructWikiUrl(result.title, domain)
 
     if (mode === 'image') {
       return {
@@ -394,7 +394,7 @@ export async function handleWikiPage(keyword: string, userId: string, config: Mi
           const context = await ctx.puppeteer.browser.createBrowserContext()
           const page = await context.newPage()
           try {
-            const { image } = await captureWiki(page, pageUrl, lang, config)
+            const { image } = await captureWikiPageScreenshot(page, pageUrl, lang, config)
             return { image }
           } finally {
             await context.close()
@@ -403,15 +403,15 @@ export async function handleWikiPage(keyword: string, userId: string, config: Mi
       }
     }
 
-    const { title, content, url } = await getWikiContent(pageUrl, lang, config)
+    const { title, content, url } = await fetchWikiArticleContent(pageUrl, lang, config)
     return `『${title}』${content}\n详细内容：${url}`
 
   } catch (error) {
-    return handleError(error)
+    return formatErrorMessage(error)
   }
 }
 
-export async function captureWiki(page: any, url: string, lang: LangCode, config: MinecraftToolsConfig) {
+export async function captureWikiPageScreenshot(page: any, url: string, lang: LangCode, config: MinecraftToolsConfig) {
   try {
     await page.setViewport({ width: 1000, height: 800, deviceScaleFactor: 1 })
     await page.setExtraHTTPHeaders({
