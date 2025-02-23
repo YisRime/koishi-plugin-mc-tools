@@ -1,4 +1,4 @@
-import { Context, Schema, h } from 'koishi'
+import { Context, Schema } from 'koishi'
 import {} from 'koishi-plugin-puppeteer'
 
 import {
@@ -16,17 +16,9 @@ import {
   processPostSearchResult,
   processMCMODContent,
 } from './modwiki'
-import {
-  constructWikiUrl,
-  processWikiRequest,
-  fetchWikiArticleContent,
-} from './mcwiki'
-import {
-  handleModScreenshot,
-  handleWikiScreenshot,
-  captureWikiPageScreenshot,
-} from './shot'
-import { searchMCMOD, handleMCMODSearch, handleWikiSearch } from './search'
+import { processWikiRequest } from './mcwiki'
+import { handleModScreenshot, handleWikiScreenshot } from './shot'
+import { searchMCMOD, handleSearch } from './search'
 
 export const name = 'mc-tools'
 export const inject = {required: ['puppeteer']}
@@ -150,29 +142,30 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
 
     mcwiki.subcommand('.search <keyword:text>', '搜索 Wiki 页面')
     .action(async ({ session }, keyword) => {
-      const result = await handleWikiSearch(
+      const result = await handleSearch({
         keyword,
+        source: 'wiki',
         session,
         config,
         ctx,
-        userLangs,
-        userLangs.get(session.userId) || config.wiki.defaultLanguage
-      )
+        lang: userLangs.get(session.userId) || config.wiki.defaultLanguage
+      })
       return typeof result === 'string' ? result : result.image
     })
 
   // 修改 search 子命令实现
   modWikiCommand.subcommand('.search <keyword:text>', 'MCMOD搜索并返回列表')
     .action(async ({ session }, keyword) => {
-      return await handleMCMODSearch(
+      return await handleSearch({
         keyword,
-        config,
+        source: 'mcmod',
         session,
-        async (url) => {
+        config,
+        processContent: async (url) => {
           const content = await processMCMODContent(url, config.wiki)
           return content.sections.join('\n')
         }
-      )
+      })
     })
 
   mcwiki.subcommand('.shot <keyword:text>', '获取 Wiki 页面截图')

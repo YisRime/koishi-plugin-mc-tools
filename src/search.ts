@@ -2,11 +2,7 @@ import axios from 'axios'
 import * as cheerio from 'cheerio'
 import { h } from 'koishi'
 import { MinecraftToolsConfig, LangCode } from './utils'
-import {
-  constructWikiUrl,
-  processWikiRequest,
-  fetchWikiArticleContent,
-} from './mcwiki'
+import { constructWikiUrl, fetchWikiArticleContent } from './mcwiki'
 import { captureWikiPageScreenshot } from './shot'
 
 export interface SearchResult {
@@ -14,6 +10,52 @@ export interface SearchResult {
   url: string
   desc?: string
   type?: string
+  source: 'wiki' | 'mcmod'
+}
+
+// 统一的搜索处理函数
+export async function handleSearch(params: {
+  keyword: string
+  source: 'wiki' | 'mcmod'
+  session: any
+  config: MinecraftToolsConfig
+  ctx?: any
+  lang?: LangCode
+  processContent?: (url: string) => Promise<string>
+}) {
+  const { keyword, source, session, config, ctx, lang, processContent } = params
+
+  if (!keyword) return '请输入要查询的关键词'
+
+  try {
+    // 执行搜索
+    const results = await (source === 'wiki'
+      ? searchWikiArticles(keyword, config.wiki.searchResultLimit, config.wiki.pageTimeout)
+      : searchMCMOD(keyword, config))
+
+    if (!results.length) return '未找到相关内容'
+
+    // 构建搜索结果消息
+    const searchResultMessage = formatSearchResults(results, config)
+    await session.send(searchResultMessage)
+
+    // 等待用户选择
+    const response = await session.prompt(config.wiki.searchTimeout * 1000)
+    if (!response) return '操作超时'
+
+    return await handleUserSelection({
+      response,
+      results,
+      source,
+      config,
+      ctx,
+      lang,
+      processContent
+    })
+
+  } catch (error) {
+    return error.message
+  }
 }
 
 // Wiki 搜索功能
@@ -27,7 +69,7 @@ export async function searchWikiArticles(keyword: string, searchResultLimit: num
 
     const [_, titles, urls] = data
     if (!titles?.length) return []
-    return titles.map((title, i) => ({ title, url: urls[i] }))
+    return titles.map((title, i) => ({ title, url: urls[i], source: 'wiki' }))
   } catch (error) {
     throw new Error('搜索失败，请稍后重试')
   }
@@ -63,7 +105,8 @@ function parseSearchResults($: cheerio.CheerioAPI, config: MinecraftToolsConfig)
         title,
         url: normalizeUrl(url),
         desc,
-        type
+        type,
+        source: 'mcmod'
       })
     }
   })
@@ -93,93 +136,65 @@ function normalizeUrl(url: string): string {
   return url.startsWith('http') ? url : `https://www.mcmod.cn${url}`
 }
 
-// MCMOD 搜索处理函数
-export async function handleMCMODSearch(
-  keyword: string,
-  config: MinecraftToolsConfig,
-  session: any,
-  processContent: (url: string) => Promise<string>
-): Promise<string> {
-  if (!keyword) return '请输入要查询的关键词'
+function formatSearchResults(results: SearchResult[], config: MinecraftToolsConfig): string {
+  const items = results.map((r, i) => {
+    const base = `${i + 1}. ${r.title}`
+    const desc = config.wiki.showDescription && r.desc ? `\n    ${r.desc}` : ''
+    return base + desc
+  })
 
-  try {
-    const results = await searchMCMOD(keyword, config)
-    if (!results.length) return '未找到相关内容'
+  return `${results[0].source === 'wiki' ? 'Wiki' : 'MCMOD'} 搜索结果：\n${items.join('\n')}
+请回复序号查看详细内容${results[0].source === 'wiki' ? '\n（使用 -i 后缀以获取页面截图）' : ''}`
+}
 
-    const searchResultMessage = results
-      .slice(0, config.wiki.searchResultLimit)
-      .map((r, i) => `${i + 1}. ${r.title}${
-        config.wiki.showDescription && r.desc ? `\n    ${r.desc}` : ''
-      }`)
-      .join('\n')
+async function handleUserSelection(params: {
+  response: string
+  results: SearchResult[]
+  source: 'wiki' | 'mcmod'
+  config: MinecraftToolsConfig
+  ctx?: any
+  lang?: LangCode
+  processContent?: (url: string) => Promise<string>
+}) {
+  const { response, results, source, config, ctx, lang, processContent } = params
 
-    await session.send(`MCMOD 搜索结果：\n${searchResultMessage}\n请回复序号查看详细内容`)
-    const response = await session.prompt(config.wiki.searchTimeout * 1000)
+  const [input, flag] = response.split('-')
+  const index = parseInt(input) - 1
 
-    if (!response) return '操作超时'
+  if (isNaN(index) || index < 0 || index >= results.length) {
+    return '请输入有效的序号'
+  }
 
-    const index = parseInt(response) - 1
-    if (isNaN(index) || index >= results.length) {
-      return '请输入有效的序号'
-    }
+  const result = results[index]
 
-    return await processContent(results[index].url)
-  } catch (error) {
-    return error.message
+  if (source === 'wiki') {
+    return await handleWikiSelection(result, flag, config, ctx, lang)
+  } else {
+    return await processContent(result.url)
   }
 }
 
-// Wiki搜索处理函数
-
-export async function handleWikiSearch(
-  keyword: string,
-  session: any,
+async function handleWikiSelection(
+  result: SearchResult,
+  flag: string,
   config: MinecraftToolsConfig,
   ctx: any,
-  userLangs: Map<string, LangCode>,
   lang: LangCode
-): Promise<string | { image: any }> {
-  try {
-    const searchResult = await processWikiRequest(keyword, session.userId, config, ctx, userLangs, 'search')
-    if (typeof searchResult === 'string') return searchResult
+) {
+  const pageUrl = constructWikiUrl(result.title, lang, true)
+  const displayUrl = constructWikiUrl(result.title, lang)
 
-    const { results } = searchResult
-
-    const searchResultMessage = `Wiki 搜索结果：\n${
-      results.map((r, i) => `${i + 1}. ${r.title}`).join('\n')
-    }\n请回复序号查看对应内容\n（使用 -i 后缀以获取页面截图）`
-
-    await session.send(searchResultMessage)
-    const response = await session.prompt(config.wiki.searchTimeout * 1000)
-
-    if (!response) return '操作超时'
-
-    const [input, flag] = response.split('-')
-    const index = parseInt(input) - 1
-
-    if (isNaN(index) || index < 0 || index >= results.length) {
-      return '请输入有效的序号'
+  if (flag?.trim() === 'i') {
+    const context = await ctx.puppeteer.browser.createBrowserContext()
+    const page = await context.newPage()
+    try {
+      const { image } = await captureWikiPageScreenshot(page, pageUrl, lang, config)
+      return { image: h.image(image, 'image/png') }
+    } finally {
+      await context.close()
     }
-
-    const result = results[index]
-    const pageUrl = constructWikiUrl(result.title, lang, true)
-    const displayUrl = constructWikiUrl(result.title, lang)
-
-    if (flag?.trim() === 'i') {
-      await session.send(`正在获取页面...\n完整内容：${displayUrl}`)
-      const context = await ctx.puppeteer.browser.createBrowserContext()
-      const page = await context.newPage()
-      try {
-        const { image } = await captureWikiPageScreenshot(page, pageUrl, lang, config)
-        return { image: h.image(image, 'image/png') }
-      } finally {
-        await context.close()
-      }
-    }
-
-    const { title, content } = await fetchWikiArticleContent(pageUrl, lang, config)
-    return `『${title}』${content}\n详细内容：${displayUrl}`
-  } catch (error) {
-    return error.message
   }
+
+  const { title, content } = await fetchWikiArticleContent(pageUrl, lang, config)
+  return `『${title}』${content}\n详细内容：${displayUrl}`
 }
