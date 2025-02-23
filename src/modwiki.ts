@@ -14,10 +14,35 @@ export interface ModwikiConfig {
 // 内容处理函数
 export async function processMCMODContent(url: string, config: ModwikiConfig) {
   try {
-    const response = await axios.get(url, { timeout: config.pageTimeout * 1000 })
+    const response = await axios.get(url, {
+      timeout: config.pageTimeout * 1000,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      }
+    })
     const $ = cheerio.load(response.data)
-    return getContentProcessor(url)($, config.totalPreviewLength)
+
+    // 检查页面是否存在
+    if ($('.class-404').length > 0) {
+      throw new Error('页面不存在')
+    }
+
+    const processor = getContentProcessor(url)
+    const result = processor($, config.totalPreviewLength)
+
+    // 验证处理结果
+    if (!result || !result.sections || result.sections.length === 0) {
+      throw new Error('无法解析页面内容')
+    }
+
+    return result
   } catch (error) {
+    if (axios.isAxiosError(error)) {
+      if (error.code === 'ECONNABORTED') {
+        throw new Error('请求超时，请稍后重试')
+      }
+      throw new Error(`获取内容失败: ${error.message}`)
+    }
     throw new Error(`内容处理失败: ${error.message}`)
   }
 }
@@ -396,6 +421,10 @@ function processModVersionInfo($: cheerio.CheerioAPI, sections: string[], isModp
 // 修改内容格式化函数
 function formatContentSections(result: { sections: string[]; links: string[] }, url: string) {
   try {
+    if (!result || !Array.isArray(result.sections)) {
+      throw new Error('内容格式无效')
+    }
+
     const { sections, links } = result
     const parts = {
       header: [] as string[],
@@ -406,7 +435,11 @@ function formatContentSections(result: { sections: string[]; links: string[] }, 
     let descStarted = false
 
     for (const section of sections) {
-      const trimmed = (section || '').trim()
+      if (!section) continue
+
+      const trimmed = section.toString().trim()
+        .replace(/[\u0000-\u001F\u007F-\u009F\u200B-\u200D\uFEFF]/g, '')
+
       if (!trimmed) continue
 
       if (trimmed.startsWith('『')) {
@@ -424,28 +457,27 @@ function formatContentSections(result: { sections: string[]; links: string[] }, 
     const output: string[] = []
 
     if (parts.header.length > 0) {
-      output.push(...parts.header.map(text =>
-        text.replace(/[\u0000-\u001F\u007F-\u009F\u200B-\u200D\uFEFF]/g, '')))
+      output.push(...parts.header)
     }
 
-    if (links.length > 0) {
+    if (Array.isArray(links) && links.length > 0) {
       if (output.length > 0) output.push('')
       output.push('相关链接:')
-      output.push(...links.map(text =>
-        text.replace(/[\u0000-\u001F\u007F-\u009F\u200B-\u200D\uFEFF]/g, '')))
+      output.push(...links)
     }
 
     if (parts.desc.length > 0) {
       if (output.length > 0) output.push('')
       output.push('简介:')
-      output.push(...parts.desc.map(text =>
-        text.replace(/[\u0000-\u001F\u007F-\u009F\u200B-\u200D\uFEFF]/g, '')))
+      output.push(...parts.desc)
     }
 
     if (output.length > 0) output.push('')
     output.push(`详细内容: ${url}`)
 
-    return output.join('\n').replace(/\n{3,}/g, '\n\n').trim()
+    const finalContent = output.join('\n').replace(/\n{3,}/g, '\n\n').trim()
+    return finalContent || `无法获取详细内容，请直接访问：${url}`
+
   } catch (error) {
     console.error('格式化内容时出错:', error)
     return `获取内容失败，请直接访问：${url}`

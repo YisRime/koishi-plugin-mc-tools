@@ -171,14 +171,23 @@ async function handleUserSelection(params: {
     if (source === 'wiki') {
       return await handleWikiSelection(result, flag, config, ctx, lang)
     } else if (processContent) {
-      const content = await processContent(result.url)
-      return content || `获取内容失败，请直接访问：${result.url}`
-    } else {
-      return `无法处理内容，请直接访问：${result.url}`
+      try {
+        const content = await processContent(result.url)
+        if (!content) {
+          throw new Error('内容处理失败')
+        }
+        return content
+      } catch (error) {
+        console.error('处理MCMOD内容时出错:', error)
+        return `获取内容失败 (${error.message})，请直接访问：${result.url}`
+      }
     }
+
+    return `无法处理内容，请直接访问：${result.url}`
   } catch (error) {
     console.error('处理选择时出错:', error)
-    return `处理内容时出错，请稍后重试或直接访问：${results[parseInt(response) - 1]?.url || '链接获取失败'}`
+    const fallbackUrl = results[parseInt(response) - 1]?.url || '链接获取失败'
+    return `处理内容时出错 (${error.message})，请直接访问：${fallbackUrl}`
   }
 }
 
