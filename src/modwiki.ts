@@ -407,7 +407,7 @@ export async function processPostSearchResult(url: string, config: ModwikiConfig
   }
 }
 
-// 添加截图功能
+// 修改截图功能
 export async function captureMCMODPageScreenshot(page: any, url: string, config: ModwikiConfig) {
   try {
     // 设置初始视口
@@ -434,17 +434,17 @@ export async function captureMCMODPageScreenshot(page: any, url: string, config:
     }
 
     // 等待内容加载
-    await page.waitForSelector('.col-lg-12.center', {
+    await page.waitForSelector('.content-wrapper', {
       timeout: config.pageTimeout * 1000,
       visible: true
     })
 
-    // 注入优化样式
+    // 注入优化样式并隐藏不需要的元素
     await page.evaluate(() => {
       const style = document.createElement('style')
       style.textContent = `
         body { margin: 0; background: white; }
-        .col-lg-12.center {
+        .content-wrapper {
           margin: 0 auto;
           padding: 20px;
           box-sizing: border-box;
@@ -452,24 +452,17 @@ export async function captureMCMODPageScreenshot(page: any, url: string, config:
           max-width: 1000px;
         }
         img { max-width: 100%; height: auto; }
+        #header, .nav-top, #scroll-to-top, #footer, .comment-area,
+        .user-auth-modal, .advertisement, .site-top {
+          display: none !important;
+        }
       `
       document.head.appendChild(style)
     })
 
-    // 清理无用元素
-    await page.evaluate(() => {
-      const elementsToRemove = [
-        '#header', '#footer', '.comment-area',
-        'script', 'iframe', '#back-to-top'
-      ]
-      elementsToRemove.forEach(selector => {
-        document.querySelectorAll(selector).forEach(el => el.remove())
-      })
-    })
-
     // 获取内容区域尺寸
     const dimensions = await page.evaluate(() => {
-      const content = document.querySelector('.col-lg-12.center')
+      const content = document.querySelector('.content-wrapper')
       if (!content) return null
       const rect = content.getBoundingClientRect()
       return {
@@ -496,7 +489,6 @@ export async function captureMCMODPageScreenshot(page: any, url: string, config:
       type: 'jpeg',
       quality: 80,
       omitBackground: true,
-      fullPage: false,
       clip: {
         x: 0,
         y: 0,
