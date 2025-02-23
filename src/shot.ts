@@ -1,6 +1,6 @@
 import { h } from 'koishi'
 import { MinecraftToolsConfig, LangCode } from './utils'
-import { searchMCMOD } from './modwiki'
+import { searchMCMOD } from './search'
 
 // 通用截图清理选择器
 const CLEANUP_SELECTORS = [
@@ -278,7 +278,7 @@ export async function captureMCMODPageScreenshot(page: any, url: string, config:
 }
 
 export async function handleModScreenshot(keyword: string, config: MinecraftToolsConfig, ctx: any) {
-  const results = await searchMCMOD(keyword, config.wiki)
+  const results = await searchMCMOD(keyword, config)
   if (!results.length) {
     throw new Error('未找到相关内容')
   }

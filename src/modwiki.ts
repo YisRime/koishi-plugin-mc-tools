@@ -1,6 +1,6 @@
+import { h } from 'koishi'
 import axios from 'axios'
 import * as cheerio from 'cheerio'
-import { h } from 'koishi'
 
 // 基础类型定义
 export interface ModwikiConfig {
@@ -9,27 +9,6 @@ export interface ModwikiConfig {
   searchTimeout: number
   searchResultLimit: number
   pageTimeout: number
-}
-
-interface SearchResult {
-  title: string
-  url: string
-  desc: string
-  type: string
-}
-
-// 核心搜索功能
-export async function searchMCMOD(keyword: string, config: ModwikiConfig) {
-  try {
-    const response = await axios.get(
-      `https://search.mcmod.cn/s?key=${encodeURIComponent(keyword)}`,
-      { timeout: config.searchTimeout * 1000 }
-    )
-    const $ = cheerio.load(response.data)
-    return parseSearchResults($, config)
-  } catch (error) {
-    throw new Error(`搜索失败: ${error.message}`)
-  }
 }
 
 // 内容处理函数
@@ -63,30 +42,6 @@ function getContentType(url: string): string {
     '/post/': '教程'
   }
   return Object.entries(types).find(([key]) => url.includes(key))?.[1] || '未知'
-}
-
-// 解析搜索结果
-function parseSearchResults($: cheerio.CheerioAPI, config: ModwikiConfig): SearchResult[] {
-  const results: SearchResult[] = []
-  $('.result-item').each((_, item) => {
-    const $item = $(item)
-    const titleEl = $item.find('.head a').last()
-    const title = titleEl.text().trim()
-    const url = titleEl.attr('href') || ''
-
-    const type = getContentType(url)
-    const desc = processSearchDescription($item, config.searchDescLength)
-
-    if (title && url) {
-      results.push({
-        title,
-        url: normalizeUrl(url),
-        desc,
-        type
-      })
-    }
-  })
-  return results.slice(0, config.searchResultLimit)
 }
 
 // 处理函数映射
@@ -484,19 +439,3 @@ function formatContentSections(result: { sections: string[]; links: string[] }, 
 
   return output.join('\n').replace(/\n{3,}/g, '\n\n').trim()
 }
-
-function processSearchDescription($item: cheerio.Cheerio<import("domhandler").Element>, searchDescLength: number) {
-  // Try to find and extract description content
-  const description = $item.find('.desc').text().trim()
-
-  // If no description found, return empty string
-  if (!description) return ''
-
-  // Truncate description if it exceeds the specified length
-  if (description.length > searchDescLength) {
-    return description.slice(0, searchDescLength) + '...'
-  }
-
-  return description
-}
-

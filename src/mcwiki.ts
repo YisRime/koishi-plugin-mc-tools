@@ -1,10 +1,10 @@
-import { h } from 'koishi'
 import * as cheerio from 'cheerio'
 import axios from 'axios'
 import {
   MinecraftToolsConfig,
   LangCode,
 } from './utils'
+import { searchWikiArticles } from './search'
 
 // 3. 配置和处理函数
 // 修改 constructWikiUrl 函数,添加 variant 参数
@@ -37,23 +37,6 @@ export function formatArticleTitle(data: any): string {
   if (data.title) parts.push(`${data.title}`)
 
   return parts.join(' ')
-}
-
-export async function searchWikiArticles(keyword: string, searchResultLimit: number, pageTimeout: number) {
-  try {
-    // 修改搜索 URL 的构造，确保包含 variant
-    const searchUrl = constructWikiUrl('api.php', 'zh', true).replace('/w/', '/')
-      + `&action=opensearch&search=${encodeURIComponent(keyword)}&limit=${searchResultLimit}`
-    const { data } = await axios.get(searchUrl, {
-      timeout: pageTimeout * 1000
-    })
-
-    const [_, titles, urls] = data
-    if (!titles?.length) return []
-    return titles.map((title, i) => ({ title, url: urls[i] }))
-  } catch (error) {
-    throw new Error('搜索失败，请稍后重试')
-  }
 }
 
 export async function fetchWikiArticleContent(pageUrl: string, lang: LangCode, config: MinecraftToolsConfig) {

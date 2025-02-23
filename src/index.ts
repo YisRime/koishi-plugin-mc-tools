@@ -14,7 +14,6 @@ import {
   processModSearchResult,
   processItemSearchResult,
   processPostSearchResult,
-  searchMCMOD,
   processMCMODContent,
 } from './modwiki'
 import {
@@ -27,6 +26,7 @@ import {
   handleWikiScreenshot,
   captureWikiPageScreenshot,
 } from './shot'
+import { searchMCMOD, handleMCMODSearch, handleWikiSearch } from './search'
 
 export const name = 'mc-tools'
 export const inject = {required: ['puppeteer']}
@@ -128,61 +128,13 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
     }
   })
 
-  mcwiki.subcommand('.search <keyword:text>', '搜索 Wiki 页面')
-    .action(async ({ session }, keyword) => {
-      try {
-        const searchResult = await processWikiRequest(keyword, session.userId, config, ctx, userLangs, 'search') as any
-        if (typeof searchResult === 'string') return searchResult
-
-        const { results, lang } = searchResult
-
-        const searchResultMessage = `Wiki 搜索结果：\n${
-          results.map((r, i) => `${i + 1}. ${r.title}`).join('\n')
-        }\n请回复序号查看对应内容\n（使用 -i 后缀以获取页面截图）`
-
-        await session.send(searchResultMessage)
-        const response = await session.prompt(config.wiki.searchTimeout * 1000)
-
-        if (!response) return '操作超时'
-
-        const [input, flag] = response.split('-')
-        const index = parseInt(input) - 1
-
-        if (isNaN(index) || index < 0 || index >= results.length) {
-          return '请输入有效的序号'
-        }
-
-        const result = results[index]
-        const pageUrl = constructWikiUrl(result.title, lang, true)
-        const displayUrl = constructWikiUrl(result.title, lang)
-
-        if (flag?.trim() === 'i') {
-          await session.send(`正在获取页面...\n完整内容：${displayUrl}`)
-          const context = await ctx.puppeteer.browser.createBrowserContext()
-          const page = await context.newPage()
-          try {
-            const { image } = await captureWikiPageScreenshot(page, pageUrl, lang, config)
-            return h.image(image, 'image/png')
-          } finally {
-            await context.close()
-          }
-        }
-
-        const { title, content } = await fetchWikiArticleContent(pageUrl, lang, config)
-        return `『${title}』${content}\n详细内容：${displayUrl}`
-
-      } catch (error) {
-        return error.message
-      }
-    })
-
   // 修改 modwiki 命令实现
   const modWikiCommand = ctx.command('modwiki <keyword:text>', 'MCMOD搜索(支持模组/整合包/物品/教程)')
     .action(async ({ }, keyword) => {
       if (!keyword) return '请输入要查询的关键词'
 
       try {
-        const results = await searchMCMOD(keyword, config.wiki)
+        const results = await searchMCMOD(keyword, config)
         if (!results.length) return '未找到相关内容'
 
         const result = results[0]
@@ -196,37 +148,31 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
       }
     })
 
+    mcwiki.subcommand('.search <keyword:text>', '搜索 Wiki 页面')
+    .action(async ({ session }, keyword) => {
+      const result = await handleWikiSearch(
+        keyword,
+        session,
+        config,
+        ctx,
+        userLangs,
+        userLangs.get(session.userId) || config.wiki.defaultLanguage
+      )
+      return typeof result === 'string' ? result : result.image
+    })
+
   // 修改 search 子命令实现
   modWikiCommand.subcommand('.search <keyword:text>', 'MCMOD搜索并返回列表')
     .action(async ({ session }, keyword) => {
-      if (!keyword) return '请输入要查询的关键词'
-
-      try {
-        const results = await searchMCMOD(keyword, config.wiki)
-        if (!results.length) return '未找到相关内容'
-
-        const searchResultMessage = results
-          .slice(0, config.wiki.searchResultLimit)
-          .map((r, i) => `${i + 1}. ${r.title}${
-            config.wiki.showDescription && r.desc ? `\n    ${r.desc}` : ''
-          }`)
-          .join('\n')
-
-        await session.send(`MCMOD 搜索结果：\n${searchResultMessage}\n请回复序号查看详细内容`)
-        const response = await session.prompt(config.wiki.searchTimeout * 1000)
-
-        if (!response) return '操作超时'
-
-        const index = parseInt(response) - 1
-        if (isNaN(index) || index < 0 || index >= results.length) {
-          return '请输入有效的序号'
+      return await handleMCMODSearch(
+        keyword,
+        config,
+        session,
+        async (url) => {
+          const content = await processMCMODContent(url, config.wiki)
+          return content.sections.join('\n')
         }
-
-        return await processMCMODContent(results[index].url, config.wiki)
-
-      } catch (error) {
-        return error.message
-      }
+      )
     })
 
   mcwiki.subcommand('.shot <keyword:text>', '获取 Wiki 页面截图')
