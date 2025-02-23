@@ -158,19 +158,27 @@ async function handleUserSelection(params: {
 }) {
   const { response, results, source, config, ctx, lang, processContent } = params
 
-  const [input, flag] = response.split('-')
-  const index = parseInt(input) - 1
+  try {
+    const [input, flag] = response.split('-')
+    const index = parseInt(input) - 1
 
-  if (isNaN(index) || index < 0 || index >= results.length) {
-    return '请输入有效的序号'
-  }
+    if (isNaN(index) || index < 0 || index >= results.length) {
+      return '请输入有效的序号'
+    }
 
-  const result = results[index]
+    const result = results[index]
 
-  if (source === 'wiki') {
-    return await handleWikiSelection(result, flag, config, ctx, lang)
-  } else {
-    return await processContent(result.url)
+    if (source === 'wiki') {
+      return await handleWikiSelection(result, flag, config, ctx, lang)
+    } else if (processContent) {
+      const content = await processContent(result.url)
+      return content || `获取内容失败，请直接访问：${result.url}`
+    } else {
+      return `无法处理内容，请直接访问：${result.url}`
+    }
+  } catch (error) {
+    console.error('处理选择时出错:', error)
+    return `处理内容时出错，请稍后重试或直接访问：${results[parseInt(response) - 1]?.url || '链接获取失败'}`
   }
 }
 

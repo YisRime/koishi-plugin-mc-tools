@@ -52,15 +52,13 @@ function getContentProcessor(url: string) {
     processMod($, length, url.includes('/modpack/')))
 }
 
-// 处理帖子内容
+// 修改处理帖子内容的函数
 function processPost($: cheerio.CheerioAPI, totalPreviewLength: number) {
   const contentSections: string[] = []
 
-  // 提取标题
   const title = $('.postname h5').text().trim()
   if (title) contentSections.push(title)
 
-  // 处理内容
   let totalLength = 0
 
   $('div.text p').each((_, pElem) => {
@@ -73,11 +71,12 @@ function processPost($: cheerio.CheerioAPI, totalPreviewLength: number) {
       .end()
       .text()
       .trim()
+      .replace(/[\u0000-\u001F\u007F-\u009F\u200B-\u200D\uFEFF]/g, '') // 清理不可见字符
       .replace(/\s+/g, ' ')
       .replace(/\[(\w+)\]/g, '')
 
-    // 处理段落和图片
-    processTextAndImages($pElem, text, contentSections, totalPreviewLength, totalLength)
+    // 继续处理段落和图片
+    totalLength = processTextAndImages($pElem, text, contentSections, totalPreviewLength, totalLength)
   })
 
   return { sections: contentSections, links: [] }
@@ -160,42 +159,50 @@ function processMod($: cheerio.CheerioAPI, totalPreviewLength: number, isModpack
   }
 }
 
-// 辅助函数 - 处理文本和图片
-function processTextAndImages($elem: cheerio.Cheerio<any>, text: string, sections: string[], maxLength: number, currentLength: number) {
+// 修改文本和图片处理函数
+function processTextAndImages($elem: cheerio.Cheerio<any>, text: string, sections: string[], maxLength: number, currentLength: number): number {
   if (!text) return currentLength
 
-  const title = $elem.find('.common-text-title')
-  if (title.length) {
-    text = `『${title.text().trim()}』${text.replace(title.text().trim(), '')}`
-  }
-
-  if (text) {
-    const remainingChars = maxLength - currentLength
-    if (text.length > remainingChars) {
-      text = text.slice(0, remainingChars) + '......'
-      sections.push(text)
-      return maxLength
-    } else {
-      sections.push(text)
-      currentLength += text.length
+  try {
+    const title = $elem.find('.common-text-title')
+    if (title.length) {
+      const titleText = title.text().trim()
+      text = titleText ? `『${titleText}』${text.replace(titleText, '')}` : text
     }
-  }
 
-  const figure = $elem.find('.figure')
-  if (figure.length) {
-    const img = figure.find('img')
-    if (img.length) {
-      let imgSrc = img.attr('data-src') || img.attr('src')
-      if (imgSrc && !imgSrc.startsWith('http')) {
-        imgSrc = `https:${imgSrc}`
-      }
-      if (imgSrc) {
-        sections.push(h.image(imgSrc).toString())
+    if (text) {
+      text = text.replace(/[\u0000-\u001F\u007F-\u009F\u200B-\u200D\uFEFF]/g, '') // 清理不可见字符
+      const remainingChars = maxLength - currentLength
+      if (text.length > remainingChars) {
+        text = text.slice(0, remainingChars) + '...'
+        sections.push(text)
+        return maxLength
+      } else {
+        sections.push(text)
+        currentLength += text.length
       }
     }
-  }
 
-  return currentLength
+    const figure = $elem.find('.figure')
+    if (figure.length) {
+      const img = figure.find('img')
+      if (img.length) {
+        let imgSrc = img.attr('data-src') || img.attr('src')
+        if (imgSrc && !imgSrc.startsWith('http')) {
+          imgSrc = `https:${imgSrc}`
+        }
+        if (imgSrc) {
+          sections.push(h.image(imgSrc).toString())
+        }
+      }
+    }
+
+    return currentLength
+  } catch (error) {
+    // 错误处理：忽略有问题的内容，继续处理
+    console.error('处理文本时出错:', error)
+    return currentLength
+  }
 }
 
 // 辅助函数 - 处理通用内容区域
@@ -386,56 +393,61 @@ function processModVersionInfo($: cheerio.CheerioAPI, sections: string[], isModp
   }
 }
 
-// 修改处理函数的返回值格式化
+// 修改内容格式化函数
 function formatContentSections(result: { sections: string[]; links: string[] }, url: string) {
-  const { sections, links } = result
-  const parts = {
-    header: [] as string[],
-    desc: [] as string[],
-  }
-
-  let currentSection: keyof typeof parts = 'header'
-  let descStarted = false
-
-  for (const section of sections) {
-    const trimmed = section.trim()
-    if (!trimmed) continue
-
-    if (trimmed.startsWith('『')) {
-      descStarted = true
-      currentSection = 'desc'
+  try {
+    const { sections, links } = result
+    const parts = {
+      header: [] as string[],
+      desc: [] as string[],
     }
 
-    if (!descStarted) {
-      currentSection = 'header'
+    let currentSection: keyof typeof parts = 'header'
+    let descStarted = false
+
+    for (const section of sections) {
+      const trimmed = (section || '').trim()
+      if (!trimmed) continue
+
+      if (trimmed.startsWith('『')) {
+        descStarted = true
+        currentSection = 'desc'
+      }
+
+      if (!descStarted) {
+        currentSection = 'header'
+      }
+
+      parts[currentSection].push(trimmed)
     }
 
-    parts[currentSection].push(trimmed)
-  }
+    const output: string[] = []
 
-  const output: string[] = []
+    if (parts.header.length > 0) {
+      output.push(...parts.header.map(text =>
+        text.replace(/[\u0000-\u001F\u007F-\u009F\u200B-\u200D\uFEFF]/g, '')))
+    }
 
-  // 只有在header有内容时才添加
-  if (parts.header.length > 0) {
-    output.push(...parts.header)
-  }
+    if (links.length > 0) {
+      if (output.length > 0) output.push('')
+      output.push('相关链接:')
+      output.push(...links.map(text =>
+        text.replace(/[\u0000-\u001F\u007F-\u009F\u200B-\u200D\uFEFF]/g, '')))
+    }
 
-  // 只有在有相关链接时才添加
-  if (links.length > 0) {
+    if (parts.desc.length > 0) {
+      if (output.length > 0) output.push('')
+      output.push('简介:')
+      output.push(...parts.desc.map(text =>
+        text.replace(/[\u0000-\u001F\u007F-\u009F\u200B-\u200D\uFEFF]/g, '')))
+    }
+
     if (output.length > 0) output.push('')
-    output.push('相关链接:')
-    output.push(...links)
+    output.push(`详细内容: ${url}`)
+
+    return output.join('\n').replace(/\n{3,}/g, '\n\n').trim()
+  } catch (error) {
+    console.error('格式化内容时出错:', error)
+    return `获取内容失败，请直接访问：${url}`
   }
-
-  // 只有在有简介内容时才添加
-  if (parts.desc.length > 0) {
-    if (output.length > 0) output.push('')
-    output.push('简介:')
-    output.push(...parts.desc)
-  }
-
-  if (output.length > 0) output.push('')
-  output.push(`详细内容: ${url}`)
-
-  return output.join('\n').replace(/\n{3,}/g, '\n\n').trim()
 }
