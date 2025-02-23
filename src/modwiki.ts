@@ -1,349 +1,527 @@
 import axios from 'axios'
 import * as cheerio from 'cheerio'
 import { h } from 'koishi'
-import { formatErrorMessage } from './utils'
 
 export interface ModwikiConfig {
   searchDescLength: number
   totalPreviewLength: number
   searchTimeout: number
   searchResultLimit: number
+  pageTimeout: number  // 新增
 }
 
-// 统一的结果类型
+// 统一的搜索结果格式
 interface SearchResult {
   title: string
   url: string
   desc: string
-  type: 'mod' | 'modpack' | 'item' | 'post' | 'unknown'
+  type: string
 }
 
-// 修改sections类型定义，将图片URL作为特殊类型存储
-type ContentSection = string | { type: 'image', url: string }
+// 基础搜索功能
+export async function searchMCMOD(keyword: string, config: ModwikiConfig) {
+  const searchUrl = `https://search.mcmod.cn/s?key=${encodeURIComponent(keyword)}`
+  const response = await axios.get(searchUrl)
+  const $ = cheerio.load(response.data)
 
-// 统一的内容处理器
-async function processContent(url: string, config: ModwikiConfig) {
-  const $ = await fetchAndParse(url)
-  const sections: ContentSection[] = []
+  const searchResults: SearchResult[] = []
 
-  const type = getContentType(url)
-  const contentHandler = contentHandlers[type]
+  $('.result-item').each((_, item) => {
+    const $item = $(item)
+    const titleEl = $item.find('.head a').last()
+    const title = titleEl.text().trim()
+    const url = titleEl.attr('href') || ''
 
-  if (contentHandler) {
-    await contentHandler($, sections, config.totalPreviewLength)
-  } else {
-    throw new Error('不支持的内容类型')
-  }
+    const type = url.includes('/modpack/') ? '整合包' :
+                url.includes('/class/') ? 'MOD' :
+                url.includes('/item/') ? '物品' :
+                url.includes('/post/') ? '教程' : '未知'
 
-  return formatContentSections(sections, url)
-}
+    let desc = config.searchDescLength > 0 ?
+      $item.find('.body').text().trim()
+        .replace(/\[(\w+)[^\]]*\]/g, '')
+        .replace(/data:image\/\w+;base64,[a-zA-Z0-9+/=]+/g, '')
+        .replace(/\s+/g, ' ')
+        .trim() : ''
 
-// 基础功能函数
-async function fetchAndParse(url: string) {
-  const response = await axios.get(url)
-  return cheerio.load(response.data)
-}
-
-function getContentType(url: string): SearchResult['type'] {
-  if (url.includes('/modpack/')) return 'modpack'
-  if (url.includes('/class/')) return 'mod'
-  if (url.includes('/item/')) return 'item'
-  if (url.includes('/post/')) return 'post'
-  return 'unknown'
-}
-
-function processCommonText($: cheerio.CheerioAPI, selector: string, sections: ContentSection[], maxLength: number) {
-  let totalLength = 0
-
-  $(selector).children().each((_, elem) => {
-    if (totalLength >= maxLength) return false
-
-    const $elem = $(elem)
-    if ($elem.is('p, ol, ul')) {
-      const text = processTextContent($elem)
-      if (text) {
-        totalLength = addContentToSections(sections, text, totalLength, maxLength)
-      }
+    if (desc && desc.length > config.searchDescLength) {
+      desc = desc.slice(0, config.searchDescLength) + '...'
     }
 
-    const img = $elem.find('img').first()
+    if (title && url) {
+      searchResults.push({
+        title,
+        url: url.startsWith('http') ? url : `https://www.mcmod.cn${url}`,
+        desc: desc || '',
+        type
+      })
+    }
+  })
+
+  return searchResults
+}
+
+// 处理各种类型内容的统一接口
+export async function processMCMODContent(url: string, config: ModwikiConfig) {
+  try {
+    const response = await axios.get(url)
+    const $ = cheerio.load(response.data)
+    const contentSections: string[] = []
+
+    if (url.includes('/post/')) {
+      return processPost($, config.totalPreviewLength)
+    } else if (url.includes('/item/')) {
+      return processItem($, config.totalPreviewLength)
+    } else {
+      const isModpack = url.includes('/modpack/')
+      return processMod($, config.totalPreviewLength, isModpack)
+    }
+  } catch (error) {
+    throw new Error(`内容处理失败: ${error.message}`)
+  }
+}
+
+// 处理帖子内容
+function processPost($: cheerio.CheerioAPI, totalPreviewLength: number) {
+  const contentSections: string[] = []
+
+  // 提取标题
+  const title = $('.postname h5').text().trim()
+  if (title) contentSections.push(title)
+
+  // 处理内容
+  let totalLength = 0
+
+  $('div.text p').each((_, pElem) => {
+    if (totalLength >= totalPreviewLength) return false
+
+    const $pElem = $(pElem)
+    let text = $pElem.clone()
+      .find('script, .figure')
+      .remove()
+      .end()
+      .text()
+      .trim()
+      .replace(/\s+/g, ' ')
+      .replace(/\[(\w+)\]/g, '')
+
+    // 处理段落和图片
+    processTextAndImages($pElem, text, contentSections, totalPreviewLength, totalLength)
+  })
+
+  return contentSections
+}
+
+// 处理物品内容
+function processItem($: cheerio.CheerioAPI, totalPreviewLength: number) {
+  const contentSections: string[] = []
+
+  // 处理标题和图标
+  const itemName = $('.itemname .name h5').text().trim()
+  if (itemName) contentSections.push(itemName)
+
+  processImages($('.item-info-table img').first(), contentSections)
+
+  contentSections.push('\n物品介绍:')
+  processContent($, '.item-content.common-text', contentSections, totalPreviewLength)
+
+  return contentSections
+}
+
+// 处理模组/整合包内容
+function processMod($: cheerio.CheerioAPI, totalPreviewLength: number, isModpack: boolean) {
+  const contentSections: string[] = []
+
+  // 处理基本信息
+  processModBasicInfo($, contentSections, isModpack)
+
+  // 处理版本信息
+  processModVersionInfo($, contentSections, isModpack)
+
+  // 处理描述内容
+  processContent($, '.common-text', contentSections, totalPreviewLength)
+
+  return contentSections
+}
+
+// 辅助函数 - 处理文本和图片
+function processTextAndImages($elem: cheerio.Cheerio<any>, text: string, sections: string[], maxLength: number, currentLength: number) {
+  if (!text) return currentLength
+
+  const title = $elem.find('.common-text-title')
+  if (title.length) {
+    text = `『${title.text().trim()}』${text.replace(title.text().trim(), '')}`
+  }
+
+  if (text) {
+    const remainingChars = maxLength - currentLength
+    if (text.length > remainingChars) {
+      text = text.slice(0, remainingChars) + '......'
+      sections.push(text)
+      return maxLength
+    } else {
+      sections.push(text)
+      currentLength += text.length
+    }
+  }
+
+  const figure = $elem.find('.figure')
+  if (figure.length) {
+    const img = figure.find('img')
     if (img.length) {
-      const imageUrl = processImage(img)
-      if (imageUrl) sections.push({ type: 'image', url: imageUrl })
+      let imgSrc = img.attr('data-src') || img.attr('src')
+      if (imgSrc && !imgSrc.startsWith('http')) {
+        imgSrc = `https:${imgSrc}`
+      }
+      if (imgSrc) {
+        sections.push(h.image(imgSrc).toString())
+      }
+    }
+  }
+
+  return currentLength
+}
+
+// 辅助函数 - 处理通用内容区域
+function processContent($: cheerio.CheerioAPI, selector: string, sections: string[], maxLength: number) {
+  const contentArea = $(selector)
+  if (!contentArea.length) return
+
+  let totalLength = 0
+  let skipNext = false
+
+  contentArea.children().each((_, elem) => {
+    const $elem = $(elem)
+    if (totalLength >= maxLength) return false
+
+    if (skipNext) {
+      skipNext = false
+      return
+    }
+
+    // 处理图片
+    const figure = $elem.find('.figure')
+    if (figure.length) {
+      processImages(figure.find('img'), sections)
+      return
+    }
+
+    if ($elem.is('p, ol, ul')) {
+      const title = $elem.find('span.common-text-title')
+      if (title.length) {
+        const nextP = $elem.next('p')
+        if (nextP.length) {
+          const nextText = nextP.clone()
+            .find('script,.figure').remove().end()
+            .text()
+            .trim()
+            .replace(/\s+/g, ' ')
+            .replace(/\[(\w+)\]/g, '')
+
+          if (nextText) {
+            let combinedText = `『${title.text().trim()}』${nextText}`
+            const remainingChars = maxLength - totalLength
+            if (combinedText.length > remainingChars) {
+              combinedText = combinedText.slice(0, remainingChars) + '......'
+              totalLength = maxLength
+            } else {
+              totalLength += combinedText.length
+            }
+            sections.push(combinedText)
+            skipNext = true
+          } else {
+            sections.push(`『${title.text().trim()}』`)
+          }
+          return
+        } else {
+          sections.push(`『${title.text().trim()}』`)
+          return
+        }
+      }
+
+      let text = $elem.clone()
+        .find('script,.figure').remove().end()
+        .text()
+        .trim()
+        .replace(/\s+/g, ' ')
+        .replace(/\[(\w+)\]/g, '')
+
+      if (text) {
+        const remainingChars = maxLength - totalLength
+        if (text.length > remainingChars) {
+          text = text.slice(0, remainingChars) + '......'
+          totalLength = maxLength
+        } else {
+          totalLength += text.length
+        }
+        sections.push(text)
+      }
     }
   })
 }
 
-function processTextContent($elem: cheerio.Cheerio<any>): string {
-  const title = $elem.find('.common-text-title')
-  const text = $elem.clone()
-    .find('script,.figure')
-    .remove()
-    .end()
-    .text()
-    .trim()
-    .replace(/\s+/g, ' ')
-    .replace(/\[(\w+)\]/g, '')
+// 辅助函数 - 处理图片
+function processImages($img: cheerio.Cheerio<any>, sections: string[]) {
+  if (!$img.length) return
 
-  return title.length ? `『${title.text().trim()}』${text}` : text
-}
-
-function addContentToSections(sections: ContentSection[], text: string, currentLength: number, maxLength: number): number {
-  const remainingLength = maxLength - currentLength
-  if (text.length > remainingLength) {
-    sections.push(text.slice(0, remainingLength) + '...')
-    return maxLength
-  } else {
-    sections.push(text)
-    return currentLength + text.length
+  let imgSrc = $img.attr('data-src') || $img.attr('src')
+  if (imgSrc && !imgSrc.startsWith('http')) {
+    imgSrc = `https:${imgSrc}`
+  }
+  if (imgSrc) {
+    sections.push(h.image(imgSrc).toString())
   }
 }
 
-// 通用的图片处理函数
-function processImage($img: cheerio.Cheerio<any>): string {
-  const imgSrc = $img.attr('data-src') || $img.attr('src')
-  if (!imgSrc) return ''
-
-  return imgSrc.startsWith('//i.mcmod.cn') ? `https:${imgSrc.replace(/@\d+x\d+\.jpg$/, '')}` : // 移除尺寸后缀
-         imgSrc.startsWith('//') ? `https:${imgSrc}` :
-         imgSrc.startsWith('/') ? `https://www.mcmod.cn${imgSrc}` :
-         imgSrc.startsWith('http') ? imgSrc :
-         `https:${imgSrc}`
-}
-
-// 各类型内容处理器
-const contentHandlers = {
-  mod: async ($: cheerio.CheerioAPI, sections: ContentSection[], maxLength: number) => {
-    const basicInfo = extractModBasicInfo($)
-    sections.push(basicInfo.title)
-    if (basicInfo.cover) sections.push(basicInfo.cover)
-
-    // 运行环境信息
-    $('.class-info-left .col-lg-4').each((_, elem) => {
-      const text = $(elem).text().trim().replace(/\s+/g, ' ')
-      if (text.includes('运行环境')) sections.push(text)
-    })
-
-    // 版本信息
-    const versions = extractModVersions($)
-    if (versions.length) {
-      sections.push('支持版本:')
-      sections.push(versions.join('\n'))
-    }
-
-    processCommonText($, '.common-text', sections, maxLength)
-  },
-
-  modpack: async ($: cheerio.CheerioAPI, sections: ContentSection[], maxLength: number) => {
-    const basicInfo = extractModBasicInfo($)
-    sections.push(basicInfo.title)
-    if (basicInfo.cover) sections.push(basicInfo.cover)
-
-    // 整合包信息
-    $('.class-info-left .col-lg-4').each((_, elem) => {
-      const text = $(elem).text().trim().replace(/\s+/g, ' ')
-      if (text.match(/整合包类型|运作方式|打包方式/)) sections.push(text)
-    })
-
-    // 支持版本
-    const versions = $('.mcver ul li')
-      .map((_, elem) => $(elem).text().trim())
-      .get()
-      .filter(v => v && !v.includes('Forge:') && v.match(/^\d/))
-
-    if (versions.length) {
-      sections.push('支持版本:')
-      sections.push(versions.join(', '))
-    }
-
-    processCommonText($, '.common-text', sections, maxLength)
-  },
-
-  item: async ($: cheerio.CheerioAPI, sections: ContentSection[], maxLength: number) => {
-    const itemName = $('.itemname .name h5').text().trim()
-    if (itemName) sections.push(itemName)
-
-    const itemImage = $('.item-info-table img').first()
-    if (itemImage.length) {
-      const imageUrl = processImage(itemImage)
-      if (imageUrl) sections.push({ type: 'image', url: imageUrl })
-    }
-
-    sections.push('\n物品介绍:')
-    processCommonText($, '.item-content.common-text', sections, maxLength)
-  },
-
-  post: async ($: cheerio.CheerioAPI, sections: ContentSection[], maxLength: number) => {
-    const title = $('.postname h5').text().trim()
-    if (title) sections.push(title)
-    processCommonText($, 'div.text', sections, maxLength)
-  }
-}
-
-function extractModBasicInfo($: cheerio.CheerioAPI) {
+// 辅助函数 - 处理模组基本信息
+function processModBasicInfo($: cheerio.CheerioAPI, sections: string[], isModpack: boolean) {
+  // 提取标题信息
   const shortName = $('.short-name').first().text().trim()
   const title = $('.class-title h3').first().text().trim()
   const enTitle = $('.class-title h4').first().text().trim()
 
-  const statusLabels = $('.class-official-group .class-status, .class-official-group .class-source')
-    .map((_, elem) => $(elem).text().trim())
-    .get()
+  // 获取状态文本（仅适用于mod）
+  const modStatusLabels: string[] = []
+  if (!isModpack) {
+    $('.class-official-group .class-status').each((_, elem) => {
+      modStatusLabels.push($(elem).text().trim())
+    })
+    $('.class-official-group .class-source').each((_, elem) => {
+      modStatusLabels.push($(elem).text().trim())
+    })
+  }
 
-  const formattedTitle = `${shortName} ${enTitle} | ${title}${statusLabels.length ? ` (${statusLabels.join(' | ')})` : ''}`
+  // 组合标题
+  const formattedTitle = `${shortName} ${enTitle} | ${title}${!isModpack && modStatusLabels.length ? ` (${modStatusLabels.join(' | ')})` : ''}`
+  sections.push(formattedTitle)
 
+  // 提取封面图片
   const coverImage = $('.class-cover-image img').first()
-  const coverUrl = coverImage.length ? processImage(coverImage) : null
-
-  return {
-    title: formattedTitle,
-    cover: coverUrl ? { type: 'image' as const, url: coverUrl } : null
+  if (coverImage.length) {
+    processImages(coverImage, sections)
   }
-}
 
-function extractModVersions($: cheerio.CheerioAPI) {
-  const versionInfo: Record<string, string[]> = {}
+  // 提取信息
+  $('.class-info-left .col-lg-4').each((_, elem) => {
+    const text = $(elem).text().trim()
+      .replace(/\s+/g, ' ')
+      .replace(/：/g, ': ')
 
-  $('.mcver ul').each((_, elem) => {
-    const loader = $(elem).find('li:first').text().trim().split(':')[0].trim()
-    const versions = $(elem).find('a')
-      .map((_, ver) => $(ver).text().trim())
-      .get()
-      .filter(v => v.match(/^\d/))
-
-    if (versions.length) versionInfo[loader] = versions
-  })
-
-  return Object.entries(versionInfo)
-    .filter(([_, vers]) => vers.length > 0)
-    .map(([loader, vers]) => `${loader}: ${vers.join(', ')}`)
-}
-
-// 格式化最终输出
-function formatContentSections(sections: ContentSection[], url: string) {
-  return {
-    sections: sections.filter(Boolean),
-    url
-  }
-}
-
-// 统一的导出接口
-export async function searchMCMOD(keyword: string, config: ModwikiConfig): Promise<SearchResult[]> {
-  try {
-    const $ = await fetchAndParse(`https://search.mcmod.cn/s?key=${encodeURIComponent(keyword)}`)
-    return $('.result-item').map((_, item) => {
-      const $item = $(item)
-      const titleEl = $item.find('.head a').last()
-      const url = titleEl.attr('href') || ''
-
-      return {
-        title: titleEl.text().trim(),
-        url: url.startsWith('http') ? url : `https://www.mcmod.cn${url}`,
-        desc: extractSearchDesc($item, config.searchDescLength),
-        type: getContentType(url)
+    if (isModpack) {
+      // 整合包只保留特定信息
+      if (text.includes('整合包类型') ||
+          text.includes('运作方式') ||
+          text.includes('打包方式')) {
+        sections.push(text)
       }
-    }).get().filter(r => r.title && r.url)
-  } catch (error) {
-    throw new Error(`搜索失败：${formatErrorMessage(error)}`)
-  }
-}
-
-function extractSearchDesc($item: cheerio.Cheerio<any>, maxLength: number): string {
-  if (maxLength <= 0) return ''
-
-  const desc = $item.find('.body').text().trim()
-    .replace(/\[(\w+)[^\]]*\]/g, '')
-    .replace(/data:image\/\w+;base64,[a-zA-Z0-9+/=]+/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-
-  return desc.length > maxLength ? desc.slice(0, maxLength) + '...' : desc
-}
-
-// 添加截图处理函数
-async function captureModPage(page: any, url: string) {
-  await page.setViewport({ width: 1000, height: 800, deviceScaleFactor: 1 })
-
-  await page.goto(url, {
-    waitUntil: 'networkidle0',
-    timeout: 30000
-  })
-
-  await page.evaluate(() => {
-    const style = document.createElement('style')
-    style.textContent = `
-      body { margin: 0; background: white; }
-      .header, .navbar, .footer, .sidebar, .fixedtool, #feedback, .ad-wrap { display: none !important; }
-      .wrapper { padding: 20px; max-width: 1000px; margin: 0 auto; }
-      .class-cover-image img, .item-info-table img { max-width: 300px; height: auto; display: block; margin: 1em auto; }
-      img { max-width: 100%; height: auto; }
-      img[src^="//"] { visibility: hidden; }
-      img[src^="/"] { visibility: hidden; }
-    `
-    document.head.appendChild(style)
-
-    document.querySelectorAll('.header, .navbar, .footer, .sidebar, .fixedtool, #feedback, .ad-wrap')
-      .forEach(el => el.remove())
-  })
-
-  const wrapper = await page.$('.wrapper')
-  if (!wrapper) throw new Error('无法获取页面内容')
-
-  const screenshot = await wrapper.screenshot({
-    type: 'png',
-    omitBackground: true
-  })
-
-  return screenshot
-}
-
-// 修改导出函数添加截图支持
-export async function processMCMODContent(
-  url: string,
-  config: ModwikiConfig,
-  ctx?: any,
-  mode: 'text' | 'image' = 'text'
-) {
-  try {
-    if (mode === 'image') {
-      if (!ctx?.puppeteer) {
-        throw new Error('截图功能不可用：未找到 puppeteer 服务')
+    } else {
+      // mod只保留运行环境信息
+      if (text.includes('运行环境')) {
+        sections.push(text)
       }
+    }
+  })
+}
 
-      return {
-        url,
-        async getImage() {
-          const context = await ctx.puppeteer.browser.createBrowserContext()
-          const page = await context.newPage()
-          try {
-            const image = await captureModPage(page, url)
-            return { image }
-          } finally {
-            await context.close()
-          }
+// 辅助函数 - 处理版本信息
+function processModVersionInfo($: cheerio.CheerioAPI, sections: string[], isModpack: boolean) {
+  if (isModpack) {
+    // 整合包版本信息处理
+    const versionInfo: string[] = []
+    $('.mcver ul li').each((_, elem) => {
+      const text = $(elem).text().trim()
+      if (text && !text.includes('Forge:') && text.match(/^\d/)) {
+        versionInfo.push(text)
+      }
+    })
+
+    if (versionInfo.length) {
+      sections.push('支持版本:')
+      sections.push(versionInfo.join(', '))
+    }
+  } else {
+    // MOD版本信息处理
+    const versionInfo: Record<string, string[]> = {}
+    $('.mcver ul').each((_, elem) => {
+      const loaderText = $(elem).find('li:first').text().trim()
+      const versions: string[] = []
+
+      $(elem).find('a').each((_, verElem) => {
+        const version = $(verElem).text().trim()
+        if (version.match(/^\d/)) {
+          versions.push(version)
         }
+      })
+
+      if (versions.length > 0) {
+        const loader = loaderText.split(':')[0].trim()
+        versionInfo[loader] = versions
+      }
+    })
+
+    const versionTexts = Object.entries(versionInfo)
+      .filter(([_, vers]) => vers.length > 0)
+      .map(([loader, vers]) => `${loader}: ${vers.join(', ')}`)
+
+    if (versionTexts.length) {
+      sections.push('支持版本:')
+      sections.push(versionTexts.join('\n'))
+    }
+  }
+}
+
+// 修改处理函数的返回值格式化
+function formatContentSections(sections: string[], url: string) {
+  return sections
+    .filter(Boolean)
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim() + `\n\n详细内容: ${url}`
+}
+
+// 修改导出函数
+export async function processModSearchResult(url: string, config: ModwikiConfig) {
+  try {
+    const content = await processMCMODContent(url, config)
+    return formatContentSections(content, url)
+  } catch (error) {
+    throw new Error(`获取内容失败: ${error.message}`)
+  }
+}
+
+export async function processItemSearchResult(url: string, config: ModwikiConfig) {
+  try {
+    const content = await processMCMODContent(url, config)
+    return formatContentSections(content, url)
+  } catch (error) {
+    throw new Error(`获取物品内容失败: ${error.message}`)
+  }
+}
+
+export async function processPostSearchResult(url: string, config: ModwikiConfig) {
+  try {
+    const content = await processMCMODContent(url, config)
+    return formatContentSections(content, url)
+  } catch (error) {
+    throw new Error(`获取帖子内容失败: ${error.message}`)
+  }
+}
+
+// 添加截图功能
+export async function captureMCMODPageScreenshot(page: any, url: string, config: ModwikiConfig) {
+  try {
+    // 设置初始视口
+    await page.setViewport({
+      width: 1000,
+      height: 800,
+      deviceScaleFactor: 1
+    })
+
+    // 页面加载与重试机制
+    let retries = 3
+    while (retries > 0) {
+      try {
+        await page.goto(url, {
+          waitUntil: 'networkidle0',
+          timeout: config.pageTimeout * 1000
+        })
+        break
+      } catch (err) {
+        retries--
+        if (retries === 0) throw err
+        await new Promise(resolve => setTimeout(resolve, 1000))
       }
     }
 
-    const result = await processContent(url, config)
-    const elements = result.sections.map(section => {
-      if (typeof section === 'string') return section
-      if (section.type === 'image') return h.image(section.url)
-      return ''
+    // 等待内容加载
+    await page.waitForSelector('.col-lg-12.center', {
+      timeout: config.pageTimeout * 1000,
+      visible: true
     })
 
-    return h(() => [
-      ...elements,
-      `\n\n详细内容: ${result.url}`
-    ])
+    // 注入优化样式
+    await page.evaluate(() => {
+      const style = document.createElement('style')
+      style.textContent = `
+        body { margin: 0; background: white; }
+        .col-lg-12.center {
+          margin: 0 auto;
+          padding: 20px;
+          box-sizing: border-box;
+          width: 100%;
+          max-width: 1000px;
+        }
+        img { max-width: 100%; height: auto; }
+      `
+      document.head.appendChild(style)
+    })
 
+    // 清理无用元素
+    await page.evaluate(() => {
+      const elementsToRemove = [
+        '#header', '#footer', '.comment-area',
+        'script', 'iframe', '#back-to-top'
+      ]
+      elementsToRemove.forEach(selector => {
+        document.querySelectorAll(selector).forEach(el => el.remove())
+      })
+    })
+
+    // 获取内容区域尺寸
+    const dimensions = await page.evaluate(() => {
+      const content = document.querySelector('.col-lg-12.center')
+      if (!content) return null
+      const rect = content.getBoundingClientRect()
+      return {
+        width: Math.min(1000, Math.ceil(rect.width)),
+        height: Math.min(4000, Math.ceil(rect.height))
+      }
+    })
+
+    if (!dimensions) {
+      throw new Error('无法获取页面内容区域')
+    }
+
+    // 调整视口并截图
+    await page.setViewport({
+      width: dimensions.width,
+      height: dimensions.height,
+      deviceScaleFactor: 1
+    })
+
+    // 等待内容完全渲染
+    await new Promise(resolve => setTimeout(resolve, 500))
+
+    const screenshot = await page.screenshot({
+      type: 'jpeg',
+      quality: 80,
+      omitBackground: true,
+      fullPage: false,
+      clip: {
+        x: 0,
+        y: 0,
+        width: dimensions.width,
+        height: dimensions.height
+      }
+    })
+
+    return {
+      image: screenshot,
+      height: dimensions.height
+    }
   } catch (error) {
-    const type = {
-      mod: 'MOD',
-      modpack: '整合包',
-      item: '物品',
-      post: '教程'
-    }[getContentType(url)] || '内容'
+    throw new Error(`截图失败: ${error.message}`)
+  }
+}
 
-    throw new Error(`获取${type}信息失败：${formatErrorMessage(error)}`)
+// 添加处理截图请求的函数
+export async function processMCMODScreenshot(url: string, config: ModwikiConfig, ctx: any) {
+  const context = await ctx.puppeteer.browser.createBrowserContext()
+  const page = await context.newPage()
+  try {
+    const { image } = await captureMCMODPageScreenshot(page, url, config)
+    return { image }
+  } finally {
+    await context.close()
   }
 }
