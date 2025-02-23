@@ -1,3 +1,4 @@
+import { h } from 'koishi'
 import * as cheerio from 'cheerio'
 import axios from 'axios'
 import {
@@ -136,176 +137,6 @@ export async function fetchWikiArticleContent(pageUrl: string, lang: LangCode, c
   }
 }
 
-export async function captureWikiPageScreenshot(page: any, url: string, lang: LangCode, config: MinecraftToolsConfig) {
-  const CLEANUP_SELECTORS = [
-    '.mw-editsection',  // 编辑节按钮
-    '#mw-navigation',   // 导航
-    '#footer',          // 页脚
-    '.noprint',         // 不可打印内容
-    '#toc',            // 目录
-    '.navbox',         // 导航框
-    '#siteNotice',     // 站点通知
-    '#contentSub',     // 子标题
-    '.mw-indicators', // 指示器
-    '.sister-wiki',    // 姊妹维基链接
-    '.external',      // 外部链接
-    'script',         // 脚本
-    'meta',           // 元数据
-    '#mw-head',       // 页面头部
-    '#mw-head-base',  // 头部基础
-    '#mw-page-base',  // 页面基础
-    '#catlinks',      // 分类链接
-    '.printfooter',   // 打印页脚
-    '.mw-jump-link',  // 跳转链接
-    '.vector-toc',    // 矢量目录
-    '.vector-menu',   // 矢量菜单
-    '.mw-cite-backlink', // 引用回链
-    '.reference',     // 引用
-    '.treeview',      // 树状视图
-    '.file-display-header' // 文件显示头部
-  ]
-
-  try {
-    // 设置初始视口
-    await page.setViewport({
-      width: 1080,
-      height: 1920,
-      deviceScaleFactor: 1
-    })
-
-    // 设置语言和请求头
-    await page.setExtraHTTPHeaders({
-      'Accept-Language': `${lang},${lang}-*;q=0.9,en;q=0.8`,
-      'Cookie': `language=${lang}; hl=${lang}; uselang=${lang}`,
-      'Cache-Control': 'no-cache'
-    })
-
-    // 页面加载与重试机制
-    let retries = 3
-    while (retries > 0) {
-      try {
-        await page.goto(url, {
-          waitUntil: 'networkidle0',
-          timeout: config.wiki.pageTimeout * 1000
-        })
-        break
-      } catch (err) {
-        retries--
-        if (retries === 0) throw err
-        await new Promise(resolve => setTimeout(resolve, 1000))
-      }
-    }
-
-    // 等待内容加载
-    await page.waitForSelector('#bodyContent', {
-      timeout: config.wiki.pageTimeout * 1000,
-      visible: true
-    })
-
-    // 只保留正文内容
-    await page.evaluate(() => {
-      const content = document.querySelector('#mw-content-text .mw-parser-output')
-      const newBody = document.createElement('div')
-      newBody.id = 'content'
-      if (content) {
-        newBody.appendChild(content.cloneNode(true))
-      }
-      document.body.innerHTML = ''
-      document.body.appendChild(newBody)
-    })
-
-    // 注入优化样式
-    await page.evaluate(() => {
-      const style = document.createElement('style')
-      style.textContent = `
-        body {
-          margin: 0;
-          background: white;
-          font-family: system-ui, -apple-system, sans-serif;
-        }
-        #content {
-          margin: 0 auto;
-          padding: 20px;
-          box-sizing: border-box;
-          width: 100%;
-        }
-        .mw-parser-output {
-          max-width: 960px;
-          margin: 0 auto;
-          line-height: 1.6;
-        }
-        img { max-width: 100%; height: auto; }
-        table {
-          margin: 1em auto;
-          border-collapse: collapse;
-          max-width: 100%;
-        }
-        td, th { padding: 0.5em; border: 1px solid #ccc; }
-        pre {
-          padding: 1em;
-          background: #f5f5f5;
-          border-radius: 4px;
-          overflow-x: auto;
-        }
-      `
-      document.head.appendChild(style)
-    })
-
-    // 清理无用元素
-    await page.evaluate((selectors) => {
-      // 移除不需要的元素
-      selectors.forEach(selector => {
-        document.querySelectorAll(selector).forEach(el => el.remove())
-      })
-    }, CLEANUP_SELECTORS)
-
-    // 获取内容区域尺寸
-    const dimensions = await page.evaluate(() => {
-      const content = document.querySelector('#content')
-      if (!content) return null
-      const rect = content.getBoundingClientRect()
-      return {
-        width: Math.min(1000, Math.ceil(rect.width)),
-        height: Math.min(4000, Math.ceil(rect.height)) // 限制最大高度
-      }
-    })
-
-    if (!dimensions) {
-      throw new Error('无法获取页面内容区域')
-    }
-
-    // 调整视口并截图
-    await page.setViewport({
-      width: dimensions.width,
-      height: dimensions.height,
-      deviceScaleFactor: 1
-    })
-
-    // 等待内容完全渲染
-    await new Promise(resolve => setTimeout(resolve, 500))
-
-    const screenshot = await page.screenshot({
-      type: 'jpeg',
-      quality: 80,
-      omitBackground: true,
-      fullPage: false,
-      clip: {
-        x: 0,
-        y: 0,
-        width: dimensions.width,
-        height: dimensions.height
-      }
-    })
-
-    return {
-      image: screenshot,
-      height: dimensions.height
-    }
-  } catch (error) {
-    throw new Error(`截图失败: ${error.message}`)
-  }
-}
-
 export async function processWikiRequest(keyword: string, userId: string, config: MinecraftToolsConfig, ctx: any, userLangs: Map<string, LangCode>, mode: 'text' | 'image' | 'search' = 'text') {
   if (!keyword) return '请输入要查询的内容关键词'
 
@@ -330,16 +161,7 @@ export async function processWikiRequest(keyword: string, userId: string, config
     if (mode === 'image') {
       return {
         url: displayUrl,
-        async getImage() {
-          const context = await ctx.puppeteer.browser.createBrowserContext()
-          const page = await context.newPage()
-          try {
-            const { image } = await captureWikiPageScreenshot(page, pageUrl, lang, config)
-            return { image }
-          } finally {
-            await context.close()
-          }
-        }
+        pageUrl
       }
     }
 

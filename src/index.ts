@@ -16,14 +16,17 @@ import {
   processPostSearchResult,
   searchMCMOD,
   processMCMODContent,
-  processMCMODScreenshot,
 } from './modwiki'
 import {
   constructWikiUrl,
   processWikiRequest,
   fetchWikiArticleContent,
-  captureWikiPageScreenshot
 } from './mcwiki'
+import {
+  handleModScreenshot,
+  handleWikiScreenshot,
+  captureWikiPageScreenshot,
+} from './shot'
 
 export const name = 'mc-tools'
 export const inject = {required: ['puppeteer']}
@@ -173,26 +176,6 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
       }
     })
 
-  mcwiki.subcommand('.shot <keyword:text>', '获取 Wiki 页面截图')
-    .action(async ({ session }, keyword) => {
-      if (!config.wiki.imageEnabled) {
-        return '图片功能已禁用'
-      }
-      try {
-        const result = await processWikiRequest(keyword, session.userId, config, ctx, userLangs, 'image') as any
-        if (typeof result === 'string') return result
-
-        // 先发送URL
-        await session.send(`正在获取页面...\n完整内容：${result.url}`)
-
-        // 然后获取并发送图片
-        const { image } = await result.getImage()
-        return h.image(image, 'image/png')
-      } catch (error) {
-        return error.message
-      }
-    })
-
   // 修改 modwiki 命令实现
   const modWikiCommand = ctx.command('modwiki <keyword:text>', 'MCMOD搜索(支持模组/整合包/物品/教程)')
     .action(async ({ }, keyword) => {
@@ -246,25 +229,32 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
       }
     })
 
-  // 添加 shot 子命令
+  mcwiki.subcommand('.shot <keyword:text>', '获取 Wiki 页面截图')
+    .action(async ({ session }, keyword) => {
+      if (!keyword) return '请输入要查询的关键词'
+
+      try {
+        const wikiResult = await processWikiRequest(keyword, session.userId, config, ctx, userLangs, 'image') as any
+        if (typeof wikiResult === 'string') return wikiResult
+
+        await session.send(`正在获取页面...\n完整内容：${wikiResult.url}`)
+        const result = await handleWikiScreenshot(keyword, wikiResult.pageUrl, userLangs.get(session.userId) || config.wiki.defaultLanguage, config, ctx)
+        return result.image
+      } catch (error) {
+        return error.message
+      }
+    })
+
   modWikiCommand.subcommand('.shot <keyword:text>', '搜索并截图MCMOD条目')
     .action(async ({ session }, keyword) => {
       if (!keyword) return '请输入要查询的关键词'
 
       try {
-        const results = await searchMCMOD(keyword, config.wiki)
-        if (!results.length) return '未找到相关内容'
-
-        const result = results[0]
-        if (!result.url) return '获取链接失败'
-
-        // 先发送URL
+        const result = await handleModScreenshot(keyword, config, ctx)
         await session.send(`正在获取页面...\n完整内容：${result.url}`)
-
-        const imageResult = await processMCMODScreenshot(result.url, config.wiki, ctx)
-        return h.image(imageResult.image, 'image/jpeg')
+        return result.image
       } catch (error) {
-        return `查询失败: ${error.message}`
+        return error.message
       }
     })
 
