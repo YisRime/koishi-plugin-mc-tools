@@ -10,6 +10,7 @@ Minecraft(我的世界)工具箱插件,提供Wiki查询、版本检查、服务�
   - `mcwiki <关键词>` - 直接查询Wiki内容
   - `mcwiki.search <关键词>` - 搜索并选择Wiki条目
   - `mcwiki.shot <关键词>` - 获取Wiki页面截图
+  - `mcwiki.lang [语言]` - 设置Wiki显示语言
 
 - MCMOD百科查询
   - `modwiki <关键词>` - 直接查询模组信息
@@ -47,8 +48,7 @@ server:
 ## 支持的Wiki语言
 
 - 中文(简体) - zh
-- 中文(繁體/香港) - zh-hk
-- 中文(繁體/台灣) - zh-tw
+- 中文(繁體) - zh-hk
 - English - en
 - 日本語 - ja
 - 한국어 - ko
