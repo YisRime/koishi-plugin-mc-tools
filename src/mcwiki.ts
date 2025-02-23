@@ -75,7 +75,8 @@ export async function fetchWikiArticleContent(pageUrl: string, lang: LangCode, c
   const sections: { title?: string; content: string[] }[] = []
   let currentSection: { title?: string; content: string[] } = { content: [] }
 
-  $('#mw-content-text .mw-parser-output').children().each((_, element) => {
+  // Select all direct children of .mw-parser-output except .notaninfobox
+  $('#mw-content-text .mw-parser-output > *:not(.notaninfobox)').each((_, element) => {
     const el = $(element)
 
     if (el.is('h2, h3, h4')) {
@@ -92,7 +93,10 @@ export async function fetchWikiArticleContent(pageUrl: string, lang: LangCode, c
     }
     else if (el.is('p, ul, ol')) {
       const text = el.text().trim()
-      if (text && !text.startsWith('[') && !text.startsWith('跳转') && !el.hasClass('quote')) {
+      if (text && !text.startsWith('[') &&
+          !text.startsWith('跳转') &&
+          !el.hasClass('quote') &&
+          !el.hasClass('treeview')) {
         const cleanText = text.replace(/\s+/g, ' ')
         currentSection.content.push(cleanText)
       }
@@ -134,9 +138,32 @@ export async function fetchWikiArticleContent(pageUrl: string, lang: LangCode, c
 
 export async function captureWikiPageScreenshot(page: any, url: string, lang: LangCode, config: MinecraftToolsConfig) {
   const CLEANUP_SELECTORS = [
-    '.mw-editsection', '#mw-navigation', '#footer', '.noprint', '#toc',
-    '.navbox', '#siteNotice', '#contentSub', '.mw-indicators',
-    '.sister-wiki', '.external', 'script', 'style', 'meta'
+    '.mw-editsection',  // 编辑节按钮
+    '#mw-navigation',   // 导航
+    '#footer',          // 页脚
+    '.noprint',         // 不可打印内容
+    '#toc',            // 目录
+    '.navbox',         // 导航框
+    '#siteNotice',     // 站点通知
+    '#contentSub',     // 子标题
+    '.mw-indicators', // 指示器
+    '.sister-wiki',    // 姊妹维基链接
+    '.external',      // 外部链接
+    'script',         // 脚本
+    'style',          // 样式
+    'meta',           // 元数据
+    '#mw-head',       // 页面头部
+    '#mw-head-base',  // 头部基础
+    '#mw-page-base',  // 页面基础
+    '#catlinks',      // 分类链接
+    '.printfooter',   // 打印页脚
+    '.mw-jump-link',  // 跳转链接
+    '.vector-toc',    // 矢量目录
+    '.vector-menu',   // 矢量菜单
+    '.mw-cite-backlink', // 引用回链
+    '.reference',     // 引用
+    '.treeview',      // 树状视图
+    '.file-display-header' // 文件显示头部
   ]
 
   try {
@@ -174,6 +201,18 @@ export async function captureWikiPageScreenshot(page: any, url: string, lang: La
     await page.waitForSelector('#bodyContent', {
       timeout: config.wiki.pageTimeout * 1000,
       visible: true
+    })
+
+    // 只保留正文内容
+    await page.evaluate(() => {
+      const content = document.querySelector('#mw-content-text .mw-parser-output')
+      const newBody = document.createElement('div')
+      newBody.id = 'content'
+      if (content) {
+        newBody.appendChild(content.cloneNode(true))
+      }
+      document.body.innerHTML = ''
+      document.body.appendChild(newBody)
     })
 
     // 注入优化样式
@@ -216,9 +255,12 @@ export async function captureWikiPageScreenshot(page: any, url: string, lang: La
 
     // 清理无用元素
     await page.evaluate((selectors) => {
+      // 移除不需要的元素
       selectors.forEach(selector => {
         document.querySelectorAll(selector).forEach(el => el.remove())
       })
+      // 移除右侧信息框
+      document.querySelectorAll('.notaninfobox').forEach(el => el.remove())
     }, CLEANUP_SELECTORS)
 
     // 获取内容区域尺寸
