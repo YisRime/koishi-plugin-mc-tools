@@ -499,9 +499,9 @@ function formatContentSections(result: { sections: string[]; links: string[] }, 
 // 修改截图功能
 export async function captureMCMODPageScreenshot(page: any, url: string, config: ModwikiConfig) {
   try {
-    // 设置初始视口
+    // 设置初始视口为固定宽度
     await page.setViewport({
-      width: 1000,
+      width: 1080,  // 固定宽度为1080px
       height: 800,
       deviceScaleFactor: 1
     })
@@ -532,7 +532,7 @@ export async function captureMCMODPageScreenshot(page: any, url: string, config:
       visible: true
     })
 
-    // 注入优化样式
+    // 注入优化样式时添加固定宽度
     await page.evaluate((type) => {
       const style = document.createElement('style')
       style.textContent = `
@@ -540,7 +540,8 @@ export async function captureMCMODPageScreenshot(page: any, url: string, config:
           margin: 0 !important;
           padding: 0 !important;
           background: white !important;
-          min-width: auto !重要;
+          width: 1080px !important;
+          min-width: 1080px !important;
           overflow-x: hidden !important;
         }
 
@@ -548,8 +549,7 @@ export async function captureMCMODPageScreenshot(page: any, url: string, config:
         .item-row {
           margin: 0 auto !important;
           padding: 20px !important;
-          width: auto !important;
-          max-width: 1000px !important;
+          width: 1080px !important;
           background: white !important;
           position: relative !important;
           left: 0 !important;
@@ -558,32 +558,31 @@ export async function captureMCMODPageScreenshot(page: any, url: string, config:
 
         .maintext {
           margin: 0 !important;
-          padding: 0 !important;
-          float: none !important;
-          width: 100% !important;
+          padding: 0 !重要;
+          float: none !重要;
+          width: 1080px !重要;
         }
 
         /* 通用容器样式 */
         .col-lg-12.center {
-          margin: 0 auto !important;
-          padding: 20px !important;
-          width: auto !important;
-          max-width: 1000px !重要;
-          background: white !important;
-          float: none !important;
+          margin: 0 auto !重要;
+          padding: 20px !重要;
+          width: 1080px !重要;
+          background: white !重要;
+          float: none !重要;
         }
 
         /* 修复物品信息表格 */
         .item-info-table {
-          margin: 10px 0 !important;
-          width: 100% !important;
-          float: none !important;
+          margin: 10px 0 !重要;
+          width: 100% !重要;
+          float: none !重要;
         }
 
         .item-content {
-          min-height: 0 !important;
-          margin: 10px 0 !important;
-          width: 100% !important;
+          min-height: 0 !重要;
+          margin: 10px 0 !重要;
+          width: 100% !重要;
         }
 
         /* 隐藏无关元素 */
@@ -592,7 +591,7 @@ export async function captureMCMODPageScreenshot(page: any, url: string, config:
         .comment-ad, .ad-leftside, .slidetips, .item-table-tips,
         .common-icon-text-frame, .common-ad-frame, .ad-class-page,
         .item-data, .right {
-          display: none !important;
+          display: none !重要;
         }
 
         /* 清除浮动 */
@@ -628,21 +627,21 @@ export async function captureMCMODPageScreenshot(page: any, url: string, config:
     // 等待内容完全加载
     await new Promise(resolve => setTimeout(resolve, 1000))
 
-    // 获取内容区域
+    // 获取内容区域时确保最小宽度
     const clipData = await page.evaluate((selector) => {
       const element = document.querySelector(selector)
       if (!element) return null
 
-      // 强制设置容器样式
       element.style.height = 'auto'
       element.style.overflow = 'visible'
+      element.style.width = '1080px'
 
       const rect = element.getBoundingClientRect()
       return {
-        x: Math.max(0, Math.floor(rect.left)),
+        x: 0,
         y: Math.max(0, Math.floor(rect.top)),
-        width: Math.min(1000, Math.ceil(rect.width)),
-        height: Math.min(6000, Math.ceil(rect.height))
+        width: 1080,  // 固定宽度
+        height: Math.min(6000, Math.max(800, Math.ceil(rect.height)))
       }
     }, mainSelector)
 
@@ -650,9 +649,9 @@ export async function captureMCMODPageScreenshot(page: any, url: string, config:
       throw new Error('无法获取页面内容区域')
     }
 
-    // 调整视口
+    // 调整视口以匹配内容
     await page.setViewport({
-      width: clipData.width,
+      width: 1080,  // 保持固定宽度
       height: clipData.height,
       deviceScaleFactor: 1
     })
@@ -660,14 +659,15 @@ export async function captureMCMODPageScreenshot(page: any, url: string, config:
     // 确保内容完全渲染
     await new Promise(resolve => setTimeout(resolve, 500))
 
-    // 执行截图
+    // 执行截图，使用固定宽度
     const screenshot = await page.screenshot({
       type: 'jpeg',
       quality: 85,
       clip: {
-        ...clipData,
         x: 0,
-        width: Math.min(1000, clipData.width)
+        y: clipData.y,
+        width: 1080,
+        height: clipData.height
       },
       omitBackground: true
     })
