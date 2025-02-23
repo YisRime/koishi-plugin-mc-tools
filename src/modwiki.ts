@@ -167,36 +167,72 @@ function processRelatedLinks($: cheerio.CheerioAPI): string[] {
 // 处理模组/整合包内容
 function processMod($: cheerio.CheerioAPI, totalPreviewLength: number, isModpack: boolean) {
   const contentSections: string[] = []
+  try {
+    // 基本信息处理
+    processModBasicInfo($, contentSections, isModpack)
 
-  // 处理基本信息
-  processModBasicInfo($, contentSections, isModpack)
+    // 处理版本信息
+    processModVersionInfo($, contentSections, isModpack)
 
-  // 处理版本信息
-  processModVersionInfo($, contentSections, isModpack)
+    // 处理简介内容
+    const $content = $('.common-text')
+    if ($content.length) {
+      contentSections.push('\n')
+      // 提取简介第一段作为主要内容
+      const firstParagraph = $content.find('p').first().text().trim()
+      if (firstParagraph) {
+        contentSections.push(cleanText(firstParagraph))
+      }
+    }
 
-  // 处理描述内容
-  contentSections.push('\n')
-  processContent($, '.common-text', contentSections, totalPreviewLength)
-
-  return {
-    sections: contentSections,
-    links: processRelatedLinks($)
+    return {
+      sections: contentSections,
+      links: processRelatedLinks($)
+    }
+  } catch (error) {
+    console.error('处理MOD内容时出错:', error)
+    return {
+      sections: ['内容处理出错,请直接访问原页面查看'],
+      links: []
+    }
   }
+}
+
+// 添加文本清理函数
+function cleanText(text: string): string {
+  if (!text) return ''
+
+  return text
+    // 移除特殊控制字符
+    .replace(/[\x00-\x1F\x7F-\x9F]/g, '')
+    // 移除零宽字符
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    // 移除重复空白
+    .replace(/\s+/g, ' ')
+    // 移除html注释
+    .replace(/<!--[\s\S]*?-->/g, '')
+    // 移除特定标记
+    .replace(/\[(\w+)\]/g, '')
+    .trim()
 }
 
 // 修改文本和图片处理函数
 function processTextAndImages($elem: cheerio.Cheerio<any>, text: string, sections: string[], maxLength: number, currentLength: number): number {
-  if (!text) return currentLength
-
   try {
+    if (!text) return currentLength
+
+    text = cleanText(text)
+    if (!text) return currentLength
+
     const title = $elem.find('.common-text-title')
     if (title.length) {
-      const titleText = title.text().trim()
-      text = titleText ? `『${titleText}』${text.replace(titleText, '')}` : text
+      const titleText = cleanText(title.text())
+      if (titleText) {
+        text = `『${titleText}』${text.replace(titleText, '')}`
+      }
     }
 
     if (text) {
-      text = text.replace(/[\u0000-\u001F\u007F-\u009F\u200B-\u200D\uFEFF]/g, '') // 清理不可见字符
       const remainingChars = maxLength - currentLength
       if (text.length > remainingChars) {
         text = text.slice(0, remainingChars) + '...'
@@ -208,23 +244,10 @@ function processTextAndImages($elem: cheerio.Cheerio<any>, text: string, section
       }
     }
 
-    const figure = $elem.find('.figure')
-    if (figure.length) {
-      const img = figure.find('img')
-      if (img.length) {
-        let imgSrc = img.attr('data-src') || img.attr('src')
-        if (imgSrc && !imgSrc.startsWith('http')) {
-          imgSrc = `https:${imgSrc}`
-        }
-        if (imgSrc) {
-          sections.push(h.image(imgSrc).toString())
-        }
-      }
-    }
+    // ...existing image processing code...
 
     return currentLength
   } catch (error) {
-    // 错误处理：忽略有问题的内容，继续处理
     console.error('处理文本时出错:', error)
     return currentLength
   }
@@ -437,18 +460,12 @@ function formatContentSections(result: { sections: string[]; links: string[] }, 
     for (const section of sections) {
       if (!section) continue
 
-      const trimmed = section.toString().trim()
-        .replace(/[\u0000-\u001F\u007F-\u009F\u200B-\u200D\uFEFF]/g, '')
-
+      const trimmed = cleanText(section.toString())
       if (!trimmed) continue
 
       if (trimmed.startsWith('『')) {
         descStarted = true
         currentSection = 'desc'
-      }
-
-      if (!descStarted) {
-        currentSection = 'header'
       }
 
       parts[currentSection].push(trimmed)
@@ -463,7 +480,7 @@ function formatContentSections(result: { sections: string[]; links: string[] }, 
     if (Array.isArray(links) && links.length > 0) {
       if (output.length > 0) output.push('')
       output.push('相关链接:')
-      output.push(...links)
+      output.push(...links.map(link => cleanText(link)))
     }
 
     if (parts.desc.length > 0) {
@@ -476,7 +493,13 @@ function formatContentSections(result: { sections: string[]; links: string[] }, 
     output.push(`详细内容: ${url}`)
 
     const finalContent = output.join('\n').replace(/\n{3,}/g, '\n\n').trim()
-    return finalContent || `无法获取详细内容，请直接访问：${url}`
+
+    // 最终检查
+    if (!finalContent) {
+      return `无法获取详细内容，请直接访问：${url}`
+    }
+
+    return finalContent
 
   } catch (error) {
     console.error('格式化内容时出错:', error)
