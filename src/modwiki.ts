@@ -434,7 +434,7 @@ export async function captureMCMODPageScreenshot(page: any, url: string, config:
     }
 
     // 等待内容加载
-    await page.waitForSelector('.content-wrapper', {
+    await page.waitForSelector('.col-lg-12.center', {
       timeout: config.pageTimeout * 1000,
       visible: true
     })
@@ -443,21 +443,26 @@ export async function captureMCMODPageScreenshot(page: any, url: string, config:
     await page.evaluate(() => {
       const style = document.createElement('style')
       style.textContent = `
-        body { margin: 0; background: white; }
-        .content-wrapper {
+        .col-lg-12.center {
           margin: 0 auto;
           padding: 20px;
           box-sizing: border-box;
           width: 100%;
           max-width: 1000px;
+          background: white;
         }
         img { max-width: 100%; height: auto; }
-        #header, .nav-top, #scroll-to-top, #footer, .comment-area,
-        .user-auth-modal, .advertisement, .site-top {
+        header, footer, .header-container, .common-background,
+        .common-nav, .common-menu-page, .common-comment-block,
+        .comment-ad {
           display: none !important;
         }
       `
       document.head.appendChild(style)
+
+      // 隐藏其他不需要的元素
+      document.querySelectorAll('header, footer, .header-container, .common-background, .common-nav, .common-menu-page, .common-comment-block, .comment-ad')
+        .forEach(el => el.remove())
     })
 
     // 获取内容区域尺寸
@@ -485,21 +490,33 @@ export async function captureMCMODPageScreenshot(page: any, url: string, config:
     // 等待内容完全渲染
     await new Promise(resolve => setTimeout(resolve, 500))
 
+    // 获取目标元素的位置和尺寸
+    const clipData = await page.evaluate(() => {
+      const element = document.querySelector('.col-lg-12.center')
+      if (!element) return null
+      const rect = element.getBoundingClientRect()
+      return {
+        x: rect.left,
+        y: rect.top,
+        width: rect.width,
+        height: rect.height
+      }
+    })
+
+    if (!clipData) {
+      throw new Error('无法获取目标元素位置')
+    }
+
     const screenshot = await page.screenshot({
       type: 'jpeg',
       quality: 80,
       omitBackground: true,
-      clip: {
-        x: 0,
-        y: 0,
-        width: dimensions.width,
-        height: dimensions.height
-      }
+      clip: clipData
     })
 
     return {
       image: screenshot,
-      height: dimensions.height
+      height: clipData.height
     }
   } catch (error) {
     throw new Error(`截图失败: ${error.message}`)

@@ -117,7 +117,7 @@ export async function fetchWikiArticleContent(pageUrl: string, lang: LangCode, c
         ? section.content.join(' ')
         : section.content.join(' ').slice(0, config.wiki.sectionPreviewLength)
       if (section.title) {
-        return `${section.title} | ${sectionText}${sectionText.length >= config.wiki.sectionPreviewLength && index > 0 ? '...' : ''}`
+        return `『${section.title}』${sectionText}${sectionText.length >= config.wiki.sectionPreviewLength && index > 0 ? '...' : ''}`
       }
       return sectionText
     })
@@ -305,8 +305,8 @@ export async function processWikiRequest(keyword: string, userId: string, config
       }
     }
 
-    const { title, content, url } = await fetchWikiArticleContent(pageUrl, lang, config)
-    return `『${title}』${content}\n详细内容：${url}`
+    const { content, url } = await fetchWikiArticleContent(pageUrl, lang, config)
+    return `${content}\n详细内容：${url}`
 
   } catch (error) {
     return error.message
