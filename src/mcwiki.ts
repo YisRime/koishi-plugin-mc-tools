@@ -259,8 +259,6 @@ export async function captureWikiPageScreenshot(page: any, url: string, lang: La
       selectors.forEach(selector => {
         document.querySelectorAll(selector).forEach(el => el.remove())
       })
-      // 移除右侧信息框
-      document.querySelectorAll('.notaninfobox').forEach(el => el.remove())
     }, CLEANUP_SELECTORS)
 
     // 获取内容区域尺寸
