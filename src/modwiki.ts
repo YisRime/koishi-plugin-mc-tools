@@ -39,11 +39,11 @@ export async function processMCMODContent(url: string, config: ModwikiConfig) {
   } catch (error) {
     if (axios.isAxiosError(error)) {
       if (error.code === 'ECONNABORTED') {
-        throw new Error('请求超时，请稍后重试')
+        throw new Error(`请求超时，请直接访问：${url}`)
       }
-      throw new Error(`获取内容失败: ${error.message}`)
+      throw new Error(`获取内容失败，请直接访问：${url}\n具体原因：${error.message}`)
     }
-    throw new Error(`内容处理失败: ${error.message}`)
+    throw new Error(`内容处理失败，请直接访问：${url}\n具体原因：${error.message}`)
   }
 }
 
@@ -53,21 +53,6 @@ export const processModSearchResult = async (url: string, config: ModwikiConfig)
 
 export const processItemSearchResult = processModSearchResult
 export const processPostSearchResult = processModSearchResult
-
-// 工具函数
-function normalizeUrl(url: string): string {
-  return url.startsWith('http') ? url : `https://www.mcmod.cn${url}`
-}
-
-function getContentType(url: string): string {
-  const types = {
-    '/modpack/': '整合包',
-    '/class/': 'MOD',
-    '/item/': '物品',
-    '/post/': '教程'
-  }
-  return Object.entries(types).find(([key]) => url.includes(key))?.[1] || '未知'
-}
 
 // 处理函数映射
 function getContentProcessor(url: string) {
@@ -192,7 +177,7 @@ function processMod($: cheerio.CheerioAPI, totalPreviewLength: number, isModpack
   } catch (error) {
     console.error('处理MOD内容时出错:', error)
     return {
-      sections: ['内容处理出错,请直接访问原页面查看'],
+      sections: ['内容处理失败，请直接访问原页面查看'],
       links: []
     }
   }
@@ -213,6 +198,15 @@ function cleanText(text: string): string {
     .replace(/<!--[\s\S]*?-->/g, '')
     // 移除特定标记
     .replace(/\[(\w+)\]/g, '')
+    // 规范化空白字符
+    .replace(/\s+/g, ' ')
+    // 替换特殊引号
+    .replace(/[""]/g, '"')
+    .replace(/['']/g, "'")
+    // 替换其他特殊字符
+    .replace(/[•]/g, '·')
+    .replace(/[…]/g, '...')
+    .replace(/[―—]/g, '-')
     .trim()
 }
 
@@ -249,7 +243,8 @@ function processTextAndImages($elem: cheerio.Cheerio<any>, text: string, section
     return currentLength
   } catch (error) {
     console.error('处理文本时出错:', error)
-    return currentLength
+    sections.push('文本处理失败，请访问原页面查看完整内容')
+    return maxLength
   }
 }
 
@@ -473,8 +468,12 @@ function formatContentSections(result: { sections: string[]; links: string[] }, 
 
     const output: string[] = []
 
+    // 改进标题处理
     if (parts.header.length > 0) {
-      output.push(...parts.header)
+      output.push(...parts.header.map(header =>
+        header.replace(/\|/g, '丨')  // 使用中文分隔符替换竖线
+             .replace(/[\(\)]/g, match => match === '(' ? '（' : '）') // 替换括号
+      ))
     }
 
     if (Array.isArray(links) && links.length > 0) {
