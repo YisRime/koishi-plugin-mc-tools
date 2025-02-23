@@ -15,7 +15,8 @@ import {
   processItemSearchResult,
   processPostSearchResult,
   searchMCMOD,
-  processMCMODContent
+  processMCMODContent,
+  processMCMODScreenshot,
 } from './modwiki'
 import {
   constructWikiUrl,
@@ -237,6 +238,26 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
 
       } catch (error) {
         return error.message
+      }
+    })
+
+  // 添加 modwiki.shot 子命令
+  ctx.command('mcmod.shot <keyword:text>', '搜索并截图MCMOD条目')
+    .alias('modwiki.shot')
+    .action(async ({ session }, keyword) => {
+      if (!keyword) return '请输入要查询的关键词'
+
+      try {
+        const results = await searchMCMOD(keyword, config.wiki)
+        if (!results.length) return '未找到相关内容'
+
+        const result = results[0]
+        if (!result.url) return '获取链接失败'
+
+        const imageResult = await processMCMODScreenshot(result.url, config.wiki, ctx)
+        return h.image(imageResult.image, 'image/jpeg')
+      } catch (error) {
+        return `查询失败: ${error.message}`
       }
     })
 

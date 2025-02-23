@@ -7,6 +7,7 @@ export interface ModwikiConfig {
   totalPreviewLength: number
   searchTimeout: number
   searchResultLimit: number
+  pageTimeout: number  // 新增
 }
 
 // 统一的搜索结果格式
@@ -403,5 +404,124 @@ export async function processPostSearchResult(url: string, config: ModwikiConfig
     return formatContentSections(content, url)
   } catch (error) {
     throw new Error(`获取帖子内容失败: ${error.message}`)
+  }
+}
+
+// 添加截图功能
+export async function captureMCMODPageScreenshot(page: any, url: string, config: ModwikiConfig) {
+  try {
+    // 设置初始视口
+    await page.setViewport({
+      width: 1000,
+      height: 800,
+      deviceScaleFactor: 1
+    })
+
+    // 页面加载与重试机制
+    let retries = 3
+    while (retries > 0) {
+      try {
+        await page.goto(url, {
+          waitUntil: 'networkidle0',
+          timeout: config.pageTimeout * 1000
+        })
+        break
+      } catch (err) {
+        retries--
+        if (retries === 0) throw err
+        await new Promise(resolve => setTimeout(resolve, 1000))
+      }
+    }
+
+    // 等待内容加载
+    await page.waitForSelector('.col-lg-12.center', {
+      timeout: config.pageTimeout * 1000,
+      visible: true
+    })
+
+    // 注入优化样式
+    await page.evaluate(() => {
+      const style = document.createElement('style')
+      style.textContent = `
+        body { margin: 0; background: white; }
+        .col-lg-12.center {
+          margin: 0 auto;
+          padding: 20px;
+          box-sizing: border-box;
+          width: 100%;
+          max-width: 1000px;
+        }
+        img { max-width: 100%; height: auto; }
+      `
+      document.head.appendChild(style)
+    })
+
+    // 清理无用元素
+    await page.evaluate(() => {
+      const elementsToRemove = [
+        '#header', '#footer', '.comment-area',
+        'script', 'iframe', '#back-to-top'
+      ]
+      elementsToRemove.forEach(selector => {
+        document.querySelectorAll(selector).forEach(el => el.remove())
+      })
+    })
+
+    // 获取内容区域尺寸
+    const dimensions = await page.evaluate(() => {
+      const content = document.querySelector('.col-lg-12.center')
+      if (!content) return null
+      const rect = content.getBoundingClientRect()
+      return {
+        width: Math.min(1000, Math.ceil(rect.width)),
+        height: Math.min(4000, Math.ceil(rect.height))
+      }
+    })
+
+    if (!dimensions) {
+      throw new Error('无法获取页面内容区域')
+    }
+
+    // 调整视口并截图
+    await page.setViewport({
+      width: dimensions.width,
+      height: dimensions.height,
+      deviceScaleFactor: 1
+    })
+
+    // 等待内容完全渲染
+    await new Promise(resolve => setTimeout(resolve, 500))
+
+    const screenshot = await page.screenshot({
+      type: 'jpeg',
+      quality: 80,
+      omitBackground: true,
+      fullPage: false,
+      clip: {
+        x: 0,
+        y: 0,
+        width: dimensions.width,
+        height: dimensions.height
+      }
+    })
+
+    return {
+      image: screenshot,
+      height: dimensions.height
+    }
+  } catch (error) {
+    throw new Error(`截图失败: ${error.message}`)
+  }
+}
+
+// 添加处理截图请求的函数
+export async function processMCMODScreenshot(url: string, config: ModwikiConfig, ctx: any) {
+  const context = await ctx.puppeteer.browser.createBrowserContext()
+  const page = await context.newPage()
+  try {
+    const { image } = await captureMCMODPageScreenshot(page, url, config)
+    return { image }
+  } finally {
+    await context.close()
   }
 }
