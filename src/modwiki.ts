@@ -39,11 +39,11 @@ export async function processMCMODContent(url: string, config: ModwikiConfig) {
   } catch (error) {
     if (axios.isAxiosError(error)) {
       if (error.code === 'ECONNABORTED') {
-        throw new Error(`请求超时，请直接访问：${url}`)
+        throw new Error('请求超时，请稍后重试')
       }
-      throw new Error(`获取内容失败，请直接访问：${url}\n具体原因：${error.message}`)
+      throw new Error(`获取内容失败: ${error.message}`)
     }
-    throw new Error(`内容处理失败，请直接访问：${url}\n具体原因：${error.message}`)
+    throw new Error(`内容处理失败: ${error.message}`)
   }
 }
 
@@ -53,6 +53,21 @@ export const processModSearchResult = async (url: string, config: ModwikiConfig)
 
 export const processItemSearchResult = processModSearchResult
 export const processPostSearchResult = processModSearchResult
+
+// 工具函数
+function normalizeUrl(url: string): string {
+  return url.startsWith('http') ? url : `https://www.mcmod.cn${url}`
+}
+
+function getContentType(url: string): string {
+  const types = {
+    '/modpack/': '整合包',
+    '/class/': 'MOD',
+    '/item/': '物品',
+    '/post/': '教程'
+  }
+  return Object.entries(types).find(([key]) => url.includes(key))?.[1] || '未知'
+}
 
 // 处理函数映射
 function getContentProcessor(url: string) {
@@ -115,29 +130,43 @@ function processRelatedLinks($: cheerio.CheerioAPI): string[] {
   const linkMap = new Map<string, { url: string; name: string }>()
 
   $linkList.each((_, item) => {
-    const $item = $(item)
-    const $link = $item.find('a')
-    const $name = $item.find('.name')
+    try {
+      const $item = $(item)
+      const $link = $item.find('a')
+      const $name = $item.find('.name')
 
-    const url = $link.attr('href')
-    const rawType = $link.attr('data-original-title') || $name.text().trim()
+      const url = $link.attr('href')
+      const rawType = $link.attr('data-original-title') || $name.text().trim()
 
-    // 提取类型和名称
-    const [type, customName] = rawType.split(':').map(s => s.trim())
-    const name = customName || type
+      const [type, customName] = rawType.split(':').map(s => s.trim())
+      const name = customName || type
 
-    if (url && type) {
-      let processedUrl = url.startsWith('//link.mcmod.cn/target/')
-        ? atob(url.split('target/')[1])
-        : url.startsWith('//') ? `https:${url}` : url
+      if (url && type) {
+        let processedUrl = url
+        if (url.startsWith('//link.mcmod.cn/target/')) {
+          try {
+            // 安全的 base64 解码
+            const encodedPart = url.split('target/')[1]
+            const decoded = Buffer.from(encodedPart, 'base64').toString('utf-8')
+            processedUrl = decoded
+          } catch (e) {
+            console.warn('解码链接失败:', e)
+            processedUrl = url
+          }
+        } else if (url.startsWith('//')) {
+          processedUrl = `https:${url}`
+        }
 
-      // 只保存每个类型的第一个链接及其名称
-      if (!linkMap.has(type)) {
-        linkMap.set(type, {
-          url: processedUrl,
-          name
-        })
+        if (!linkMap.has(type)) {
+          linkMap.set(type, {
+            url: processedUrl,
+            name
+          })
+        }
       }
+    } catch (error) {
+      console.warn('处理链接时出错:', error)
+      // 继续处理下一个链接
     }
   })
 
@@ -152,81 +181,36 @@ function processRelatedLinks($: cheerio.CheerioAPI): string[] {
 // 处理模组/整合包内容
 function processMod($: cheerio.CheerioAPI, totalPreviewLength: number, isModpack: boolean) {
   const contentSections: string[] = []
-  try {
-    // 基本信息处理
-    processModBasicInfo($, contentSections, isModpack)
 
-    // 处理版本信息
-    processModVersionInfo($, contentSections, isModpack)
+  // 处理基本信息
+  processModBasicInfo($, contentSections, isModpack)
 
-    // 处理简介内容
-    const $content = $('.common-text')
-    if ($content.length) {
-      contentSections.push('\n')
-      // 提取简介第一段作为主要内容
-      const firstParagraph = $content.find('p').first().text().trim()
-      if (firstParagraph) {
-        contentSections.push(cleanText(firstParagraph))
-      }
-    }
+  // 处理版本信息
+  processModVersionInfo($, contentSections, isModpack)
 
-    return {
-      sections: contentSections,
-      links: processRelatedLinks($)
-    }
-  } catch (error) {
-    console.error('处理MOD内容时出错:', error)
-    return {
-      sections: ['内容处理失败，请直接访问原页面查看'],
-      links: []
-    }
+  // 处理描述内容
+  contentSections.push('\n')
+  processContent($, '.common-text', contentSections, totalPreviewLength)
+
+  return {
+    sections: contentSections,
+    links: processRelatedLinks($)
   }
-}
-
-// 添加文本清理函数
-function cleanText(text: string): string {
-  if (!text) return ''
-
-  return text
-    // 移除特殊控制字符
-    .replace(/[\x00-\x1F\x7F-\x9F]/g, '')
-    // 移除零宽字符
-    .replace(/[\u200B-\u200D\uFEFF]/g, '')
-    // 移除重复空白
-    .replace(/\s+/g, ' ')
-    // 移除html注释
-    .replace(/<!--[\s\S]*?-->/g, '')
-    // 移除特定标记
-    .replace(/\[(\w+)\]/g, '')
-    // 规范化空白字符
-    .replace(/\s+/g, ' ')
-    // 替换特殊引号
-    .replace(/[""]/g, '"')
-    .replace(/['']/g, "'")
-    // 替换其他特殊字符
-    .replace(/[•]/g, '·')
-    .replace(/[…]/g, '...')
-    .replace(/[―—]/g, '-')
-    .trim()
 }
 
 // 修改文本和图片处理函数
 function processTextAndImages($elem: cheerio.Cheerio<any>, text: string, sections: string[], maxLength: number, currentLength: number): number {
+  if (!text) return currentLength
+
   try {
-    if (!text) return currentLength
-
-    text = cleanText(text)
-    if (!text) return currentLength
-
     const title = $elem.find('.common-text-title')
     if (title.length) {
-      const titleText = cleanText(title.text())
-      if (titleText) {
-        text = `『${titleText}』${text.replace(titleText, '')}`
-      }
+      const titleText = title.text().trim()
+      text = titleText ? `『${titleText}』${text.replace(titleText, '')}` : text
     }
 
     if (text) {
+      text = text.replace(/[\u0000-\u001F\u007F-\u009F\u200B-\u200D\uFEFF]/g, '') // 清理不可见字符
       const remainingChars = maxLength - currentLength
       if (text.length > remainingChars) {
         text = text.slice(0, remainingChars) + '...'
@@ -238,13 +222,25 @@ function processTextAndImages($elem: cheerio.Cheerio<any>, text: string, section
       }
     }
 
-    // ...existing image processing code...
+    const figure = $elem.find('.figure')
+    if (figure.length) {
+      const img = figure.find('img')
+      if (img.length) {
+        let imgSrc = img.attr('data-src') || img.attr('src')
+        if (imgSrc && !imgSrc.startsWith('http')) {
+          imgSrc = `https:${imgSrc}`
+        }
+        if (imgSrc) {
+          sections.push(h.image(imgSrc).toString())
+        }
+      }
+    }
 
     return currentLength
   } catch (error) {
+    // 错误处理：忽略有问题的内容，继续处理
     console.error('处理文本时出错:', error)
-    sections.push('文本处理失败，请访问原页面查看完整内容')
-    return maxLength
+    return currentLength
   }
 }
 
@@ -439,8 +435,15 @@ function processModVersionInfo($: cheerio.CheerioAPI, sections: string[], isModp
 // 修改内容格式化函数
 function formatContentSections(result: { sections: string[]; links: string[] }, url: string) {
   try {
-    if (!result || !Array.isArray(result.sections)) {
-      throw new Error('内容格式无效')
+    // 添加额外的空值检查
+    if (!result) {
+      console.warn('结果对象为空')
+      return `获取内容失败，请直接访问：${url}`
+    }
+
+    if (!Array.isArray(result.sections)) {
+      console.warn('sections 不是数组')
+      return `获取内容失败，请直接访问：${url}`
     }
 
     const { sections, links } = result
@@ -455,7 +458,9 @@ function formatContentSections(result: { sections: string[]; links: string[] }, 
     for (const section of sections) {
       if (!section) continue
 
-      const trimmed = cleanText(section.toString())
+      const trimmed = section.toString().trim()
+        .replace(/[\u0000-\u001F\u007F-\u009F\u200B-\u200D\uFEFF]/g, '')
+
       if (!trimmed) continue
 
       if (trimmed.startsWith('『')) {
@@ -463,23 +468,23 @@ function formatContentSections(result: { sections: string[]; links: string[] }, 
         currentSection = 'desc'
       }
 
+      if (!descStarted) {
+        currentSection = 'header'
+      }
+
       parts[currentSection].push(trimmed)
     }
 
     const output: string[] = []
 
-    // 改进标题处理
     if (parts.header.length > 0) {
-      output.push(...parts.header.map(header =>
-        header.replace(/\|/g, '丨')  // 使用中文分隔符替换竖线
-             .replace(/[\(\)]/g, match => match === '(' ? '（' : '）') // 替换括号
-      ))
+      output.push(...parts.header)
     }
 
     if (Array.isArray(links) && links.length > 0) {
       if (output.length > 0) output.push('')
       output.push('相关链接:')
-      output.push(...links.map(link => cleanText(link)))
+      output.push(...links)
     }
 
     if (parts.desc.length > 0) {
@@ -492,13 +497,7 @@ function formatContentSections(result: { sections: string[]; links: string[] }, 
     output.push(`详细内容: ${url}`)
 
     const finalContent = output.join('\n').replace(/\n{3,}/g, '\n\n').trim()
-
-    // 最终检查
-    if (!finalContent) {
-      return `无法获取详细内容，请直接访问：${url}`
-    }
-
-    return finalContent
+    return finalContent || `无法获取详细内容，请直接访问：${url}`
 
   } catch (error) {
     console.error('格式化内容时出错:', error)
