@@ -2,7 +2,7 @@ import { h } from 'koishi'
 import axios from 'axios'
 import * as mc from 'minecraft-protocol'
 
-// 1. 常量和类型定义
+// 语言定义
 export const LANGUAGES = {
   'zh': '中文（简体）',
   'zh-hk': '中文（繁體）',
@@ -75,15 +75,16 @@ export interface MinecraftToolsConfig {
 }
 
 export async function fetchMinecraftVersions(timeout = 10000) {
-  const { data } = await axios.get('https://launchermeta.mojang.com/mc/game/version_manifest.json', {
-    timeout
-  })
+  const { data } = await axios.get(
+    'https://launchermeta.mojang.com/mc/game/version_manifest.json',
+    { timeout }
+  )
 
   const latest = data.versions[0]
   const release = data.versions.find(v => v.type === 'release')
 
   if (!latest || !release) {
-    throw new Error('无效的版本数据')
+    throw new Error(ERROR_MESSAGES.server.version_invalid)
   }
 
   return { latest, release, versions: data.versions }
