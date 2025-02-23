@@ -75,8 +75,8 @@ export async function fetchWikiArticleContent(pageUrl: string, lang: LangCode, c
   const sections: { title?: string; content: string[] }[] = []
   let currentSection: { title?: string; content: string[] } = { content: [] }
 
-  // Select all direct children of .mw-parser-output except .notaninfobox
-  $('#mw-content-text .mw-parser-output > *:not(.notaninfobox)').each((_, element) => {
+  // 移除:not(.notaninfobox)以获取完整内容
+  $('#mw-content-text .mw-parser-output > *').each((_, element) => {
     const el = $(element)
 
     if (el.is('h2, h3, h4')) {
