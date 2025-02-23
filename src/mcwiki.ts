@@ -1,27 +1,27 @@
 import * as cheerio from 'cheerio'
 import axios from 'axios'
 import {
-  formatErrorMessage,
   MinecraftToolsConfig,
   LangCode,
 } from './utils'
 
 // 3. 配置和处理函数
-export function getWikiConfiguration(lang: LangCode) {
+// 修改 constructWikiUrl 函数,添加 variant 参数
+export function constructWikiUrl(title: string, lang: LangCode | string, includeVariant = false) {
   let domain: string
   let variant: string = ''
 
-  if (lang.startsWith('zh')) {
-    domain = 'zh.minecraft.wiki'
-    variant = lang === 'zh' ? 'zh-cn' : 'zh-hk'
-  } else {
-    domain = lang === 'en' ? 'minecraft.wiki' : `${lang}.minecraft.wiki`
+  if (typeof lang === 'string') {
+    if (lang.startsWith('zh')) {
+      domain = 'zh.minecraft.wiki'
+      variant = lang === 'zh' ? 'zh-cn' :
+                lang === 'zh-hk' ? 'zh-hk' :
+                lang === 'zh-tw' ? 'zh-tw' : 'zh-cn'
+    } else {
+      domain = lang === 'en' ? 'minecraft.wiki' : `${lang}.minecraft.wiki`
+    }
   }
 
-  return { domain, variant }
-}
-
-export function constructWikiUrl(title: string, domain: string, variant?: string, includeVariant = false) {
   const baseUrl = `https://${domain}/w/${encodeURIComponent(title)}`
   return includeVariant && variant ? `${baseUrl}?variant=${variant}` : baseUrl
 }
@@ -39,11 +39,11 @@ export function formatArticleTitle(data: any): string {
 }
 
 export async function searchWikiArticles(keyword: string, searchResultLimit: number, pageTimeout: number) {
-  const { domain } = getWikiConfiguration('zh')
   try {
-    const searchUrl = `https://${domain}/api.php?action=opensearch&search=${encodeURIComponent(keyword)}&limit=${searchResultLimit}&variant=zh-cn`
+    // 修改搜索 URL 的构造，确保包含 variant
+    const searchUrl = constructWikiUrl('api.php', 'zh', true).replace('/w/', '/')
+      + `&action=opensearch&search=${encodeURIComponent(keyword)}&limit=${searchResultLimit}`
     const { data } = await axios.get(searchUrl, {
-      params: { variant: 'zh-cn' },
       timeout: pageTimeout * 1000
     })
 
@@ -56,7 +56,11 @@ export async function searchWikiArticles(keyword: string, searchResultLimit: num
 }
 
 export async function fetchWikiArticleContent(pageUrl: string, lang: LangCode, config: MinecraftToolsConfig) {
-  const { variant } = getWikiConfiguration(lang)
+  const variant = lang.startsWith('zh') ?
+    (lang === 'zh' ? 'zh-cn' :
+     lang === 'zh-hk' ? 'zh-hk' :
+     lang === 'zh-tw' ? 'zh-tw' : 'zh-cn') : ''
+
   const requestUrl = pageUrl.includes('?') ? pageUrl : `${pageUrl}?variant=${variant}`
 
   const response = await axios.get(requestUrl, {
@@ -129,79 +133,130 @@ export async function fetchWikiArticleContent(pageUrl: string, lang: LangCode, c
 }
 
 export async function captureWikiPageScreenshot(page: any, url: string, lang: LangCode, config: MinecraftToolsConfig) {
+  const CLEANUP_SELECTORS = [
+    '.mw-editsection', '#mw-navigation', '#footer', '.noprint', '#toc',
+    '.navbox', '#siteNotice', '#contentSub', '.mw-indicators',
+    '.sister-wiki', '.external', 'script', 'style', 'meta'
+  ]
+
   try {
+    // 设置初始视口
     await page.setViewport({
-      width: config.wiki.imageMaxWidth,
+      width: 1000,
       height: 800,
-      deviceScaleFactor: config.wiki.imagePriority
+      deviceScaleFactor: 1
     })
+
+    // 设置语言和请求头
     await page.setExtraHTTPHeaders({
       'Accept-Language': `${lang},${lang}-*;q=0.9,en;q=0.8`,
-      'Cookie': `language=${lang}; hl=${lang}; uselang=${lang}`
+      'Cookie': `language=${lang}; hl=${lang}; uselang=${lang}`,
+      'Cache-Control': 'no-cache'
     })
 
-    await page.goto(url, {
-      waitUntil: 'networkidle0',
-      timeout: config.wiki.pageTimeout * 1000
+    // 页面加载与重试机制
+    let retries = 3
+    while (retries > 0) {
+      try {
+        await page.goto(url, {
+          waitUntil: 'networkidle0',
+          timeout: config.wiki.pageTimeout * 1000
+        })
+        break
+      } catch (err) {
+        retries--
+        if (retries === 0) throw err
+        await new Promise(resolve => setTimeout(resolve, 1000))
+      }
+    }
+
+    // 等待内容加载
+    await page.waitForSelector('#bodyContent', {
+      timeout: config.wiki.pageTimeout * 1000,
+      visible: true
     })
 
-    await page.waitForSelector('#bodyContent', { timeout: config.wiki.pageTimeout * 1000 })
-
+    // 注入优化样式
     await page.evaluate(() => {
       const style = document.createElement('style')
       style.textContent = `
-        body { margin: 0; background: white; font-family: system-ui, -apple-system, sans-serif; }
-        #content { margin: 0; padding: 20px; box-sizing: border-box; width: 1000px; }
-        .notaninfobox { float: none !important; margin: 1em auto !important; width: auto !important; max-width: 300px; }
-        .mw-parser-output { max-width: 960px; margin: 0 auto; line-height: 1.6; }
+        body {
+          margin: 0;
+          background: white;
+          font-family: system-ui, -apple-system, sans-serif;
+        }
+        #content {
+          margin: 0 auto;
+          padding: 20px;
+          box-sizing: border-box;
+          width: 100%;
+          max-width: 1000px;
+        }
+        .mw-parser-output {
+          max-width: 960px;
+          margin: 0 auto;
+          line-height: 1.6;
+        }
         img { max-width: 100%; height: auto; }
-        table { margin: 1em auto; border-collapse: collapse; }
+        table {
+          margin: 1em auto;
+          border-collapse: collapse;
+          max-width: 100%;
+        }
         td, th { padding: 0.5em; border: 1px solid #ccc; }
-        pre { padding: 1em; background: #f5f5f5; border-radius: 4px; overflow-x: auto; }
+        pre {
+          padding: 1em;
+          background: #f5f5f5;
+          border-radius: 4px;
+          overflow-x: auto;
+        }
       `
       document.head.appendChild(style)
+    })
 
-      const selectors = [
-        '.mw-editsection', '#mw-navigation', '#footer', '.noprint', '#toc',
-        '.navbox', '#siteNotice', '#contentSub', '.mw-indicators',
-        '.sister-wiki', '.external'
-      ]
+    // 清理无用元素
+    await page.evaluate((selectors) => {
       selectors.forEach(selector => {
         document.querySelectorAll(selector).forEach(el => el.remove())
       })
-    })
+    }, CLEANUP_SELECTORS)
 
-    await page.evaluate((tags: string[]) => {
-      tags.forEach(tag => {
-        document.querySelectorAll(tag).forEach(el => el.remove())
-      })
-    }, config.wiki.cleanupTags)
-
+    // 获取内容区域尺寸
     const dimensions = await page.evaluate(() => {
       const content = document.querySelector('#content')
       if (!content) return null
       const rect = content.getBoundingClientRect()
       return {
         width: Math.min(1000, Math.ceil(rect.width)),
-        height: Math.ceil(rect.height)
+        height: Math.min(4000, Math.ceil(rect.height)) // 限制最大高度
       }
     })
 
     if (!dimensions) {
-      throw new Error('无法获取页面内容')
+      throw new Error('无法获取页面内容区域')
     }
 
+    // 调整视口并截图
     await page.setViewport({
       width: dimensions.width,
       height: dimensions.height,
       deviceScaleFactor: 1
     })
 
+    // 等待内容完全渲染
+    await new Promise(resolve => setTimeout(resolve, 500))
+
     const screenshot = await page.screenshot({
-      type: 'png',
-      quality: config.wiki.imageQuality,
+      type: 'jpeg',
+      quality: 80,
       omitBackground: true,
-      fullPage: false
+      fullPage: false,
+      clip: {
+        x: 0,
+        y: 0,
+        width: dimensions.width,
+        height: dimensions.height
+      }
     })
 
     return {
@@ -209,7 +264,7 @@ export async function captureWikiPageScreenshot(page: any, url: string, lang: La
       height: dimensions.height
     }
   } catch (error) {
-    throw error
+    throw new Error(`截图失败: ${error.message}`)
   }
 }
 
@@ -222,19 +277,17 @@ export async function processWikiRequest(keyword: string, userId: string, config
 
     if (!results.length) return `${keyword}：本页面目前没有内容。`
 
-    const { domain, variant } = getWikiConfiguration(lang)
-
     if (mode === 'search') {
       return {
         results,
-        domain,
+        domain: lang === 'en' ? 'minecraft.wiki' : `${lang}.minecraft.wiki`,
         lang
       }
     }
 
     const result = results[0]
-    const pageUrl = constructWikiUrl(result.title, domain, variant, true)
-    const displayUrl = constructWikiUrl(result.title, domain)
+    const pageUrl = constructWikiUrl(result.title, lang, true)
+    const displayUrl = constructWikiUrl(result.title, lang)
 
     if (mode === 'image') {
       return {
@@ -256,6 +309,6 @@ export async function processWikiRequest(keyword: string, userId: string, config
     return `『${title}』${content}\n详细内容：${url}`
 
   } catch (error) {
-    return formatErrorMessage(error)
+    return error.message
   }
 }

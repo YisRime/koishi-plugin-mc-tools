@@ -2,13 +2,13 @@ import { Context, Schema, h } from 'koishi'
 import {} from 'koishi-plugin-puppeteer'
 
 import {
-  formatErrorMessage,
   MinecraftToolsConfig,
   LANGUAGES,
   LangCode,
+  checkServerStatus,
+  getMinecraftVersionInfo,
   checkMinecraftUpdate,
-  queryServerStatus,
-  fetchMinecraftVersions,
+  formatErrorMessage,
 } from './utils'
 import {
   processModSearchResult,
@@ -19,11 +19,10 @@ import {
 } from './modwiki'
 import {
   constructWikiUrl,
-  getWikiConfiguration,
   processWikiRequest,
   fetchWikiArticleContent,
-  captureWikiPageScreenshot,
-} from './wiki'
+  captureWikiPageScreenshot
+} from './mcwiki'
 
 export const name = 'mc-tools'
 export const inject = {required: ['puppeteer']}
@@ -57,19 +56,7 @@ export const Config: Schema<MinecraftToolsConfig> = Schema.object({
       .description('MCMOD搜索结果描述的最大字数'),
     imageEnabled: Schema.boolean()
       .default(true)
-      .description('是否启用图片显示'),
-    imagePriority: Schema.number()
-      .default(1)
-      .description('图片显示优先级(0-3)'),
-    imageMaxWidth: Schema.number()
-      .default(800)
-      .description('图片最大宽度'),
-    imageQuality: Schema.number()
-      .default(80)
-      .description('图片质量(1-100)'),
-    cleanupTags: Schema.array(Schema.string())
-      .default(['script', 'style', 'meta'])
-      .description('需要清理的HTML标签')
+      .description('是否启用图片显示')
   }).description('Wiki与模组百科相关设置'),
 
   versionCheck: Schema.object({
@@ -97,15 +84,6 @@ export const Config: Schema<MinecraftToolsConfig> = Schema.object({
     port: Schema.number()
       .description('默认服务器端口')
       .default(25565),
-    queryTimeout: Schema.number()
-      .default(5)
-      .description('查询超时时间(秒)'),
-    retryAttempts: Schema.number()
-      .default(2)
-      .description('重试次数'),
-    retryDelay: Schema.number()
-      .default(1)
-      .description('重试间隔(秒)'),
     showPlayers: Schema.boolean()
       .default(true)
       .description('显示在线玩家'),
@@ -132,25 +110,7 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
 
   // Wiki 功能相关代码
   const mcwiki = ctx.command('mcwiki', 'Minecraft Wiki 查询')
-    .usage(`mcwiki <关键词> - 直接查询内容\nmcwiki.search <关键词> - 搜索并选择条目\nmcwiki.shot <关键词> - 获取页面截图\nmcwiki.lang <语言> - 设置显示语言`)
-
-  mcwiki.subcommand('.lang [language:string]', '设置Wiki显示语言')
-    .action(({ session }, language) => {
-      if (!language) {
-        const currentLang = userLangs.get(session.userId) || config.wiki.defaultLanguage
-        const langList = Object.entries(LANGUAGES)
-          .map(([code, name]) => `${code}: ${name}${code === currentLang ? ' (当前)' : ''}`)
-          .join('\n')
-        return `当前支持的语言：\n${langList}`
-      }
-
-      if (!(language in LANGUAGES)) {
-        return `不支持的语言代码。支持的语言代码：${Object.keys(LANGUAGES).join(', ')}`
-      }
-
-      userLangs.set(session.userId, language as LangCode)
-      return `已将 Wiki 显示语言设置为${LANGUAGES[language as LangCode]}`
-    })
+    .usage(`mcwiki <关键词> - 直接查询内容\nmcwiki.search <关键词> - 搜索并选择条目\nmcwiki.shot <关键词> - 获取页面截图`)
 
   mcwiki.action(async ({ session }, keyword) => {
     try {
@@ -167,8 +127,7 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
         const searchResult = await processWikiRequest(keyword, session.userId, config, ctx, userLangs, 'search') as any
         if (typeof searchResult === 'string') return searchResult
 
-        const { results, domain, lang } = searchResult
-        const { variant } = getWikiConfiguration(lang)
+        const { results, lang } = searchResult
 
         const searchResultMessage = `Wiki 搜索结果：\n${
           results.map((r, i) => `${i + 1}. ${r.title}`).join('\n')
@@ -187,8 +146,8 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
         }
 
         const result = results[index]
-        const pageUrl = constructWikiUrl(result.title, domain, variant, true)
-        const displayUrl = constructWikiUrl(result.title, domain)
+        const pageUrl = constructWikiUrl(result.title, lang, true)
+        const displayUrl = constructWikiUrl(result.title, lang)
 
         if (flag?.trim() === 'i') {
           await session.send(`正在获取页面...\n完整内容：${displayUrl}`)
@@ -202,8 +161,8 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
           }
         }
 
-        const { title, content, url } = await fetchWikiArticleContent(pageUrl, lang, config)
-        return `『${title}』${content}\n详细内容：${url}`
+        const { title, content } = await fetchWikiArticleContent(pageUrl, lang, config)
+        return `『${title}』${content}\n详细内容：${displayUrl}`
 
       } catch (error) {
         return error.message
@@ -230,40 +189,6 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
       }
     })
 
-  // 版本更新检查
-  if (config.versionCheck.enabled && config.versionCheck.groups.length) {
-    checkMinecraftUpdate(versions, ctx, config)
-    setInterval(() => checkMinecraftUpdate(versions, ctx, config), config.versionCheck.interval * 60 * 1000)
-  }
-
-  // 服务器状态查询命令改为
-  ctx.command('mcinfo [server]', '查询 MC 服务器状态')
-    .action(async (_, server) => {
-      let host = config.server.host
-      let port = config.server.port
-
-      if (server) {
-        const parts = server.split(':')
-        host = parts[0]
-        if (parts[1]) {
-          const parsedPort = parseInt(parts[1])
-          if (isNaN(parsedPort) || parsedPort < 1 || parsedPort > 65535) {
-            return '端口必须是1-65535之间的数字'
-          }
-          port = parsedPort
-        }
-      }
-
-      const displayAddr = port === 25565 ? host : `${host}:${port}`
-      const result = await queryServerStatus(host, port, config)
-
-      if (!result.success) {
-        return `服务器查询失败: ${result.error}`
-      }
-
-      return !server ? `${displayAddr}\n${result.data}` : result.data
-    })
-
   // 修改 modwiki 命令实现
   const modWikiCommand = ctx.command('modwiki <keyword:text>', 'MCMOD搜索(支持模组/整合包/物品/教程)')
     .action(async ({ }, keyword) => {
@@ -280,7 +205,7 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
 
         return await contentProcessor(result.url, config.wiki)
       } catch (error) {
-        return formatErrorMessage(error)
+        return error.message
       }
     })
 
@@ -311,20 +236,30 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
         return await processMCMODContent(results[index].url, config.wiki)
 
       } catch (error) {
-        return formatErrorMessage(error)
+        return error.message
       }
     })
 
-  // 添加获取最新版本命令
   ctx.command('mcver', '获取 Minecraft 最新版本')
     .action(async () => {
-      try {
-        const { latest, release } = await fetchMinecraftVersions()
-        const formatDate = (date: string) => new Date(date).toLocaleDateString('zh-CN')
+      const result = await getMinecraftVersionInfo()
+      return result.success ? result.data : result.error
+    })
 
-        return `Minecraft 最新版本：\n正式版：${release.id}（${formatDate(release.releaseTime)}）\n快照版：${latest.id}（${formatDate(latest.releaseTime)}）`
+  // 版本更新检查
+  if (config.versionCheck.enabled && config.versionCheck.groups.length) {
+    checkMinecraftUpdate(versions, ctx, config)
+    setInterval(() => checkMinecraftUpdate(versions, ctx, config), config.versionCheck.interval * 60 * 1000)
+  }
+
+  ctx.command('mcinfo [server]', '查询 MC 服务器状态')
+    .usage('mcinfo [地址[:端口]] - 查询服务器状态')
+    .example('mcinfo mc.example.com:25566 - 查询指定端口的服务器')
+    .action(async ({ }, server) => {
+      try {
+        return await checkServerStatus(server, config)
       } catch (error) {
-        return `获取版本信息失败：${formatErrorMessage(error)}`
+        return formatErrorMessage(error)
       }
     })
 }

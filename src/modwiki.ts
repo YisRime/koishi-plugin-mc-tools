@@ -1,7 +1,6 @@
 import axios from 'axios'
 import * as cheerio from 'cheerio'
 import { h } from 'koishi'
-import { formatErrorMessage } from './utils'
 
 export interface ModwikiConfig {
   searchDescLength: number
@@ -77,7 +76,7 @@ export async function processMCMODContent(url: string, config: ModwikiConfig) {
       return processMod($, config.totalPreviewLength, isModpack)
     }
   } catch (error) {
-    throw new Error(`内容处理失败: ${formatErrorMessage(error)}`)
+    throw new Error(`内容处理失败: ${error.message}`)
   }
 }
 
@@ -385,7 +384,7 @@ export async function processModSearchResult(url: string, config: ModwikiConfig)
     const content = await processMCMODContent(url, config)
     return formatContentSections(content, url)
   } catch (error) {
-    throw new Error(`获取内容失败: ${formatErrorMessage(error)}`)
+    throw new Error(`获取内容失败: ${error.message}`)
   }
 }
 
@@ -394,7 +393,7 @@ export async function processItemSearchResult(url: string, config: ModwikiConfig
     const content = await processMCMODContent(url, config)
     return formatContentSections(content, url)
   } catch (error) {
-    throw new Error(`获取物品内容失败: ${formatErrorMessage(error)}`)
+    throw new Error(`获取物品内容失败: ${error.message}`)
   }
 }
 
@@ -403,6 +402,6 @@ export async function processPostSearchResult(url: string, config: ModwikiConfig
     const content = await processMCMODContent(url, config)
     return formatContentSections(content, url)
   } catch (error) {
-    throw new Error(`获取帖子内容失败: ${formatErrorMessage(error)}`)
+    throw new Error(`获取帖子内容失败: ${error.message}`)
   }
 }
