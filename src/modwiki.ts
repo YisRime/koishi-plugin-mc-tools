@@ -462,7 +462,7 @@ export async function captureMCMODPageScreenshot(page: any, url: string, config:
 
     // 获取内容区域尺寸
     const dimensions = await page.evaluate(() => {
-      const content = document.querySelector('.content-wrapper')
+      const content = document.querySelector('.col-lg-12.center')
       if (!content) return null
       const rect = content.getBoundingClientRect()
       return {
