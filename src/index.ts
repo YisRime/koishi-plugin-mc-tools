@@ -55,6 +55,9 @@ export const Config: Schema<MinecraftToolsConfig> = Schema.object({
     searchDescLength: Schema.number()
       .default(60)
       .description('MCMOD搜索结果描述的最大字数'),
+    showDescription: Schema.boolean()
+      .default(true)
+      .description('是否显示搜索结果的描述'),
     imageEnabled: Schema.boolean()
       .default(true)
       .description('是否启用图片显示')
@@ -221,7 +224,9 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
 
         const searchResultMessage = results
           .slice(0, config.wiki.searchResultLimit)
-          .map((r, i) => `${i + 1}. ${r.title}${r.desc ? `\n    ${r.desc}` : ''}`)
+          .map((r, i) => `${i + 1}. ${r.title}${
+            config.wiki.showDescription && r.desc ? `\n    ${r.desc}` : ''
+          }`)
           .join('\n')
 
         await session.send(`MCMOD 搜索结果：\n${searchResultMessage}\n请回复序号查看详细内容`)
@@ -241,9 +246,8 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
       }
     })
 
-  // 添加 modwiki.shot 子命令
-  ctx.command('mcmod.shot <keyword:text>', '搜索并截图MCMOD条目')
-    .alias('modwiki.shot')
+  // 添加 shot 子命令
+  modWikiCommand.subcommand('.shot <keyword:text>', '搜索并截图MCMOD条目')
     .action(async ({ session }, keyword) => {
       if (!keyword) return '请输入要查询的关键词'
 
@@ -253,6 +257,9 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
 
         const result = results[0]
         if (!result.url) return '获取链接失败'
+
+        // 先发送URL
+        await session.send(`正在获取页面...\n完整内容：${result.url}`)
 
         const imageResult = await processMCMODScreenshot(result.url, config.wiki, ctx)
         return h.image(imageResult.image, 'image/jpeg')

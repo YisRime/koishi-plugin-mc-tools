@@ -2,15 +2,15 @@ import axios from 'axios'
 import * as cheerio from 'cheerio'
 import { h } from 'koishi'
 
+// 基础类型定义
 export interface ModwikiConfig {
   searchDescLength: number
   totalPreviewLength: number
   searchTimeout: number
   searchResultLimit: number
-  pageTimeout: number  // 新增
+  pageTimeout: number
 }
 
-// 统一的搜索结果格式
 interface SearchResult {
   title: string
   url: string
@@ -18,67 +18,94 @@ interface SearchResult {
   type: string
 }
 
-// 基础搜索功能
+// 核心搜索功能
 export async function searchMCMOD(keyword: string, config: ModwikiConfig) {
-  const searchUrl = `https://search.mcmod.cn/s?key=${encodeURIComponent(keyword)}`
-  const response = await axios.get(searchUrl)
-  const $ = cheerio.load(response.data)
+  try {
+    const response = await axios.get(
+      `https://search.mcmod.cn/s?key=${encodeURIComponent(keyword)}`,
+      { timeout: config.searchTimeout * 1000 }
+    )
+    const $ = cheerio.load(response.data)
+    return parseSearchResults($, config)
+  } catch (error) {
+    throw new Error(`搜索失败: ${error.message}`)
+  }
+}
 
-  const searchResults: SearchResult[] = []
+// 内容处理函数
+export async function processMCMODContent(url: string, config: ModwikiConfig) {
+  try {
+    const response = await axios.get(url, { timeout: config.pageTimeout * 1000 })
+    const $ = cheerio.load(response.data)
+    return getContentProcessor(url)($, config.totalPreviewLength)
+  } catch (error) {
+    throw new Error(`内容处理失败: ${error.message}`)
+  }
+}
 
+// 搜索结果处理函数组
+export const processModSearchResult = async (url: string, config: ModwikiConfig) =>
+  formatContentSections(await processMCMODContent(url, config), url)
+
+export const processItemSearchResult = processModSearchResult
+export const processPostSearchResult = processModSearchResult
+
+// 截图功能
+export async function processMCMODScreenshot(url: string, config: ModwikiConfig, ctx: any) {
+  const context = await ctx.puppeteer.browser.createBrowserContext()
+  const page = await context.newPage()
+  try {
+    return await captureMCMODPageScreenshot(page, url, config)
+  } finally {
+    await context.close()
+  }
+}
+
+// 工具函数
+function normalizeUrl(url: string): string {
+  return url.startsWith('http') ? url : `https://www.mcmod.cn${url}`
+}
+
+function getContentType(url: string): string {
+  const types = {
+    '/modpack/': '整合包',
+    '/class/': 'MOD',
+    '/item/': '物品',
+    '/post/': '教程'
+  }
+  return Object.entries(types).find(([key]) => url.includes(key))?.[1] || '未知'
+}
+
+// 解析搜索结果
+function parseSearchResults($: cheerio.CheerioAPI, config: ModwikiConfig): SearchResult[] {
+  const results: SearchResult[] = []
   $('.result-item').each((_, item) => {
     const $item = $(item)
     const titleEl = $item.find('.head a').last()
     const title = titleEl.text().trim()
     const url = titleEl.attr('href') || ''
 
-    const type = url.includes('/modpack/') ? '整合包' :
-                url.includes('/class/') ? 'MOD' :
-                url.includes('/item/') ? '物品' :
-                url.includes('/post/') ? '教程' : '未知'
-
-    let desc = config.searchDescLength > 0 ?
-      $item.find('.body').text().trim()
-        .replace(/\[(\w+)[^\]]*\]/g, '')
-        .replace(/data:image\/\w+;base64,[a-zA-Z0-9+/=]+/g, '')
-        .replace(/\s+/g, ' ')
-        .trim() : ''
-
-    if (desc && desc.length > config.searchDescLength) {
-      desc = desc.slice(0, config.searchDescLength) + '...'
-    }
+    const type = getContentType(url)
+    const desc = processSearchDescription($item, config.searchDescLength)
 
     if (title && url) {
-      searchResults.push({
+      results.push({
         title,
-        url: url.startsWith('http') ? url : `https://www.mcmod.cn${url}`,
-        desc: desc || '',
+        url: normalizeUrl(url),
+        desc,
         type
       })
     }
   })
-
-  return searchResults
+  return results.slice(0, config.searchResultLimit)
 }
 
-// 处理各种类型内容的统一接口
-export async function processMCMODContent(url: string, config: ModwikiConfig) {
-  try {
-    const response = await axios.get(url)
-    const $ = cheerio.load(response.data)
-    const contentSections: string[] = []
-
-    if (url.includes('/post/')) {
-      return processPost($, config.totalPreviewLength)
-    } else if (url.includes('/item/')) {
-      return processItem($, config.totalPreviewLength)
-    } else {
-      const isModpack = url.includes('/modpack/')
-      return processMod($, config.totalPreviewLength, isModpack)
-    }
-  } catch (error) {
-    throw new Error(`内容处理失败: ${error.message}`)
-  }
+// 处理函数映射
+function getContentProcessor(url: string) {
+  if (url.includes('/post/')) return processPost
+  if (url.includes('/item/')) return processItem
+  return (($: cheerio.CheerioAPI, length: number) =>
+    processMod($, length, url.includes('/modpack/')))
 }
 
 // 处理帖子内容
@@ -109,7 +136,7 @@ function processPost($: cheerio.CheerioAPI, totalPreviewLength: number) {
     processTextAndImages($pElem, text, contentSections, totalPreviewLength, totalLength)
   })
 
-  return contentSections
+  return { sections: contentSections, links: [] }
 }
 
 // 处理物品内容
@@ -121,11 +148,52 @@ function processItem($: cheerio.CheerioAPI, totalPreviewLength: number) {
   if (itemName) contentSections.push(itemName)
 
   processImages($('.item-info-table img').first(), contentSections)
-
-  contentSections.push('\n物品介绍:')
   processContent($, '.item-content.common-text', contentSections, totalPreviewLength)
 
-  return contentSections
+  return { sections: contentSections, links: [] }
+}
+
+// 辅助函数 - 处理相关链接
+function processRelatedLinks($: cheerio.CheerioAPI): string[] {
+  const links: string[] = []
+  const $linkList = $('.common-link-frame .list ul li')
+  if (!$linkList.length) return links
+
+  const linkMap = new Map<string, { url: string; name: string }>()
+
+  $linkList.each((_, item) => {
+    const $item = $(item)
+    const $link = $item.find('a')
+    const $name = $item.find('.name')
+
+    const url = $link.attr('href')
+    const rawType = $link.attr('data-original-title') || $name.text().trim()
+
+    // 提取类型和名称
+    const [type, customName] = rawType.split(':').map(s => s.trim())
+    const name = customName || type
+
+    if (url && type) {
+      let processedUrl = url.startsWith('//link.mcmod.cn/target/')
+        ? atob(url.split('target/')[1])
+        : url.startsWith('//') ? `https:${url}` : url
+
+      // 只保存每个类型的第一个链接及其名称
+      if (!linkMap.has(type)) {
+        linkMap.set(type, {
+          url: processedUrl,
+          name
+        })
+      }
+    }
+  })
+
+  if (linkMap.size) {
+    links.push(...Array.from(linkMap.entries())
+      .map(([type, { url, name }]) => `${type}${name !== type ? ` (${name})` : ''}: ${url}`))
+  }
+
+  return links
 }
 
 // 处理模组/整合包内容
@@ -139,9 +207,13 @@ function processMod($: cheerio.CheerioAPI, totalPreviewLength: number, isModpack
   processModVersionInfo($, contentSections, isModpack)
 
   // 处理描述内容
+  contentSections.push('\n')
   processContent($, '.common-text', contentSections, totalPreviewLength)
 
-  return contentSections
+  return {
+    sections: contentSections,
+    links: processRelatedLinks($)
+  }
 }
 
 // 辅助函数 - 处理文本和图片
@@ -305,7 +377,7 @@ function processModBasicInfo($: cheerio.CheerioAPI, sections: string[], isModpac
   $('.class-info-left .col-lg-4').each((_, elem) => {
     const text = $(elem).text().trim()
       .replace(/\s+/g, ' ')
-      .replace(/：/g, ': ')
+      .replace(/：/g, ':')
 
     if (isModpack) {
       // 整合包只保留特定信息
@@ -371,40 +443,57 @@ function processModVersionInfo($: cheerio.CheerioAPI, sections: string[], isModp
 }
 
 // 修改处理函数的返回值格式化
-function formatContentSections(sections: string[], url: string) {
-  return sections
-    .filter(Boolean)
-    .join('\n')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim() + `\n\n详细内容: ${url}`
-}
-
-// 修改导出函数
-export async function processModSearchResult(url: string, config: ModwikiConfig) {
-  try {
-    const content = await processMCMODContent(url, config)
-    return formatContentSections(content, url)
-  } catch (error) {
-    throw new Error(`获取内容失败: ${error.message}`)
+function formatContentSections(result: { sections: string[]; links: string[] }, url: string) {
+  const { sections, links } = result
+  const parts = {
+    header: [] as string[],
+    desc: [] as string[],
   }
-}
 
-export async function processItemSearchResult(url: string, config: ModwikiConfig) {
-  try {
-    const content = await processMCMODContent(url, config)
-    return formatContentSections(content, url)
-  } catch (error) {
-    throw new Error(`获取物品内容失败: ${error.message}`)
-  }
-}
+  let currentSection: keyof typeof parts = 'header'
+  let descStarted = false
 
-export async function processPostSearchResult(url: string, config: ModwikiConfig) {
-  try {
-    const content = await processMCMODContent(url, config)
-    return formatContentSections(content, url)
-  } catch (error) {
-    throw new Error(`获取帖子内容失败: ${error.message}`)
+  for (const section of sections) {
+    const trimmed = section.trim()
+    if (!trimmed) continue
+
+    if (trimmed.startsWith('『')) {
+      descStarted = true
+      currentSection = 'desc'
+    }
+
+    if (!descStarted) {
+      currentSection = 'header'
+    }
+
+    parts[currentSection].push(trimmed)
   }
+
+  const output: string[] = []
+
+  // 只有在header有内容时才添加
+  if (parts.header.length > 0) {
+    output.push(...parts.header)
+  }
+
+  // 只有在有相关链接时才添加
+  if (links.length > 0) {
+    if (output.length > 0) output.push('')
+    output.push('相关链接:')
+    output.push(...links)
+  }
+
+  // 只有在有简介内容时才添加
+  if (parts.desc.length > 0) {
+    if (output.length > 0) output.push('')
+    output.push('简介:')
+    output.push(...parts.desc)
+  }
+
+  if (output.length > 0) output.push('')
+  output.push(`详细内容: ${url}`)
+
+  return output.join('\n').replace(/\n{3,}/g, '\n\n').trim()
 }
 
 // 修改截图功能
@@ -522,15 +611,18 @@ export async function captureMCMODPageScreenshot(page: any, url: string, config:
     throw new Error(`截图失败: ${error.message}`)
   }
 }
+function processSearchDescription($item: cheerio.Cheerio<import("domhandler").Element>, searchDescLength: number) {
+  // Try to find and extract description content
+  const description = $item.find('.desc').text().trim()
 
-// 添加处理截图请求的函数
-export async function processMCMODScreenshot(url: string, config: ModwikiConfig, ctx: any) {
-  const context = await ctx.puppeteer.browser.createBrowserContext()
-  const page = await context.newPage()
-  try {
-    const { image } = await captureMCMODPageScreenshot(page, url, config)
-    return { image }
-  } finally {
-    await context.close()
+  // If no description found, return empty string
+  if (!description) return ''
+
+  // Truncate description if it exceeds the specified length
+  if (description.length > searchDescLength) {
+    return description.slice(0, searchDescLength) + '...'
   }
+
+  return description
 }
+

@@ -55,6 +55,7 @@ export interface MinecraftToolsConfig {
     sectionPreviewLength: number
     totalPreviewLength: number
     searchDescLength: number
+    showDescription: boolean  // 新增：是否显示描述
     imageEnabled: boolean
   }
   server: {
