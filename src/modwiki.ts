@@ -522,64 +522,104 @@ export async function captureMCMODPageScreenshot(page: any, url: string, config:
       }
     }
 
-    // 等待内容加载
+    // 等待内容加载 - 适配物品和MOD页面
     await page.waitForSelector('.col-lg-12.center', {
       timeout: config.pageTimeout * 1000,
       visible: true
     })
 
-    // 注入优化样式并隐藏不需要的元素
+    // 注入优化样式
     await page.evaluate(() => {
       const style = document.createElement('style')
       style.textContent = `
-        .col-lg-12.center {
-          margin: 0 auto;
-          padding: 20px;
-          box-sizing: border-box;
-          width: 100%;
-          max-width: 1000px;
+        body {
+          margin: 0;
+          padding: 0;
           background: white;
         }
-        img { max-width: 100%; height: auto; }
+
+        /* 通用容器样式 */
+        .col-lg-12.center {
+          margin: 0 auto !important;
+          padding: 20px !important;
+          background: white !重要;
+          width: 100% !important;
+        }
+
+        /* 物品页面相关 */
+        .item-row {
+          margin: 0 auto !important;
+          padding: 0 !important;
+        }
+
+        .maintext {
+          margin: 0 !important;
+          padding: 0 !important;
+        }
+
+        .item-content {
+          min-height: auto !important;
+        }
+
+        .item-info-table {
+          margin: 10px 0 !important;
+        }
+
+        .item-table-area {
+          margin-top: 20px !important;
+        }
+
+        /* mod页面相关 */
+        .class-cover-image {
+          margin-bottom: 20px !important;
+        }
+
+        .class-title {
+          margin: 10px 0 !important;
+        }
+
+        .class-info {
+          margin: 15px 0 !important;
+        }
+
+        /* 通用样式 */
+        img {
+          max-width: 100% !important;
+          height: auto !important;
+        }
+
+        .bd-callout {
+          margin: 10px 0 !important;
+          padding: 10px !important;
+        }
+
+        /* 移除元素 */
         header, footer, .header-container, .common-background,
         .common-nav, .common-menu-page, .common-comment-block,
-        .comment-ad {
+        .comment-ad, .ad-leftside, .slidetips, .slidetips,
+        .common-icon-text-frame, .item-table-tips,
+        .class-menu-main, .class-menu-page, .common-comment-block {
+          display: none !important;
+        }
+
+        /* 移除多余空白 */
+        p:empty {
           display: none !important;
         }
       `
       document.head.appendChild(style)
 
-      // 隐藏其他不需要的元素
-      document.querySelectorAll('header, footer, .header-container, .common-background, .common-nav, .common-menu-page, .common-comment-block, .comment-ad')
-        .forEach(el => el.remove())
+      // 移除不需要的元素
+      document.querySelectorAll(`
+        header, footer, .header-container, .common-background,
+        .common-nav, .common-menu-page, .common-comment-block,
+        .comment-ad, .ad-leftside, .slidetips, .item-table-tips,
+        .common-icon-text-frame, script, .class-menu-main,
+        .class-menu-page, .common-comment-block
+      `).forEach(el => el.remove())
     })
 
-    // 获取内容区域尺寸
-    const dimensions = await page.evaluate(() => {
-      const content = document.querySelector('.col-lg-12.center')
-      if (!content) return null
-      const rect = content.getBoundingClientRect()
-      return {
-        width: Math.min(1000, Math.ceil(rect.width)),
-        height: Math.min(4000, Math.ceil(rect.height))
-      }
-    })
-
-    if (!dimensions) {
-      throw new Error('无法获取页面内容区域')
-    }
-
-    // 调整视口并截图
-    await page.setViewport({
-      width: dimensions.width,
-      height: dimensions.height,
-      deviceScaleFactor: 1
-    })
-
-    // 等待内容完全渲染
-    await new Promise(resolve => setTimeout(resolve, 500))
-
-    // 获取目标元素的位置和尺寸
+    // 获取内容区域
     const clipData = await page.evaluate(() => {
       const element = document.querySelector('.col-lg-12.center')
       if (!element) return null
@@ -588,18 +628,27 @@ export async function captureMCMODPageScreenshot(page: any, url: string, config:
         x: rect.left,
         y: rect.top,
         width: rect.width,
-        height: rect.height
+        height: Math.min(6000, rect.height)
       }
     })
 
     if (!clipData) {
-      throw new Error('无法获取目标元素位置')
+      throw new Error('无法获取页面内容区域')
     }
+
+    // 调整视口并截图
+    await page.setViewport({
+      width: clipData.width,
+      height: clipData.height,
+      deviceScaleFactor: 1
+    })
+
+    // 等待内容渲染完成
+    await new Promise(resolve => setTimeout(resolve, 1000))
 
     const screenshot = await page.screenshot({
       type: 'jpeg',
-      quality: 80,
-      omitBackground: true,
+      quality: 85,
       clip: clipData
     })
 
@@ -607,6 +656,7 @@ export async function captureMCMODPageScreenshot(page: any, url: string, config:
       image: screenshot,
       height: clipData.height
     }
+
   } catch (error) {
     throw new Error(`截图失败: ${error.message}`)
   }

@@ -168,8 +168,8 @@ export async function captureWikiPageScreenshot(page: any, url: string, lang: La
   try {
     // 设置初始视口
     await page.setViewport({
-      width: 1000,
-      height: 800,
+      width: 1080,
+      height: 1920,
       deviceScaleFactor: 1
     })
 
@@ -228,7 +228,6 @@ export async function captureWikiPageScreenshot(page: any, url: string, lang: La
           padding: 20px;
           box-sizing: border-box;
           width: 100%;
-          max-width: 1000px;
         }
         .mw-parser-output {
           max-width: 960px;
