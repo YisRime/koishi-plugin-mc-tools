@@ -236,6 +236,22 @@ export async function captureWikiPageScreenshot(page: any, url: string, lang: La
           margin: 0 auto;
           line-height: 1.6;
         }
+        .notaninfobox {
+          border: 1px solid #a2a9b1;
+          background-color: #f8f9fa;
+          padding: 0.2em;
+          margin: 0 0 1em 1em;
+          float: right;
+          clear: right;
+          width: 300px;
+        }
+        .notaninfobox .infobox-title {
+          text-align: center;
+          font-size: 125%;
+          font-weight: bold;
+          background-color: #cedff2;
+          padding: 0.2em;
+        }
         img { max-width: 100%; height: auto; }
         table {
           margin: 1em auto;
