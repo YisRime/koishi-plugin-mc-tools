@@ -1,13 +1,13 @@
 import axios from 'axios'
 import * as cheerio from 'cheerio'
 import { h } from 'koishi'
-import { formatErrorMessage } from './utils'
 
 export interface ModwikiConfig {
   searchDescLength: number
   totalPreviewLength: number
   searchTimeout: number
   searchResultLimit: number
+  pageTimeout: number  // 新增
 }
 
 // 统一的结果类型
@@ -38,21 +38,35 @@ async function processContent(url: string, config: ModwikiConfig) {
   return formatContentSections(sections, url)
 }
 
-// 基础功能函数
-async function fetchAndParse(url: string) {
-  const response = await axios.get(url)
-  return cheerio.load(response.data)
+// 处理各种类型内容的统一接口
+export async function processMCMODContent(url: string, config: ModwikiConfig) {
+  try {
+    const response = await axios.get(url)
+    const $ = cheerio.load(response.data)
+    const contentSections: string[] = []
+
+    if (url.includes('/post/')) {
+      return processPost($, config.totalPreviewLength)
+    } else if (url.includes('/item/')) {
+      return processItem($, config.totalPreviewLength)
+    } else {
+      const isModpack = url.includes('/modpack/')
+      return processMod($, config.totalPreviewLength, isModpack)
+    }
+  } catch (error) {
+    throw new Error(`内容处理失败: ${error.message}`)
+  }
 }
 
-function getContentType(url: string): SearchResult['type'] {
-  if (url.includes('/modpack/')) return 'modpack'
-  if (url.includes('/class/')) return 'mod'
-  if (url.includes('/item/')) return 'item'
-  if (url.includes('/post/')) return 'post'
-  return 'unknown'
-}
+// 处理帖子内容
+function processPost($: cheerio.CheerioAPI, totalPreviewLength: number) {
+  const contentSections: string[] = []
 
-function processCommonText($: cheerio.CheerioAPI, selector: string, sections: ContentSection[], maxLength: number) {
+  // 提取标题
+  const title = $('.postname h5').text().trim()
+  if (title) contentSections.push(title)
+
+  // 处理内容
   let totalLength = 0
 
   $(selector).children().each((_, elem) => {
@@ -243,66 +257,20 @@ export async function searchMCMOD(keyword: string, config: ModwikiConfig): Promi
       }
     }).get().filter(r => r.title && r.url)
   } catch (error) {
-    throw new Error(`搜索失败：${formatErrorMessage(error)}`)
+    throw new Error(`获取内容失败: ${error.message}`)
   }
 }
 
-function extractSearchDesc($item: cheerio.Cheerio<any>, maxLength: number): string {
-  if (maxLength <= 0) return ''
-
-  const desc = $item.find('.body').text().trim()
-    .replace(/\[(\w+)[^\]]*\]/g, '')
-    .replace(/data:image\/\w+;base64,[a-zA-Z0-9+/=]+/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-
-  return desc.length > maxLength ? desc.slice(0, maxLength) + '...' : desc
+export async function processItemSearchResult(url: string, config: ModwikiConfig) {
+  try {
+    const content = await processMCMODContent(url, config)
+    return formatContentSections(content, url)
+  } catch (error) {
+    throw new Error(`获取物品内容失败: ${error.message}`)
+  }
 }
 
-// 添加截图处理函数
-async function captureModPage(page: any, url: string) {
-  await page.setViewport({ width: 1000, height: 800, deviceScaleFactor: 1 })
-
-  await page.goto(url, {
-    waitUntil: 'networkidle0',
-    timeout: 30000
-  })
-
-  await page.evaluate(() => {
-    const style = document.createElement('style')
-    style.textContent = `
-      body { margin: 0; background: white; }
-      .header, .navbar, .footer, .sidebar, .fixedtool, #feedback, .ad-wrap { display: none !important; }
-      .wrapper { padding: 20px; max-width: 1000px; margin: 0 auto; }
-      .class-cover-image img, .item-info-table img { max-width: 300px; height: auto; display: block; margin: 1em auto; }
-      img { max-width: 100%; height: auto; }
-      img[src^="//"] { visibility: hidden; }
-      img[src^="/"] { visibility: hidden; }
-    `
-    document.head.appendChild(style)
-
-    document.querySelectorAll('.header, .navbar, .footer, .sidebar, .fixedtool, #feedback, .ad-wrap')
-      .forEach(el => el.remove())
-  })
-
-  const wrapper = await page.$('.wrapper')
-  if (!wrapper) throw new Error('无法获取页面内容')
-
-  const screenshot = await wrapper.screenshot({
-    type: 'png',
-    omitBackground: true
-  })
-
-  return screenshot
-}
-
-// 修改导出函数添加截图支持
-export async function processMCMODContent(
-  url: string,
-  config: ModwikiConfig,
-  ctx?: any,
-  mode: 'text' | 'image' = 'text'
-) {
+export async function processPostSearchResult(url: string, config: ModwikiConfig) {
   try {
     if (mode === 'image') {
       if (!ctx?.puppeteer) {
@@ -337,13 +305,125 @@ export async function processMCMODContent(
     ])
 
   } catch (error) {
-    const type = {
-      mod: 'MOD',
-      modpack: '整合包',
-      item: '物品',
-      post: '教程'
-    }[getContentType(url)] || '内容'
+    throw new Error(`获取帖子内容失败: ${error.message}`)
+  }
+}
 
-    throw new Error(`获取${type}信息失败：${formatErrorMessage(error)}`)
+// 添加截图功能
+export async function captureMCMODPageScreenshot(page: any, url: string, config: ModwikiConfig) {
+  try {
+    // 设置初始视口
+    await page.setViewport({
+      width: 1000,
+      height: 800,
+      deviceScaleFactor: 1
+    })
+
+    // 页面加载与重试机制
+    let retries = 3
+    while (retries > 0) {
+      try {
+        await page.goto(url, {
+          waitUntil: 'networkidle0',
+          timeout: config.pageTimeout * 1000
+        })
+        break
+      } catch (err) {
+        retries--
+        if (retries === 0) throw err
+        await new Promise(resolve => setTimeout(resolve, 1000))
+      }
+    }
+
+    // 等待内容加载
+    await page.waitForSelector('.col-lg-12.center', {
+      timeout: config.pageTimeout * 1000,
+      visible: true
+    })
+
+    // 注入优化样式
+    await page.evaluate(() => {
+      const style = document.createElement('style')
+      style.textContent = `
+        body { margin: 0; background: white; }
+        .col-lg-12.center {
+          margin: 0 auto;
+          padding: 20px;
+          box-sizing: border-box;
+          width: 100%;
+          max-width: 1000px;
+        }
+        img { max-width: 100%; height: auto; }
+      `
+      document.head.appendChild(style)
+    })
+
+    // 清理无用元素
+    await page.evaluate(() => {
+      const elementsToRemove = [
+        '#header', '#footer', '.comment-area',
+        'script', 'iframe', '#back-to-top'
+      ]
+      elementsToRemove.forEach(selector => {
+        document.querySelectorAll(selector).forEach(el => el.remove())
+      })
+    })
+
+    // 获取内容区域尺寸
+    const dimensions = await page.evaluate(() => {
+      const content = document.querySelector('.col-lg-12.center')
+      if (!content) return null
+      const rect = content.getBoundingClientRect()
+      return {
+        width: Math.min(1000, Math.ceil(rect.width)),
+        height: Math.min(4000, Math.ceil(rect.height))
+      }
+    })
+
+    if (!dimensions) {
+      throw new Error('无法获取页面内容区域')
+    }
+
+    // 调整视口并截图
+    await page.setViewport({
+      width: dimensions.width,
+      height: dimensions.height,
+      deviceScaleFactor: 1
+    })
+
+    // 等待内容完全渲染
+    await new Promise(resolve => setTimeout(resolve, 500))
+
+    const screenshot = await page.screenshot({
+      type: 'jpeg',
+      quality: 80,
+      omitBackground: true,
+      fullPage: false,
+      clip: {
+        x: 0,
+        y: 0,
+        width: dimensions.width,
+        height: dimensions.height
+      }
+    })
+
+    return {
+      image: screenshot,
+      height: dimensions.height
+    }
+  } catch (error) {
+    throw new Error(`截图失败: ${error.message}`)
+  }
+}
+
+// 添加处理截图请求的函数
+export async function processMCMODScreenshot(url: string, config: ModwikiConfig, ctx: any) {
+  const context = await ctx.puppeteer.browser.createBrowserContext()
+  const page = await context.newPage()
+  try {
+    const { image } = await captureMCMODPageScreenshot(page, url, config)
+    return { image }
+  } finally {
+    await context.close()
   }
 }
