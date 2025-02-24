@@ -1,74 +1,51 @@
 import { h } from 'koishi'
 import { MinecraftToolsConfig, LangCode } from './utils'
-import { searchMCMOD } from './search'
 
+// 通用截图清理选择器
 const CLEANUP_SELECTORS = [
-  '.mw-editsection',
-  '#mw-navigation',
-  '#footer',
-  '.noprint',
-  '#toc',
-  '.navbox',
-  '#siteNotice',
-  '#contentSub',
-  '.mw-indicators',
-  '.sister-wiki',
-  '.external',
-  'script',
-  'meta',
-  '#mw-head',
-  '#mw-head-base',
-  '#mw-page-base',
-  '#catlinks',
-  '.printfooter',
-  '.mw-jump-link',
-  '.vector-toc',
-  '.vector-menu',
-  '.mw-cite-backlink',
-  '.reference',
-  '.treeview',
-  '.file-display-header'
+  '.mw-editsection',  // 编辑节按钮
+  '#mw-navigation',   // 导航
+  '#footer',          // 页脚
+  '.noprint',         // 不可打印内容
+  '#toc',            // 目录
+  '.navbox',         // 导航框
+  '#siteNotice',     // 站点通知
+  '#contentSub',     // 子标题
+  '.mw-indicators', // 指示器
+  '.sister-wiki',    // 姊妹维基链接
+  '.external',      // 外部链接
+  'script',         // 脚本
+  'meta',           // 元数据
+  '#mw-head',       // 页面头部
+  '#mw-head-base',  // 头部基础
+  '#mw-page-base',  // 页面基础
+  '#catlinks',      // 分类链接
+  '.printfooter',   // 打印页脚
+  '.mw-jump-link',  // 跳转链接
+  '.vector-toc',    // 矢量目录
+  '.vector-menu',   // 矢量菜单
+  '.mw-cite-backlink', // 引用回链
+  '.reference',     // 引用
+  '.treeview',      // 树状视图
+  '.file-display-header' // 文件显示头部
 ]
 
-/**
- * 截图选项接口
- */
-interface ScreenshotOptions {
-  /** 目标页面URL */
-  url: string
-  /** Puppeteer页面实例 */
-  page: any
-  /** 插件配置 */
-  config: MinecraftToolsConfig
-  /** 页面类型 */
-  type: 'wiki' | 'mcmod'
-  /** 语言代码 */
-  lang?: LangCode
-}
-
-/**
- * 统一的网页截图处理函数
- * @param {ScreenshotOptions} options - 截图选项
- * @returns {Promise<{image: Buffer, height: number}>}
- */
-async function capturePageScreenshot({ url, page, config, type, lang }: ScreenshotOptions) {
+export async function captureWikiPageScreenshot(page: any, url: string, lang: LangCode, config: MinecraftToolsConfig) {
   try {
-    // Wiki 特定头部设置
-    if (type === 'wiki' && lang) {
-      await page.setExtraHTTPHeaders({
-        'Accept-Language': `${lang},${lang}-*;q=0.9,en;q=0.8`,
-        'Cookie': `language=${lang}; hl=${lang}; uselang=${lang}`,
-        'Cache-Control': 'no-cache'
-      })
-    }
+    // 设置语言和请求头
+    await page.setExtraHTTPHeaders({
+      'Accept-Language': `${lang},${lang}-*;q=0.9,en;q=0.8`,
+      'Cookie': `language=${lang}; hl=${lang}; uselang=${lang}`,
+      'Cache-Control': 'no-cache'
+    })
 
-    // 加载页面
+    // 页面加载与重试机制
     let retries = 3
     while (retries > 0) {
       try {
         await page.goto(url, {
           waitUntil: 'networkidle0',
-          timeout: 30000
+          timeout: 10000
         })
         break
       } catch (err) {
@@ -79,143 +56,235 @@ async function capturePageScreenshot({ url, page, config, type, lang }: Screensh
     }
 
     // 等待内容加载
-    const mainSelector = type === 'wiki' ? '#bodyContent' :
-                        url.includes('/item/') ? '.maintext' : '.col-lg-12.center'
-    await page.waitForSelector(mainSelector, {
-      timeout: 30000,
+    await page.waitForSelector('#bodyContent', {
+      timeout: 10000,
       visible: true
     })
 
-    // 注入样式和处理内容
-    await page.evaluate((params) => {
-      const { type, cleanupSelectors } = params
-      if (type === 'wiki') {
-        const content = document.querySelector('#mw-content-text .mw-parser-output')
-        const newBody = document.createElement('div')
-        newBody.id = 'content'
-        if (content) {
-          newBody.appendChild(content.cloneNode(true))
-        }
-        document.body.innerHTML = ''
-        document.body.appendChild(newBody)
-
-        const style = document.createElement('style')
-        style.textContent = `
-          body {
-            margin: 0;
-            background: white;
-            font-family: system-ui, -apple-system, sans-serif;
-          }
-          #content {
-            margin: 0 auto;
-            padding: 20px;
-            box-sizing: border-box;
-            width: 100%;
-          }
-          .mw-parser-output {
-            max-width: 1080px;
-            margin: 0 auto;
-            line-height: 1.6;
-          }
-          img { max-width: 100%; height: auto; }
-          table {
-            margin: 1em auto;
-            border-collapse: collapse;
-            max-width: 100%;
-          }
-          td, th { padding: 0.5em; border: 1px solid #ccc; }
-          pre {
-            padding: 1em;
-            background: #f5f5f5;
-            border-radius: 4px;
-            overflow-x: auto;
-          }
-        `
-        document.head.appendChild(style)
-      } else {
-        const style = document.createElement('style')
-        style.textContent = `
-          body { margin: 0 !important; padding: 0 !important; background: white !important; width: 1080px !important; overflow-x: hidden !important; }
-        `
-        document.head.appendChild(style)
-
-        document.querySelectorAll(`
-          header, footer, .header-container, .common-background,
-          .common-nav, .common-menu-page, .common-comment-block,
-          .comment-ad, .ad-leftside, .slidetips, .item-table-tips,
-          .common-icon-text-frame, script, .common-ad-frame,
-          .ad-class-page, .item-data
-        `).forEach(el => el.remove())
-
-        if (type === 'mcmod') {
-          const maintext = document.querySelector('.maintext')
-          const itemRow = document.querySelector('.item-row')
-          if (maintext && itemRow) {
-            maintext.setAttribute('style', 'margin:0 !important;padding:0 !important;float:none !important;width:100% !important;')
-            itemRow.setAttribute('style', 'margin:0 auto !important;padding:20px !important;width:auto !important;background:white !important;')
-          }
-        }
+    // 只保留正文内容
+    await page.evaluate(() => {
+      const content = document.querySelector('#mw-content-text .mw-parser-output')
+      const newBody = document.createElement('div')
+      newBody.id = 'content'
+      if (content) {
+        newBody.appendChild(content.cloneNode(true))
       }
+      document.body.innerHTML = ''
+      document.body.appendChild(newBody)
+    })
 
-      // 使用传入的 cleanupSelectors
-      cleanupSelectors.forEach(selector => {
+    // 注入优化样式
+    await page.evaluate(() => {
+      const style = document.createElement('style')
+      style.textContent = `
+        body {
+          margin: 0;
+          background: white;
+          font-family: system-ui, -apple-system, sans-serif;
+        }
+        #content {
+          margin: 0 auto;
+          padding: 20px;
+          box-sizing: border-box;
+          width: 100%;
+        }
+        .mw-parser-output {
+          max-width: 960px;
+          margin: 0 auto;
+          line-height: 1.6;
+        }
+        img { max-width: 100%; height: auto; }
+        table {
+          margin: 1em auto;
+          border-collapse: collapse;
+          max-width: 100%;
+        }
+        td, th { padding: 0.5em; border: 1px solid #ccc; }
+        pre {
+          padding: 1em;
+          background: #f5f5f5;
+          border-radius: 4px;
+          overflow-x: auto;
+        }
+      `
+      document.head.appendChild(style)
+    })
+
+    // 清理无用元素
+    await page.evaluate((selectors) => {
+      selectors.forEach(selector => {
         document.querySelectorAll(selector).forEach(el => el.remove())
       })
-    }, { type, cleanupSelectors: CLEANUP_SELECTORS })
+    }, CLEANUP_SELECTORS)
 
-    // 获取内容区域尺寸
-    const dimensions = await page.evaluate((params) => {
-      const { type, mainSelector } = params
-      const element = type === 'wiki' ?
-        document.querySelector('#content') :
-        document.querySelector(mainSelector)
-
-      if (!element) return null
-
-      if (type === 'mcmod') {
-        element.style.height = 'auto'
-        element.style.overflow = 'visible'
-        element.style.width = '1080px'
-      }
-
-      const rect = element.getBoundingClientRect()
+    // 获取内容区域尺寸并设置视口
+    const dimensions = await page.evaluate(() => {
+      const content = document.querySelector('#content')
+      if (!content) return null
+      const rect = content.getBoundingClientRect()
       return {
         width: 1080,
         height: Math.min(4096, Math.ceil(rect.height))
       }
-    }, { type, mainSelector })
+    })
 
     if (!dimensions) {
       throw new Error('无法获取页面内容区域')
     }
 
+    await page.setViewport({
+      width: dimensions.width,
+      height: dimensions.height,
+      deviceScaleFactor: 1
+    })
+
+    // 等待内容完全渲染
     await new Promise(resolve => setTimeout(resolve, 500))
+
     const screenshot = await page.screenshot({
-      type: type === 'wiki' ? 'png' : 'jpeg',
-      quality: type === 'wiki' ? undefined : 80,
+      type: 'jpeg',
+      quality: 80,
       omitBackground: true,
       fullPage: false,
       clip: {
         x: 0,
         y: 0,
-        ...dimensions
+        width: dimensions.width,
+        height: dimensions.height
       }
     })
 
-    return { image: screenshot, height: dimensions.height }
+    return {
+      image: screenshot,
+      height: dimensions.height
+    }
   } catch (error) {
     throw new Error(`截图失败: ${error.message}`)
   }
 }
 
-/**
- * 处理 Wiki 页面截图
- * @param {string} url - Wiki页面URL
- * @param {LangCode} lang - 语言代码
- * @param {MinecraftToolsConfig} config - 插件配置
- * @param {any} ctx - Koishi上下文
- * @returns {Promise<{url: string, image: any}>}
- */
+export async function captureMCMODPageScreenshot(page: any, url: string, config: MinecraftToolsConfig) {
+  try {
+    // 页面加载与重试机制
+    let retries = 3
+    while (retries > 0) {
+      try {
+        await page.goto(url, {
+          waitUntil: 'networkidle0',
+          timeout: 10000
+        })
+        break
+      } catch (err) {
+        retries--
+        if (retries === 0) throw err
+        await new Promise(resolve => setTimeout(resolve, 1000))
+      }
+    }
+
+    const pageType = url.includes('/item/') ? 'item' : 'other'
+    const mainSelector = pageType === 'item' ? '.maintext' : '.col-lg-12.center'
+
+    await page.waitForSelector(mainSelector, {
+      timeout: 10000,
+      visible: true
+    })
+
+    // 注入优化样式
+    await page.evaluate((type) => {
+      const style = document.createElement('style')
+      style.textContent = `
+        body { margin: 0 !important; padding: 0 !important; background: white !important; width: 1080px !important; min-width: 1080px !important; overflow-x: hidden !important; }
+        // ...existing code...
+      `
+      document.head.appendChild(style)
+
+      document.querySelectorAll(`
+        header, footer, .header-container, .common-background,
+        .common-nav, .common-menu-page, .common-comment-block,
+        .comment-ad, .ad-leftside, .slidetips, .item-table-tips,
+        .common-icon-text-frame, script, .common-ad-frame,
+        .ad-class-page, .item-data
+      `).forEach(el => el.remove())
+
+      if (type === 'item') {
+        const maintext = document.querySelector('.maintext')
+        const itemRow = document.querySelector('.item-row')
+        if (maintext && itemRow) {
+          maintext.setAttribute('style', 'margin:0 !important;padding:0 !important;float:none !important;width:100% !important;')
+          itemRow.setAttribute('style', 'margin:0 auto !important;padding:20px !important;width:auto !important;background:white !important;')
+        }
+      }
+    }, pageType)
+
+    await new Promise(resolve => setTimeout(resolve, 1000))
+
+    const clipData = await page.evaluate((selector) => {
+      const element = document.querySelector(selector)
+      if (!element) return null
+
+      element.style.height = 'auto'
+      element.style.overflow = 'visible'
+      element.style.width = '1080px'
+
+      const rect = element.getBoundingClientRect()
+      return {
+        x: 0,
+        y: Math.max(0, Math.floor(rect.top)),
+        width: 1080,
+        height: Math.min(4096, Math.ceil(rect.height))
+      }
+    }, mainSelector)
+
+    if (!clipData) {
+      throw new Error('无法获取页面内容区域')
+    }
+
+    await page.setViewport({
+      width: clipData.width,
+      height: clipData.height,
+      deviceScaleFactor: 1
+    })
+
+    await new Promise(resolve => setTimeout(resolve, 500))
+
+    const screenshot = await page.screenshot({
+      type: 'jpeg',
+      quality: 85,
+      clip: clipData,
+      omitBackground: true
+    })
+
+    return {
+      image: screenshot,
+      height: clipData.height
+    }
+  } catch (error) {
+    throw new Error(`截图失败: ${error.message}`)
+  }
+}
+
+export async function handleModScreenshot(
+  url: string,
+  config: MinecraftToolsConfig,
+  ctx: any
+) {
+  if (!config.wiki.imageEnabled) {
+    throw new Error('图片功能已禁用')
+  }
+
+  const context = await ctx.puppeteer.browser.createBrowserContext()
+  const page = await context.newPage()
+  try {
+    const imageResult = await captureMCMODPageScreenshot(page, url, config)
+    return {
+      url,
+      image: h.image(imageResult.image, 'image/jpeg')
+    }
+  } finally {
+    await context.close()
+  }
+}
+
 export async function handleWikiScreenshot(
   url: string,
   lang: LangCode,
@@ -229,51 +298,9 @@ export async function handleWikiScreenshot(
   const context = await ctx.puppeteer.browser.createBrowserContext()
   const page = await context.newPage()
   try {
-    const { image } = await capturePageScreenshot({
-      url,
-      page,
-      config,
-      type: 'wiki',
-      lang
-    })
+    const { image } = await captureWikiPageScreenshot(page, url, lang, config)
     return {
       url,
-      image: h.image(image, 'image/png')
-    }
-  } finally {
-    await context.close()
-  }
-}
-
-/**
- * 处理 MCMOD 页面截图
- * @param {string} keyword - 搜索关键词
- * @param {MinecraftToolsConfig} config - 插件配置
- * @param {any} ctx - Koishi上下文
- * @returns {Promise<{url: string, image: any}>}
- */
-export async function handleModScreenshot(keyword: string, config: MinecraftToolsConfig, ctx: any) {
-  const results = await searchMCMOD(keyword, config)
-  if (!results.length) {
-    throw new Error('未找到相关内容')
-  }
-
-  const result = results[0]
-  if (!result.url) {
-    throw new Error('获取链接失败')
-  }
-
-  const context = await ctx.puppeteer.browser.createBrowserContext()
-  const page = await context.newPage()
-  try {
-    const { image } = await capturePageScreenshot({
-      url: result.url,
-      page,
-      config,
-      type: 'mcmod'
-    })
-    return {
-      url: result.url,
       image: h.image(image, 'image/jpeg')
     }
   } finally {

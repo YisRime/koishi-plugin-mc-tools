@@ -180,7 +180,7 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
         const targetUrl = results[0].url
 
         await session.send(`正在获取页面...\n完整内容：${targetUrl}`)
-        const result = await handleModScreenshot(keyword, pluginConfig, ctx)
+        const result = await handleModScreenshot(targetUrl, pluginConfig, ctx)
         return result.image
       } catch (error) {
         return error.message
