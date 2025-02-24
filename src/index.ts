@@ -159,7 +159,6 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
 
         await session.send(`正在获取页面...\n完整内容：${wikiResult.url}`)
         const result = await handleWikiScreenshot(
-          keyword,
           wikiResult.pageUrl,
           userLanguageSettings.get(session.userId) || pluginConfig.wiki.defaultLanguage,
           pluginConfig,

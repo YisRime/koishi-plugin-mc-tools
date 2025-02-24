@@ -87,7 +87,8 @@ async function capturePageScreenshot({ url, page, config, type, lang }: Screensh
     })
 
     // 注入样式和处理内容
-    await page.evaluate((type) => {
+    await page.evaluate((params) => {
+      const { type, cleanupSelectors } = params
       if (type === 'wiki') {
         const content = document.querySelector('#mw-content-text .mw-parser-output')
         const newBody = document.createElement('div')
@@ -151,16 +152,16 @@ async function capturePageScreenshot({ url, page, config, type, lang }: Screensh
           const itemRow = document.querySelector('.item-row')
           if (maintext && itemRow) {
             maintext.setAttribute('style', 'margin:0 !important;padding:0 !important;float:none !important;width:100% !important;')
-            itemRow.setAttribute('style', 'margin:0 auto !important;padding:20px !important;width:auto !important;max-width:1000px !重要;background:white !important;')
+            itemRow.setAttribute('style', 'margin:0 auto !important;padding:20px !important;width:auto !important;background:white !important;')
           }
         }
       }
 
-      // 清理无用元素
-      CLEANUP_SELECTORS.forEach(selector => {
+      // 使用传入的 cleanupSelectors
+      cleanupSelectors.forEach(selector => {
         document.querySelectorAll(selector).forEach(el => el.remove())
       })
-    }, type)
+    }, { type, cleanupSelectors: CLEANUP_SELECTORS })
 
     // 获取内容区域尺寸
     const dimensions = await page.evaluate((params) => {
