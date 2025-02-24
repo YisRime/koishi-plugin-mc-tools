@@ -107,14 +107,6 @@ export async function searchMCMOD(keyword: string, config: MinecraftToolsConfig)
   }
 }
 
-// 从 modwiki.ts 移动的函数
-export async function processModSearchResult(url: string, config: ModwikiConfig) {
-  return formatContentSections(await processMCMODContent(url, config), url)
-}
-
-export const processItemSearchResult = processModSearchResult
-export const processPostSearchResult = processModSearchResult
-
 async function handleUserSelection(params: {
   response: string
   results: SearchResult[]
@@ -165,16 +157,14 @@ async function handleUserSelection(params: {
       return `『${title}』${content}\n详细内容：${displayUrl}`
     }
 
-    if (processContent) {
-      try {
-        const content = await processContent(result.url)
-        return content || `获取内容失败，请直接访问：${result.url}`
-      } catch (error) {
-        return `获取内容失败 (${error.message})，请直接访问：${result.url}`
-      }
+    // 直接处理 MCMOD 内容
+    try {
+      const content = await processMCMODContent(result.url, config.wiki)
+      const formattedContent = formatContentSections(content, result.url)
+      return formattedContent || `获取内容失败，请直接访问：${result.url}`
+    } catch (error) {
+      return `获取内容失败 (${error.message})，请直接访问：${result.url}`
     }
-
-    return `请直接访问：${result.url}`
   } catch (error) {
     return `处理内容时出错，请直接访问：${results[parseInt(response) - 1]?.url || '链接获取失败'}`
   }

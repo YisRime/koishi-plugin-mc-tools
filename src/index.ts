@@ -12,10 +12,11 @@ import {
 } from './utils'
 import {
   processMCMODContent,
+  formatContentSections
 } from './modwiki'
 import { processWikiRequest } from './mcwiki'
 import { handleModScreenshot, handleWikiScreenshot } from './shot'
-import { searchMCMOD, handleSearch, processModSearchResult, processItemSearchResult, processPostSearchResult } from './search'
+import { searchMCMOD, handleSearch } from './search'
 
 export const name = 'mc-tools'
 export const inject = {required: ['puppeteer']}
@@ -127,11 +128,8 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
         if (!results.length) return '未找到相关内容'
 
         const result = results[0]
-        const contentProcessor = result.url.includes('/post/') ? processPostSearchResult :
-                               result.url.includes('/item/') ? processItemSearchResult :
-                               processModSearchResult
-
-        return await contentProcessor(result.url, pluginConfig.wiki)
+        const content = await processMCMODContent(result.url, pluginConfig.wiki)
+        return formatContentSections(content, result.url)
       } catch (error) {
         return error.message
       }
