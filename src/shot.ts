@@ -115,10 +115,10 @@ async function capturePageScreenshot({ url, page, config, type, lang }: Screensh
       const style = document.createElement('style')
       style.textContent = type === 'wiki' ? `
         body { margin: 0; background: white; font-family: system-ui, -apple-system, sans-serif; }
-        #content { margin: 0 auto; padding: 20px; box-sizing: border-box; width: 100%; }
-        .mw-parser-output { max-width: 960px; margin: 0 auto; line-height: 1.6; }
+        #content { margin: 0; padding: 0; box-sizing: border-box; width: 100%; }
+        .mw-parser-output { margin: 0; padding: 20px 0; line-height: 1.6; }
         img { max-width: 100%; height: auto; }
-        table { margin: 1em auto; border-collapse: collapse; max-width: 100%; }
+        table { margin: 1em 0; border-collapse: collapse; max-width: 100%; }
         td, th { padding: 0.5em; border: 1px solid #ccc; }
         pre { padding: 1em; background: #f5f5f5; border-radius: 4px; overflow-x: auto; }
       ` : `
@@ -140,10 +140,23 @@ async function capturePageScreenshot({ url, page, config, type, lang }: Screensh
       else {
         const maintext = document.querySelector('.maintext')
         const itemRow = document.querySelector('.item-row')
+        const center = document.querySelector('.col-lg-12.center')
+
         if (maintext && itemRow) {
+          // 处理物品页面
           maintext.setAttribute('style', 'margin:0 !important;padding:0 !important;float:none !important;width:100% !important;')
           itemRow.setAttribute('style', 'margin:0 auto !important;padding:20px !important;width:auto !important;max-width:1000px !important;background:white !important;')
+        } else if (center) {
+          // 处理模组页面
+          center.setAttribute('style', 'margin:0 !important;padding:0 20px !important;width:1080px !重要;background:white !important;')
+          const left = center.querySelector('.left')
+          const right = center.querySelector('.right')
+          if (left) left.setAttribute('style', 'margin:0 !important;padding:0 !important;')
+          if (right) right.setAttribute('style', 'margin:0 !important;padding:0 !important;')
         }
+
+        // 移除body的默认边距
+        document.body.setAttribute('style', 'margin:0 !important;padding:0 !important;background:white !important;width:1080px !important;min-width:1080px !important;overflow-x:hidden !important;')
       }
     }, { type, selectors: CLEANUP_SELECTORS[type] })
 
