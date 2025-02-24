@@ -22,29 +22,24 @@ export interface ModwikiConfig {
   searchDescLength: number
   totalPreviewLength: number
   searchTimeout: number
-  searchResultLimit: number
-  pageTimeout: number
 }
 
 export interface MinecraftToolsConfig {
   wiki: {
     defaultLanguage: LangCode
-    pageTimeout: number
     searchTimeout: number
-    searchResultLimit: number
     minSectionLength: number
     sectionPreviewLength: number
     totalPreviewLength: number
     searchDescLength: number
     showDescription: boolean
     imageEnabled: boolean
+    showLinks: boolean
+    showVersions: boolean
   }
   server: {
-    host: string
-    port: number
+    address: string
     showPlayers: boolean
-    showSettings: boolean
-    showPing: boolean
     showIcon: boolean
   }
   versionCheck: {
@@ -72,7 +67,7 @@ export const TypeMap = {
     'EHOSTUNREACH': '无法访问目标服务器',
     'ENETUNREACH': '网络不可达',
     'EPROTO': '协议错误',
-    'ECONNABORTED': '连接被中断',
+    'ECONNABORTED': '连接中断',
     'EPIPE': '连接异常断开',
     'invalid server response': '服务器响应无效',
     'Unexpected server response': '服务器返回意外响应',
@@ -123,6 +118,12 @@ const MINECRAFT_PROTOCOL_VERSIONS = {
   47: '1.8.9'
 } as const
 
+/**
+ * 获取 Minecraft 版本信息
+ * @param {number} timeout - 请求超时时间(毫秒)
+ * @returns {Promise<{latest: MinecraftVersionInfo, release: MinecraftVersionInfo, versions: MinecraftVersionInfo[]}>}
+ * @throws {Error} 当版本数据无效或请求失败时抛出错误
+ */
 export async function fetchMinecraftVersions(timeout = 10000) {
   const { data } = await axios.get('https://launchermeta.mojang.com/mc/game/version_manifest.json', {
     timeout
@@ -138,6 +139,10 @@ export async function fetchMinecraftVersions(timeout = 10000) {
   return { latest, release, versions: data.versions }
 }
 
+/**
+ * 获取格式化的 Minecraft 版本信息
+ * @returns {Promise<{success: boolean, data?: string, error?: string}>}
+ */
 export async function getMinecraftVersionInfo() {
   try {
     const { latest, release } = await fetchMinecraftVersions()
@@ -155,6 +160,12 @@ export async function getMinecraftVersionInfo() {
   }
 }
 
+/**
+ * 向目标群组发送版本更新通知
+ * @param {any} ctx - Koishi 上下文
+ * @param {string[]} targetGroups - 目标群组ID列表
+ * @param {string} updateMessage - 更新消息内容
+ */
 async function notifyVersionUpdate(ctx: any, targetGroups: string[], updateMessage: string) {
   for (const gid of targetGroups) {
     for (const bot of ctx.bots) {
@@ -167,6 +178,12 @@ async function notifyVersionUpdate(ctx: any, targetGroups: string[], updateMessa
   }
 }
 
+/**
+ * 检查 Minecraft 版本更新并发送通知
+ * @param {{snapshot: string, release: string}} versions - 当前版本信息
+ * @param {any} ctx - Koishi 上下文
+ * @param {MinecraftToolsConfig} config - 插件配置
+ */
 export async function checkMinecraftUpdate(versions: { snapshot: string, release: string }, ctx: any, config: MinecraftToolsConfig) {
   try {
     const { latest, release } = await fetchMinecraftVersions()
@@ -187,18 +204,23 @@ export async function checkMinecraftUpdate(versions: { snapshot: string, release
   }
 }
 
-// 辅助函数：解析服务器地址
+/**
+ * 解析 Minecraft 服务器地址和端口
+ * @param {string | undefined} serverAddress - 服务器地址字符串
+ * @param {MinecraftToolsConfig['server']} defaultConfig - 默认服务器配置
+ * @returns {{host: string, port: number}} 解析后的服务器信息
+ * @throws {Error} 当地址格式无效时抛出错误
+ */
 function parseMinecraftServer(serverAddress: string | undefined, defaultConfig: MinecraftToolsConfig['server']) {
-  if (!serverAddress) return { host: defaultConfig.host, port: defaultConfig.port }
-
-  const [host, portStr] = serverAddress.split(':')
+  const address = serverAddress || defaultConfig.address
+  const [host, portStr] = address.split(':')
   if (!host) throw new Error('请输入有效的服务器地址')
 
-  let port = defaultConfig.port
+  let port = 25565 // 默认端口
   if (portStr) {
     const parsedPort = parseInt(portStr)
     if (isNaN(parsedPort) || parsedPort < 1 || parsedPort > 65535) {
-      throw new Error('端口必须是1-65535之间的数字')
+      throw new Error('端口号必须在1-65535之间')
     }
     port = parsedPort
   }
@@ -206,7 +228,11 @@ function parseMinecraftServer(serverAddress: string | undefined, defaultConfig: 
   return { host, port }
 }
 
-// 辅助函数：获取协议对应版本
+/**
+ * 根据协议版本号获取对应的 Minecraft 版本
+ * @param {number} protocol - 协议版本号
+ * @returns {string} Minecraft 版本字符串
+ */
 function getVersionFromProtocol(protocol: number): string {
   if (protocol in MINECRAFT_PROTOCOL_VERSIONS) {
     return MINECRAFT_PROTOCOL_VERSIONS[protocol]
@@ -228,7 +254,11 @@ function getVersionFromProtocol(protocol: number): string {
   return protocol < 47 ? '~1.8.9' : `未知版本(协议:${protocol})`
 }
 
-// 辅助函数：解析MOTD
+/**
+ * 解析服务器 MOTD 信息
+ * @param {any} motdObject - MOTD 对象或字符串
+ * @returns {string} 解析后的 MOTD 文本
+ */
 function parseServerMotd(motdObject: any): string {
   if (!motdObject) return ''
   if (typeof motdObject === 'string') return motdObject
@@ -244,16 +274,18 @@ function parseServerMotd(motdObject: any): string {
   return ''
 }
 
-// 辅助函数：格式化错误消息
+/**
+ * 格式化错误消息
+ * @param {any} error - 错误对象
+ * @returns {string} 格式化后的错误消息
+ */
 export function formatErrorMessage(error: any): string {
   const errorMessage = error?.message || String(error)
 
-  // 检查错误代码或消息匹配
   if (error?.code && TypeMap.errorPatterns[error.code]) {
     return TypeMap.errorPatterns[error.code]
   }
 
-  // 检查错误消息包含的关键字
   for (const [pattern, message] of Object.entries(TypeMap.errorPatterns)) {
     if (new RegExp(pattern, 'i').test(errorMessage)) {
       return message
@@ -263,6 +295,12 @@ export function formatErrorMessage(error: any): string {
   return `无法连接到服务器: ${errorMessage}`
 }
 
+/**
+ * 检查服务器状态
+ * @param {string | undefined} server - 服务器地址
+ * @param {MinecraftToolsConfig} config - 插件配置
+ * @returns {Promise<string>} 格式化的服务器状态信息
+ */
 export async function checkServerStatus(server: string | undefined, config: MinecraftToolsConfig) {
   const { host, port } = parseMinecraftServer(server, config.server)
   const displayAddr = port === 25565 ? host : `${host}:${port}`
@@ -302,19 +340,8 @@ export async function checkServerStatus(server: string | undefined, config: Mine
   // 状态行
   const statusParts = [versionStr]
   if (players) statusParts.push(`${players.online}/${players.max}`)
-  if (config.server.showPing) statusParts.push(`${pingTime}ms`)
+  statusParts.push(`${pingTime}ms`)
   lines.push(statusParts.join(' | '))
-
-  // 服务器设置
-  if (config.server.showSettings) {
-    const settings = [
-      'onlineMode' in client && (client.onlineMode ? '正版验证' : '离线模式'),
-      'enforceSecureChat' in client && (client.enforceSecureChat ? '开启签名' : '无需签名'),
-      'whitelist' in client && (client.whitelist ? '有白名单' : '无白名单')
-    ].filter(Boolean)
-
-    if (settings.length) lines.push(settings.join(' | '))
-  }
 
   // 在线玩家列表
   if (config.server.showPlayers && players?.sample?.length > 0) {

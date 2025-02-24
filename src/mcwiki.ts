@@ -3,7 +3,13 @@ import axios from 'axios'
 import { MinecraftToolsConfig, LangCode } from './utils'
 import { searchWikiArticles } from './search'
 
-// 3. 配置和处理函数
+/**
+ * 构建 Wiki URL
+ * @param {string} articleTitle - 文章标题
+ * @param {LangCode | string} languageCode - 语言代码
+ * @param {boolean} includeLanguageVariant - 是否包含语言变体参数
+ * @returns {string} 构建好的 Wiki URL
+ */
 export function constructWikiUrl(articleTitle: string, languageCode: LangCode | string, includeLanguageVariant = false) {
   let wikiDomain: string
   let languageVariant: string = ''
@@ -23,6 +29,11 @@ export function constructWikiUrl(articleTitle: string, languageCode: LangCode | 
   return includeLanguageVariant && languageVariant ? `${baseUrl}?variant=${languageVariant}` : baseUrl
 }
 
+/**
+ * 格式化文章标题
+ * @param {any} data - 文章数据
+ * @returns {string} 格式化后的标题
+ */
 export function formatArticleTitle(data: any): string {
   if (!data) return '未知条目'
 
@@ -33,6 +44,13 @@ export function formatArticleTitle(data: any): string {
   return parts.join(' ')
 }
 
+/**
+ * 获取 Wiki 文章内容
+ * @param {string} articleUrl - 文章URL
+ * @param {LangCode} languageCode - 语言代码
+ * @param {MinecraftToolsConfig} config - 插件配置
+ * @returns {Promise<{title: string, content: string, url: string}>}
+ */
 export async function fetchWikiArticleContent(articleUrl: string, languageCode: LangCode, config: MinecraftToolsConfig) {
   const languageVariant = languageCode.startsWith('zh') ?
     (languageCode === 'zh' ? 'zh-cn' :
@@ -53,7 +71,6 @@ export async function fetchWikiArticleContent(articleUrl: string, languageCode: 
   const sections: { title?: string; content: string[] }[] = []
   let currentSection: { title?: string; content: string[] } = { content: [] }
 
-  // 移除:not(.notaninfobox)以获取完整内容
   $('#mw-content-text .mw-parser-output > *').each((_, element) => {
     const el = $(element)
 
@@ -114,12 +131,21 @@ export async function fetchWikiArticleContent(articleUrl: string, languageCode: 
   }
 }
 
+/**
+ * 处理 Wiki 请求
+ * @param {string} keyword - 搜索关键词
+ * @param {string} userId - 用户ID
+ * @param {MinecraftToolsConfig} config - 插件配置
+ * @param {Map<string, LangCode>} userLangs - 用户语言设置
+ * @param {'text' | 'image' | 'search'} mode - 请求模式
+ * @returns {Promise<string | {results: SearchResult[], domain: string, lang: string} | {url: string, pageUrl: string}>}
+ */
 export async function processWikiRequest(keyword: string, userId: string, config: MinecraftToolsConfig, userLangs: Map<string, LangCode>, mode: 'text' | 'image' | 'search' = 'text') {
   if (!keyword) return '请输入要查询的内容关键词'
 
   try {
     const lang = userLangs.get(userId) || config.wiki.defaultLanguage
-    const results = await searchWikiArticles(keyword, config.wiki.searchResultLimit, config.wiki.pageTimeout)
+    const results = await searchWikiArticles(keyword)
 
     if (!results.length) return `${keyword}：本页面目前没有内容。`
 

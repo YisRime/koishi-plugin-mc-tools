@@ -41,8 +41,9 @@ versionCheck:
 
 # 默认的Minecraft服务器配置
 server:
-  host: localhost      # 默认服务器地址
-  port: 25565         # 默认服务器端口
+  address: localhost:25565  # 默认服务器地址和端口
+  showIcon: true           # 是否显示服务器图标
+  showPlayers: true       # 是否显示在线玩家列表
 ```
 
 ## 支持的Wiki语言

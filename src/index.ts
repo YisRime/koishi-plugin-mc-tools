@@ -14,18 +14,21 @@ import { processWikiRequest } from './mcwiki'
 import { handleModScreenshot } from './shot'
 import { searchMCMOD, handleSearch } from './search'
 
+/**
+ * Minecraft 工具箱插件
+ * @module mc-tools
+ */
 export const name = 'mc-tools'
 export const inject = {required: ['puppeteer']}
 
-
+/**
+ * 插件配置模式
+ */
 export const Config: Schema<MinecraftToolsConfig> = Schema.object({
   wiki: Schema.object({
     defaultLanguage: Schema.union(Object.keys(MINECRAFT_LANGUAGES) as LangCode[])
       .default('zh')
       .description('Wiki 显示语言'),
-    pageTimeout: Schema.number()
-      .default(30)
-      .description('页面超时时间（秒）'),
     minSectionLength: Schema.number()
       .default(12)
       .description('Wiki 段落最小字数'),
@@ -35,21 +38,24 @@ export const Config: Schema<MinecraftToolsConfig> = Schema.object({
     totalPreviewLength: Schema.number()
       .default(500)
       .description('总预览字数'),
-    imageEnabled: Schema.boolean()
+    showVersions: Schema.boolean()
       .default(true)
-      .description('是否启用图片显示'),
-    searchTimeout: Schema.number()
-      .default(10)
-      .description('搜索选择超时时间（秒）'),
-    searchResultLimit: Schema.number()
-      .default(10)
-      .description('搜索结果最大显示数量'),
+      .description('显示支持版本'),
+    showLinks: Schema.boolean()
+      .default(true)
+      .description('显示相关链接'),
     showDescription: Schema.boolean()
       .default(true)
-      .description('MCMOD 搜索结果描述'),
+      .description('显示简介'),
+    imageEnabled: Schema.boolean()
+      .default(true)
+      .description('显示图片'),
+    searchTimeout: Schema.number()
+      .default(10)
+      .description('搜索选择时间（秒）'),
     searchDescLength: Schema.number()
       .default(60)
-      .description('MCMOD 搜索结果描述字数')
+      .description('搜索结果描述字数(0表示不显示)'),
   }).description('Wiki & MCMOD 设置'),
 
   versionCheck: Schema.object({
@@ -71,21 +77,12 @@ export const Config: Schema<MinecraftToolsConfig> = Schema.object({
   }).description('Version 设置'),
 
   server: Schema.object({
-    host: Schema.string()
-      .description('默认服务器地址')
-      .default('localhost'),
-    port: Schema.number()
-      .description('默认服务器端口')
-      .default(25565),
+    address: Schema.string()
+      .description('默认服务器地址:端口')
+      .default('localhost:25565'),
     showIcon: Schema.boolean()
       .default(true)
       .description('显示服务器图标'),
-    showPing: Schema.boolean()
-      .default(true)
-      .description('显示延迟信息'),
-    showSettings: Schema.boolean()
-      .default(true)
-      .description('显示服务器设置'),
     showPlayers: Schema.boolean()
       .default(true)
       .description('显示在线玩家')
@@ -100,8 +97,6 @@ export const Config: Schema<MinecraftToolsConfig> = Schema.object({
 export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
   const userLanguageSettings = new Map<string, LangCode>()
   const minecraftVersions = { snapshot: '', release: '' }
-
-  // Wiki 功能相关代码
   const mcwiki = ctx.command('mcwiki', 'Minecraft Wiki 查询')
     .usage(`mcwiki <关键词> - 直接查询内容\nmcwiki.search <关键词> - 搜索并选择条目\nmcwiki.shot <关键词> - 获取页面截图`)
 
@@ -114,7 +109,6 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
     }
   })
 
-  // 修改 modwiki 命令实现
   const modWikiCommand = ctx.command('modwiki <keyword:text>', 'MCMOD搜索(支持模组/整合包/物品/教程)')
     .action(async ({ }, keyword) => {
       if (!keyword) return '请输入要查询的关键词'
@@ -143,7 +137,6 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
       })
     })
 
-  // 修改 search 子命令实现
   modWikiCommand.subcommand('.search <keyword:text>', 'MCMOD搜索并返回列表（使用 -i 后缀以获取页面截图）')
     .action(async ({ session }, keyword) => {
       return await handleSearch({
@@ -165,9 +158,13 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
         if (typeof wikiResult === 'string') return wikiResult
 
         await session.send(`正在获取页面...\n完整内容：${wikiResult.url}`)
-        const result = await handleWikiScreenshot(keyword, wikiResult.pageUrl,
+        const result = await handleWikiScreenshot(
+          keyword,
+          wikiResult.pageUrl,
           userLanguageSettings.get(session.userId) || pluginConfig.wiki.defaultLanguage,
-          pluginConfig, ctx)
+          pluginConfig,
+          ctx
+        )
         return result.image
       } catch (error) {
         return error.message
@@ -179,8 +176,12 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
       if (!keyword) return '请输入要查询的关键词'
 
       try {
+        const results = await searchMCMOD(keyword, pluginConfig)
+        if (!results.length) throw new Error('未找到相关内容')
+        const targetUrl = results[0].url
+
+        await session.send(`正在获取页面...\n完整内容：${targetUrl}`)
         const result = await handleModScreenshot(keyword, pluginConfig, ctx)
-        await session.send(`正在获取页面...\n完整内容：${result.url}`)
         return result.image
       } catch (error) {
         return error.message
@@ -193,7 +194,6 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
       return result.success ? result.data : result.error
     })
 
-  // 版本更新检查
   if (pluginConfig.versionCheck.enabled && pluginConfig.versionCheck.groups.length) {
     checkMinecraftUpdate(minecraftVersions, ctx, pluginConfig)
     setInterval(() => checkMinecraftUpdate(minecraftVersions, ctx, pluginConfig), pluginConfig.versionCheck.interval * 60 * 1000)

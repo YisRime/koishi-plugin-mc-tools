@@ -5,64 +5,93 @@ import { searchMCMOD } from './search'
 // 通用清理选择器
 const CLEANUP_SELECTORS = {
   wiki: [
-    '.mw-editsection',
+    // 导航和页面结构
     '#mw-navigation',
-    '#footer',
-    '.noprint',
-    '#toc',
-    '.navbox',
-    '#siteNotice',
-    '#contentSub',
-    '.mw-indicators',
-    '.sister-wiki',
-    '.external',
-    'script',
-    'meta',
     '#mw-head',
     '#mw-head-base',
     '#mw-page-base',
-    '#catlinks',
-    '.printfooter',
-    '.mw-jump-link',
+    '#footer',
     '.vector-toc',
     '.vector-menu',
+
+    // 元数据和引用
+    '.mw-editsection',
+    '.mw-indicators',
+    '#contentSub',
+    '#siteNotice',
+    '.printfooter',
+    '.catlinks',
+    '.sister-wiki',
+
+    // 页面内容清理
+    '.noprint',
+    '.treeview',
     '.mw-cite-backlink',
     '.reference',
-    '.treeview',
-    '.file-display-header'
+    '.mw-jump-link',
+    '.external',
+
+    // 媒体相关
+    '.file-display-header',
+
+    // 交互和脚本
+    'script',
+    'meta',
+    '.dismissable-site-notice'
   ],
   mcmod: [
-    'header',
-    'footer',
     '.header-container',
-    '.common-background',
     '.common-nav',
-    '.common-menu-page',
+    '.class-menu-page',
+    '.common-menu-side',
+    '.class-edit-block',
     '.common-comment-block',
-    '.comment-ad',
-    '.ad-leftside',
-    '.slidetips',
-    '.item-table-tips',
-    '.common-icon-text-frame',
+    '.common-scroll-top',
+    '.common-share-block',
+    '.info-footer',
+    '.common-background',
+    '.common-menu-main .text-area .common-text-title',
+    '.common-menu-main .text-area .common-tag-ban',
+    '.common-rowlist-block',
+    '.common-imglist-block',
+    'footer',
     'script',
-    '.common-ad-frame',
+    '.header-mobilemenu',
+    '.class-info-right',
+    '.class-info-side',
+    '.edit-history',
+    '.comment-ad',
+    '.ad',
+    '.ad-leftside',
     '.ad-class-page',
-    '.item-data'
+    '.item-data',
+    '.item-stats'
   ]
 }
 
+/**
+ * 截图选项接口
+ */
 interface ScreenshotOptions {
+  /** 目标页面URL */
   url: string
+  /** Puppeteer页面实例 */
   page: any
+  /** 插件配置 */
   config: MinecraftToolsConfig
+  /** 页面类型 */
   type: 'wiki' | 'mcmod'
+  /** 语言代码 */
   lang?: LangCode
 }
 
-// 统一的截图处理函数
+/**
+ * 统一的网页截图处理函数
+ * @param {ScreenshotOptions} options - 截图选项
+ * @returns {Promise<{image: Buffer, height: number}>}
+ */
 async function capturePageScreenshot({ url, page, config, type, lang }: ScreenshotOptions) {
   try {
-    // 基础视图设置
     await page.setViewport({
       width: 1080,
       height: type === 'wiki' ? 1920 : 800,
@@ -84,7 +113,7 @@ async function capturePageScreenshot({ url, page, config, type, lang }: Screensh
       try {
         await page.goto(url, {
           waitUntil: 'networkidle0',
-          timeout: config.wiki.pageTimeout * 1000
+          timeout: 30000
         })
         break
       } catch (err) {
@@ -98,7 +127,7 @@ async function capturePageScreenshot({ url, page, config, type, lang }: Screensh
     const mainSelector = type === 'wiki' ? '#bodyContent' :
                         url.includes('/item/') ? '.maintext' : '.col-lg-12.center'
     await page.waitForSelector(mainSelector, {
-      timeout: config.wiki.pageTimeout * 1000,
+      timeout: 30000,
       visible: true
     })
 
@@ -130,33 +159,98 @@ async function capturePageScreenshot({ url, page, config, type, lang }: Screensh
       // Wiki 特定处理
       if (type === 'wiki') {
         const content = document.querySelector('#mw-content-text .mw-parser-output')
-        const newBody = document.createElement('div')
-        newBody.id = 'content'
-        if (content) newBody.appendChild(content.cloneNode(true))
+        if (!content) throw new Error('找不到页面内容')
+
+        // 创建新的内容容器
+        const wrapper = document.createElement('div')
+        wrapper.id = 'content'
+
+        // 添加样式
+        wrapper.setAttribute('style', `
+          max-width: 960px;
+          margin: 0 auto;
+          padding: 2em;
+          background: white;
+          box-sizing: border-box;
+        `)
+
+        // 移除广告和无用内容
+        content.querySelectorAll('.mcf-card').forEach(el => el.remove())
+        content.querySelectorAll('ins.adsbygoogle').forEach(el => el.remove())
+
+        // 优化图片显示
+        content.querySelectorAll('img').forEach(img => {
+          img.style.maxWidth = '100%'
+          img.style.height = 'auto'
+          img.style.margin = '0.5em auto'
+          img.style.display = 'block'
+        })
+
+        // 优化表格显示
+        content.querySelectorAll('table').forEach(table => {
+          table.style.margin = '1em 0'
+          table.style.width = '100%'
+          table.style.borderCollapse = 'collapse'
+        })
+
+        // 清理body并添加新容器
+        wrapper.appendChild(content.cloneNode(true))
         document.body.innerHTML = ''
-        document.body.appendChild(newBody)
+        document.body.appendChild(wrapper)
       }
       // MCMOD 特定处理
       else {
-        const maintext = document.querySelector('.maintext')
-        const itemRow = document.querySelector('.item-row')
-        const center = document.querySelector('.col-lg-12.center')
+        // 清理主内容区域
+        if (document.querySelector('.col-lg-12.center')) {
+          const center = document.querySelector('.col-lg-12.center')
+          center.setAttribute('style',
+            'margin:0 auto !important;' +
+            'padding:20px !important;' +
+            'width:1080px !important;' +
+            'background:white !important;' +
+            'min-height:unset !important'
+          )
 
-        if (maintext && itemRow) {
-          // 处理物品页面
-          maintext.setAttribute('style', 'margin:0 !important;padding:0 !important;float:none !important;width:100% !important;')
-          itemRow.setAttribute('style', 'margin:0 auto !important;padding:20px !important;width:auto !important;max-width:1000px !important;background:white !important;')
-        } else if (center) {
-          // 处理模组页面
-          center.setAttribute('style', 'margin:0 !important;padding:0 20px !important;width:1080px !important;background:white !important;')
-          const left = center.querySelector('.left')
-          const right = center.querySelector('.right')
-          if (left) left.setAttribute('style', 'margin:0 !important;padding:0 !important;')
-          if (right) right.setAttribute('style', 'margin:0 !important;padding:0 !important;')
+          // 调整文章内容区域
+          const content = center.querySelector('.common-text') || center.querySelector('.maintext')
+          if (content) {
+            content.setAttribute('style',
+              'margin:0 !important;' +
+              'padding:0 !important;' +
+              'width:100% !important;' +
+              'float:none !important'
+            )
+
+            // 处理物品信息表格
+            const infoTable = content.querySelector('.class-table')
+            if (infoTable) {
+              infoTable.setAttribute('style',
+                'margin:1em 0 !important;' +
+                'width:100% !important'
+              )
+            }
+          }
+
+          // 调整图片区域
+          const imgArea = center.querySelector('.common-image-block')
+          if (imgArea) {
+            imgArea.setAttribute('style',
+              'margin:1em 0 !important;' +
+              'text-align:center !important'
+            )
+          }
         }
 
-        // 移除body的默认边距
-        document.body.setAttribute('style', 'margin:0 !important;padding:0 !important;background:white !important;width:1080px !important;min-width:1080px !important;overflow-x:hidden !important;')
+        // 处理图片
+        document.querySelectorAll('img').forEach(img => {
+          img.style.maxWidth = '100%'
+          img.style.height = 'auto'
+          img.style.margin = '0.5em'
+        })
+
+        // 移除背景
+        const bg = document.querySelector('.common-background')
+        if (bg) bg.remove()
       }
     }, { type, selectors: CLEANUP_SELECTORS[type] })
 
@@ -187,7 +281,6 @@ async function capturePageScreenshot({ url, page, config, type, lang }: Screensh
       throw new Error('无法获取页面内容区域')
     }
 
-    // 截图
     await new Promise(resolve => setTimeout(resolve, 500))
     const screenshot = await page.screenshot({
       type: type === 'wiki' ? 'png' : 'jpeg',
@@ -207,8 +300,22 @@ async function capturePageScreenshot({ url, page, config, type, lang }: Screensh
   }
 }
 
-// 处理函数导出
-export async function handleWikiScreenshot(url: string, lang: LangCode, config: MinecraftToolsConfig, ctx: any) {
+/**
+ * 处理 Wiki 页面截图
+ * @param {string} keyword - 搜索关键词
+ * @param {string} url - Wiki页面URL
+ * @param {LangCode} lang - 语言代码
+ * @param {MinecraftToolsConfig} config - 插件配置
+ * @param {any} ctx - Koishi上下文
+ * @returns {Promise<{url: string, image: any}>}
+ */
+export async function handleWikiScreenshot(
+  keyword: string,
+  url: string,
+  lang: LangCode,
+  config: MinecraftToolsConfig,
+  ctx: any
+) {
   if (!config.wiki.imageEnabled) {
     throw new Error('图片功能已禁用')
   }
@@ -232,6 +339,13 @@ export async function handleWikiScreenshot(url: string, lang: LangCode, config: 
   }
 }
 
+/**
+ * 处理 MCMOD 页面截图
+ * @param {string} keyword - 搜索关键词
+ * @param {MinecraftToolsConfig} config - 插件配置
+ * @param {any} ctx - Koishi上下文
+ * @returns {Promise<{url: string, image: any}>}
+ */
 export async function handleModScreenshot(keyword: string, config: MinecraftToolsConfig, ctx: any) {
   const results = await searchMCMOD(keyword, config)
   if (!results.length) {

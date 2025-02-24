@@ -4,7 +4,17 @@ import { MinecraftToolsConfig, LangCode, SearchResult } from './utils'
 import { constructWikiUrl, fetchWikiArticleContent } from './mcwiki'
 import { processMCMODContent, formatContentSections } from './modwiki'
 
-// 统一的搜索处理函数
+/**
+ * 统一的搜索处理函数
+ * @param {Object} params - 搜索参数
+ * @param {string} params.keyword - 搜索关键词
+ * @param {'wiki' | 'mcmod'} params.source - 搜索源
+ * @param {any} params.session - Koishi 会话实例
+ * @param {MinecraftToolsConfig} params.config - 插件配置
+ * @param {any} [params.ctx] - Koishi 上下文(可选)
+ * @param {LangCode} [params.lang] - 语言代码(可选)
+ * @returns {Promise<string>} 搜索结果或错误信息
+ */
 export async function handleSearch(params: {
   keyword: string
   source: 'wiki' | 'mcmod'
@@ -19,7 +29,7 @@ export async function handleSearch(params: {
 
   try {
     const searchFunction = source === 'wiki'
-      ? (kw: string, cfg: MinecraftToolsConfig) => searchWikiArticles(kw, cfg.wiki.searchResultLimit, cfg.wiki.searchTimeout)
+      ? (kw: string, cfg: MinecraftToolsConfig) => searchWikiArticles(kw)
       : searchMCMOD
     const results = await searchFunction(keyword, config)
 
@@ -27,7 +37,7 @@ export async function handleSearch(params: {
 
     const items = results.map((r, i) => {
       const base = `${i + 1}. ${r.title}`
-      const desc = source === 'mcmod' && config.wiki.showDescription && r.desc
+      const desc = source === 'mcmod' && config.wiki.searchDescLength > 0 && r.desc
         ? `\n    ${r.desc}` : ''
       return `${base}${desc}`
     })
@@ -45,14 +55,18 @@ export async function handleSearch(params: {
   }
 }
 
-// Wiki 搜索功能
-export async function searchWikiArticles(keyword: string, searchResultLimit: number, pageTimeout: number): Promise<SearchResult[]> {
+/**
+ * Wiki 搜索功能
+ * @param {string} keyword - 搜索关键词
+ * @returns {Promise<SearchResult[]>} 搜索结果列表
+ */
+export async function searchWikiArticles(keyword: string): Promise<SearchResult[]> {
   try {
     const searchUrl = constructWikiUrl('api.php', 'zh', true).replace('/w/', '/')
-      + `&action=opensearch&search=${encodeURIComponent(keyword)}&limit=${searchResultLimit}`;
+      + `&action=opensearch&search=${encodeURIComponent(keyword)}&limit=10`;
 
     const { data } = await axios.get(searchUrl, {
-      timeout: pageTimeout * 1000
+      timeout: 30000
     });
 
     const [_, titles, urls] = data;
@@ -63,7 +77,12 @@ export async function searchWikiArticles(keyword: string, searchResultLimit: num
   }
 }
 
-// MCMOD 搜索功能
+/**
+ * MCMOD 搜索功能
+ * @param {string} keyword - 搜索关键词
+ * @param {MinecraftToolsConfig} config - 插件配置
+ * @returns {Promise<SearchResult[]>} 搜索结果列表
+ */
 export async function searchMCMOD(keyword: string, config: MinecraftToolsConfig): Promise<SearchResult[]> {
   try {
     const response = await axios.get(
@@ -78,7 +97,7 @@ export async function searchMCMOD(keyword: string, config: MinecraftToolsConfig)
       const titleEl = $item.find('.head a').last()
       const title = titleEl.text().trim()
       const url = titleEl.attr('href') || ''
-      const desc = config.wiki.showDescription
+      const desc = config.wiki.searchDescLength > 0
         ? $item.find('.body').text().trim().replace(/\[.*?\]/g, '').trim()
         : ''
       const normalizedDesc = desc && desc.length > config.wiki.searchDescLength
@@ -96,12 +115,17 @@ export async function searchMCMOD(keyword: string, config: MinecraftToolsConfig)
         })
       }
     })
-    return results.slice(0, config.wiki.searchResultLimit)
+    return results.slice(0, 10)
   } catch (error) {
     throw new Error(`搜索失败: ${error.message}`)
   }
 }
 
+/**
+ * 处理用户搜索结果选择
+ * @param {Object} params - 参数对象
+ * @returns {Promise<string | any>} 处理结果
+ */
 async function handleUserSelection(params: {
   response: string
   results: SearchResult[]
@@ -133,6 +157,15 @@ async function handleUserSelection(params: {
   }
 }
 
+/**
+ * 处理图片请求
+ * @param {SearchResult} result - 搜索结果
+ * @param {'wiki' | 'mcmod'} source - 来源
+ * @param {any} ctx - Koishi 上下文
+ * @param {MinecraftToolsConfig} config - 插件配置
+ * @param {LangCode} [lang] - 语言代码
+ * @returns {Promise<any>} 图片处理结果
+ */
 async function handleImageRequest(
   result: SearchResult,
   source: 'wiki' | 'mcmod',
@@ -162,6 +195,14 @@ async function handleImageRequest(
   }
 }
 
+/**
+ * 处理内容请求
+ * @param {SearchResult} result - 搜索结果
+ * @param {'wiki' | 'mcmod'} source - 来源
+ * @param {MinecraftToolsConfig} config - 插件配置
+ * @param {LangCode} [lang] - 语言代码
+ * @returns {Promise<string>} 格式化的内容
+ */
 async function handleContentRequest(
   result: SearchResult,
   source: 'wiki' | 'mcmod',
