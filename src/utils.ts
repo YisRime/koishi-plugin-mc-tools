@@ -15,7 +15,6 @@ export interface SearchResult {
   title: string
   url: string
   desc?: string
-  type?: string
   source: 'wiki' | 'mcmod'
 }
 

@@ -1,6 +1,5 @@
 import { Context, Schema } from 'koishi'
 import {} from 'koishi-plugin-puppeteer'
-
 import {
   MinecraftToolsConfig,
   MINECRAFT_LANGUAGES,
@@ -10,10 +9,7 @@ import {
   checkMinecraftUpdate,
   formatErrorMessage,
 } from './utils'
-import {
-  processMCMODContent,
-  formatContentSections
-} from './modwiki'
+import { processMCMODContent, formatContentSections } from './modwiki'
 import { processWikiRequest } from './mcwiki'
 import { handleModScreenshot, handleWikiScreenshot } from './shot'
 import { searchMCMOD, handleSearch } from './search'
@@ -168,11 +164,14 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
       if (!keyword) return '请输入要查询的关键词'
 
       try {
+        const { handleWikiScreenshot } = require('./shot')
         const wikiResult = await processWikiRequest(keyword, session.userId, pluginConfig, ctx, userLanguageSettings, 'image') as any
         if (typeof wikiResult === 'string') return wikiResult
 
         await session.send(`正在获取页面...\n完整内容：${wikiResult.url}`)
-        const result = await handleWikiScreenshot(keyword, wikiResult.pageUrl, userLanguageSettings.get(session.userId) || pluginConfig.wiki.defaultLanguage, pluginConfig, ctx)
+        const result = await handleWikiScreenshot(keyword, wikiResult.pageUrl,
+          userLanguageSettings.get(session.userId) || pluginConfig.wiki.defaultLanguage,
+          pluginConfig, ctx)
         return result.image
       } catch (error) {
         return error.message

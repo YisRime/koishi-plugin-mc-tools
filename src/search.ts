@@ -1,9 +1,7 @@
-import { h } from 'koishi'
 import axios from 'axios'
 import * as cheerio from 'cheerio'
-import { MinecraftToolsConfig, LangCode, SearchResult, TypeMap, ModwikiConfig } from './utils'
+import { MinecraftToolsConfig, LangCode, SearchResult } from './utils'
 import { constructWikiUrl, fetchWikiArticleContent } from './mcwiki'
-import { captureWikiPageScreenshot } from './shot'
 import { processMCMODContent, formatContentSections } from './modwiki'
 
 // 统一的搜索处理函数
@@ -31,8 +29,7 @@ export async function handleSearch(params: {
     const items = results.map((r, i) => {
       const base = `${i + 1}. ${r.title}`
       const desc = config.wiki.showDescription && r.desc ? `\n    ${r.desc}` : ''
-      const type = r.type ? ` [${r.type}]` : ''
-      return `${base}${type}${desc}`
+      return `${base}${desc}`
     })
     const searchResultMessage = `${results[0].source === 'wiki' ? 'Wiki' : 'MCMOD'} 搜索结果：\n${items.join('\n')}
 请回复序号查看详细内容（使用 -i 后缀以获取页面截图）`
@@ -81,22 +78,18 @@ export async function searchMCMOD(keyword: string, config: MinecraftToolsConfig)
       const titleEl = $item.find('.head a').last()
       const title = titleEl.text().trim()
       const url = titleEl.attr('href') || ''
-      const description = $item.find('.desc').text().trim()
-      const desc = description
-        ? (description.length > config.wiki.searchDescLength
-            ? description.slice(0, config.wiki.searchDescLength) + '...'
-            : description)
-        : ''
+      const desc = $item.find('.desc').text().trim()
+      const normalizedDesc = desc.length > config.wiki.searchDescLength
+        ? desc.slice(0, config.wiki.searchDescLength) + '...'
+        : desc
 
-      const type = Object.entries(TypeMap.modTypes).find(([key]) => url.includes(key))?.[1] || '未知'
       const normalizedUrl = url.startsWith('http') ? url : `https://www.mcmod.cn${url}`
 
       if (title && url) {
         results.push({
           title,
           url: normalizedUrl,
-          desc,
-          type,
+          desc: normalizedDesc,
           source: 'mcmod'
         })
       }
@@ -116,56 +109,75 @@ async function handleUserSelection(params: {
   lang?: LangCode
   processContent?: (url: string) => Promise<string>
 }) {
-  const { response, results, source, config, ctx, lang, processContent } = params
+  const { response, results, source, config, ctx, lang } = params
+
+  // 解析用户输入
+  const [input, flag] = response.split('-')
+  const index = parseInt(input) - 1
+
+  // 验证输入有效性
+  if (isNaN(index) || index < 0 || index >= results.length) {
+    return '请输入有效的序号'
+  }
+
+  const result = results[index]
+  const isImageRequest = flag?.trim() === 'i'
 
   try {
-    const [input, flag] = response.split('-')
-    const index = parseInt(input) - 1
-
-    if (isNaN(index) || index < 0 || index >= results.length) {
-      return '请输入有效的序号'
-    }
-
-    const result = results[index]
-    const isImageRequest = flag?.trim() === 'i'
-
     if (isImageRequest) {
-      if (!ctx?.puppeteer) return '截图功能不可用'
-
-      const context = await ctx.puppeteer.browser.createBrowserContext()
-      const page = await context.newPage()
-
-      try {
-        if (source === 'wiki') {
-          const pageUrl = constructWikiUrl(result.title, lang, true)
-          const { image } = await captureWikiPageScreenshot(page, pageUrl, lang, config)
-          return { image: h.image(image, 'image/png') }
-        } else {
-          const { captureMCMODPageScreenshot } = require('./shot')
-          const { image } = await captureMCMODPageScreenshot(page, result.url, config)
-          return { image: h.image(image, 'image/jpeg') }
-        }
-      } finally {
-        await context.close()
-      }
+      return await handleImageRequest(result, source, ctx, config, lang)
     }
+    return await handleContentRequest(result, source, config, lang)
+  } catch (error) {
+    const errorMessage = error?.message || String(error)
+    return `处理内容时出错 (${errorMessage})，请直接访问：${result.url}`
+  }
+}
 
+async function handleImageRequest(
+  result: SearchResult,
+  source: 'wiki' | 'mcmod',
+  ctx: any,
+  config: MinecraftToolsConfig,
+  lang?: LangCode
+) {
+  if (!ctx?.puppeteer) {
+    return '截图功能不可用'
+  }
+
+  const context = await ctx.puppeteer.browser.createBrowserContext()
+  const page = await context.newPage()
+
+  try {
     if (source === 'wiki') {
       const pageUrl = constructWikiUrl(result.title, lang, true)
-      const displayUrl = constructWikiUrl(result.title, lang)
-      const { title, content } = await fetchWikiArticleContent(pageUrl, lang, config)
-      return `『${title}』${content}\n详细内容：${displayUrl}`
+      const { handleWikiScreenshot } = require('./shot')
+      const res = await handleWikiScreenshot('', pageUrl, lang, config, ctx)
+      return res
+    } else {
+      const { handleModScreenshot } = require('./shot')
+      const res = await handleModScreenshot(result.title, config, ctx)
+      return res
     }
-
-    // 直接处理 MCMOD 内容
-    try {
-      const content = await processMCMODContent(result.url, config.wiki)
-      const formattedContent = formatContentSections(content, result.url)
-      return formattedContent || `获取内容失败，请直接访问：${result.url}`
-    } catch (error) {
-      return `获取内容失败 (${error.message})，请直接访问：${result.url}`
-    }
-  } catch (error) {
-    return `处理内容时出错，请直接访问：${results[parseInt(response) - 1]?.url || '链接获取失败'}`
+  } finally {
+    await context.close()
   }
+}
+
+async function handleContentRequest(
+  result: SearchResult,
+  source: 'wiki' | 'mcmod',
+  config: MinecraftToolsConfig,
+  lang?: LangCode
+) {
+  if (source === 'wiki') {
+    const pageUrl = constructWikiUrl(result.title, lang, true)
+    const displayUrl = constructWikiUrl(result.title, lang)
+    const { title, content } = await fetchWikiArticleContent(pageUrl, lang, config)
+    return `『${title}』${content}\n详细内容：${displayUrl}`
+  }
+
+  const content = await processMCMODContent(result.url, config.wiki)
+  const formattedContent = formatContentSections(content, result.url)
+  return formattedContent || `获取内容失败，请直接访问：${result.url}`
 }
