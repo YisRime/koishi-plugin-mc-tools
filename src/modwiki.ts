@@ -268,7 +268,6 @@ function processPageContent($: cheerio.CheerioAPI, pageType: 'mod' | 'modpack' |
       const imgSrc = $itemIcon.attr('data-src') || $itemIcon.attr('src');
       if (imgSrc) {
         result.coverImage = imgSrc.startsWith('//') ? `https:${imgSrc}` : imgSrc;
-        // 不在这里添加图片到basicInfo中
       }
     }
 
@@ -302,31 +301,33 @@ function processPageContent($: cheerio.CheerioAPI, pageType: 'mod' | 'modpack' |
   }[pageType];
 
   // 处理正文内容，包括分离图片
-  const state = { sections: [], images: [], totalLength: 0, maxLength };
+  const state = { sections: [], totalLength: 0, maxLength };
   $(contentSelector).children().each((_, element) => {
     if (state.totalLength >= maxLength) return false;
 
     const $elem = $(element);
 
-    // 处理内容中的图片
-    $elem.find('img').each((_, img) => {
-      const $img = $(img);
+    // 处理图片元素
+    if ($elem.find('.figure').length || $elem.is('.figure')) {
+      const $img = $elem.find('img');
       const imgSrc = $img.attr('data-src') || $img.attr('src');
       if (imgSrc) {
-        state.images.push(imgSrc.startsWith('//') ? `https:${imgSrc}` : imgSrc);
+        // 直接将图片添加到sections中
+        state.sections.push(h.image(imgSrc.startsWith('//') ? `https:${imgSrc}` : imgSrc).toString());
       }
-    });
-
-    // 清理后的文本内容
-    const text = cleanText($elem.clone().find('script, .figure, img').remove().end().text());
-    if (text) {
-      state.sections.push(text);
-      state.totalLength += text.length;
+    } else {
+      // 处理文本内容
+      const text = cleanText($elem.clone().find('script').remove().end().text());
+      if (text) {
+        state.sections.push(text);
+        state.totalLength += text.length;
+      }
     }
   });
 
   result.mainContent = state.sections;
-  result.contentImages = state.images;
+  // 不再需要单独的contentImages数组
+  result.contentImages = [];
 
   // 处理相关链接
   result.links = processRelatedLinks($);
