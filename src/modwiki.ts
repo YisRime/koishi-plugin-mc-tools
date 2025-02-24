@@ -146,9 +146,6 @@ export function formatContentSections(result: ProcessResult, url: string): strin
     section.toString().trim().replace(/[\u0000-\u001F\u007F-\u009F\u200B-\u200D\uFEFF]/g, '')
   ).filter(Boolean);
 
-  // 根据title判断是否为物品页面
-  const isItemPage = sections[0]?.match(/^.+?\s*\([^)]+?\)$/);
-
   // 组织最终输出
   const output = [
     // 标题
@@ -173,10 +170,10 @@ export function formatContentSections(result: ProcessResult, url: string): strin
       s.includes('Fabric:')
     ),
     '',
-    // 相关链接 - 仅在非物品页面显示
-    ...(!isItemPage ? [
+    // 相关链接
+    ...(result.links?.length ? [
       '相关链接:',
-      ...(result.links || []),
+      ...result.links,
       ''
     ] : []),
     // 简介部分

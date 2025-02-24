@@ -27,7 +27,8 @@ export async function handleSearch(params: {
 
     const items = results.map((r, i) => {
       const base = `${i + 1}. ${r.title}`
-      const desc = config.wiki.showDescription && r.desc ? `\n    ${r.desc}` : ''
+      const desc = source === 'mcmod' && config.wiki.showDescription && r.desc
+        ? `\n    ${r.desc}` : ''
       return `${base}${desc}`
     })
     const searchResultMessage = `${results[0].source === 'wiki' ? 'Wiki' : 'MCMOD'} 搜索结果：\n${items.join('\n')}
@@ -77,8 +78,10 @@ export async function searchMCMOD(keyword: string, config: MinecraftToolsConfig)
       const titleEl = $item.find('.head a').last()
       const title = titleEl.text().trim()
       const url = titleEl.attr('href') || ''
-      const desc = $item.find('.desc').text().trim()
-      const normalizedDesc = desc.length > config.wiki.searchDescLength
+      const desc = config.wiki.showDescription
+        ? $item.find('.body').text().trim().replace(/\[.*?\]/g, '').trim()
+        : ''
+      const normalizedDesc = desc && desc.length > config.wiki.searchDescLength
         ? desc.slice(0, config.wiki.searchDescLength) + '...'
         : desc
 
