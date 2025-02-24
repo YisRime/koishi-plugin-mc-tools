@@ -137,7 +137,7 @@ async function capturePageScreenshot({ url, page, config, type, lang }: Screensh
         document.body.appendChild(newBody)
       }
       // MCMOD 特定处理
-      else if (url.includes('/item/')) {
+      else {
         const maintext = document.querySelector('.maintext')
         const itemRow = document.querySelector('.item-row')
         if (maintext && itemRow) {
@@ -145,11 +145,11 @@ async function capturePageScreenshot({ url, page, config, type, lang }: Screensh
           itemRow.setAttribute('style', 'margin:0 auto !important;padding:20px !important;width:auto !important;max-width:1000px !important;background:white !important;')
         }
       }
-    }, { type, url, selectors: CLEANUP_SELECTORS[type] })
+    }, { type, selectors: CLEANUP_SELECTORS[type] })
 
     // 获取内容区域尺寸
     const dimensions = await page.evaluate((params) => {
-      const { type, mainSelector } = params
+      const { type, url, mainSelector } = params
       const element = type === 'wiki' ?
         document.querySelector('#content') :
         document.querySelector(mainSelector)
@@ -168,7 +168,7 @@ async function capturePageScreenshot({ url, page, config, type, lang }: Screensh
         height: Math.min(type === 'wiki' ? 4000 : 6000,
                         type === 'wiki' ? Math.ceil(rect.height) : Math.max(800, Math.ceil(rect.height)))
       }
-    }, { type, mainSelector })
+    }, { type, url, mainSelector })
 
     if (!dimensions) {
       throw new Error('无法获取页面内容区域')
@@ -195,7 +195,7 @@ async function capturePageScreenshot({ url, page, config, type, lang }: Screensh
 }
 
 // 处理函数导出
-export async function handleWikiScreenshot(keyword: string, url: string, lang: LangCode, config: MinecraftToolsConfig, ctx: any) {
+export async function handleWikiScreenshot(url: string, lang: LangCode, config: MinecraftToolsConfig, ctx: any) {
   if (!config.wiki.imageEnabled) {
     throw new Error('图片功能已禁用')
   }
