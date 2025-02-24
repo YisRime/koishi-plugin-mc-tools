@@ -3,7 +3,7 @@ import {} from 'koishi-plugin-puppeteer'
 
 import {
   MinecraftToolsConfig,
-  LANGUAGES,
+  MINECRAFT_LANGUAGES,
   LangCode,
   checkServerStatus,
   getMinecraftVersionInfo,
@@ -11,14 +11,11 @@ import {
   formatErrorMessage,
 } from './utils'
 import {
-  processModSearchResult,
-  processItemSearchResult,
-  processPostSearchResult,
   processMCMODContent,
 } from './modwiki'
 import { processWikiRequest } from './mcwiki'
 import { handleModScreenshot, handleWikiScreenshot } from './shot'
-import { searchMCMOD, handleSearch } from './search'
+import { searchMCMOD, handleSearch, processModSearchResult, processItemSearchResult, processPostSearchResult } from './search'
 
 export const name = 'mc-tools'
 export const inject = {required: ['puppeteer']}
@@ -26,7 +23,7 @@ export const inject = {required: ['puppeteer']}
 
 export const Config: Schema<MinecraftToolsConfig> = Schema.object({
   wiki: Schema.object({
-    defaultLanguage: Schema.union(Object.keys(LANGUAGES) as LangCode[])
+    defaultLanguage: Schema.union(Object.keys(MINECRAFT_LANGUAGES) as LangCode[])
       .default('zh')
       .description('默认的 Wiki 浏览语言'),
     pageTimeout: Schema.number()
@@ -103,9 +100,9 @@ export const Config: Schema<MinecraftToolsConfig> = Schema.object({
  * @param {Context} ctx - Koishi 上下文
  * @param {MinecraftToolsConfig} config - 插件配置
  */
-export function apply(ctx: Context, config: MinecraftToolsConfig) {
-  const userLangs = new Map<string, LangCode>()
-  const versions = { snapshot: '', release: '' }
+export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
+  const userLanguageSettings = new Map<string, LangCode>()
+  const minecraftVersions = { snapshot: '', release: '' }
 
   // Wiki 功能相关代码
   const mcwiki = ctx.command('mcwiki', 'Minecraft Wiki 查询')
@@ -113,7 +110,7 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
 
   mcwiki.action(async ({ session }, keyword) => {
     try {
-      const result = await processWikiRequest(keyword, session.userId, config, ctx, userLangs)
+      const result = await processWikiRequest(keyword, session.userId, pluginConfig, ctx, userLanguageSettings)
       return result
     } catch (error) {
       return error.message
@@ -126,7 +123,7 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
       if (!keyword) return '请输入要查询的关键词'
 
       try {
-        const results = await searchMCMOD(keyword, config)
+        const results = await searchMCMOD(keyword, pluginConfig)
         if (!results.length) return '未找到相关内容'
 
         const result = results[0]
@@ -134,35 +131,35 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
                                result.url.includes('/item/') ? processItemSearchResult :
                                processModSearchResult
 
-        return await contentProcessor(result.url, config.wiki)
+        return await contentProcessor(result.url, pluginConfig.wiki)
       } catch (error) {
         return error.message
       }
     })
 
-    mcwiki.subcommand('.search <keyword:text>', '搜索 Wiki 页面')
+    mcwiki.subcommand('.search <keyword:text>', '搜索 Wiki 页面（使用 -i 后缀以获取页面截图）')
     .action(async ({ session }, keyword) => {
-      const result = await handleSearch({
+      return await handleSearch({
         keyword,
         source: 'wiki',
         session,
-        config,
+        config: pluginConfig,
         ctx,
-        lang: userLangs.get(session.userId) || config.wiki.defaultLanguage
+        lang: userLanguageSettings.get(session.userId) || pluginConfig.wiki.defaultLanguage
       })
-      return typeof result === 'string' ? result : result.image
     })
 
   // 修改 search 子命令实现
-  modWikiCommand.subcommand('.search <keyword:text>', 'MCMOD搜索并返回列表')
+  modWikiCommand.subcommand('.search <keyword:text>', 'MCMOD搜索并返回列表（使用 -i 后缀以获取页面截图）')
     .action(async ({ session }, keyword) => {
       return await handleSearch({
         keyword,
         source: 'mcmod',
         session,
-        config,
+        config: pluginConfig,
+        ctx,
         processContent: async (url) => {
-          const content = await processMCMODContent(url, config.wiki)
+          const content = await processMCMODContent(url, pluginConfig.wiki)
           return content.sections.join('\n')
         }
       })
@@ -173,11 +170,11 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
       if (!keyword) return '请输入要查询的关键词'
 
       try {
-        const wikiResult = await processWikiRequest(keyword, session.userId, config, ctx, userLangs, 'image') as any
+        const wikiResult = await processWikiRequest(keyword, session.userId, pluginConfig, ctx, userLanguageSettings, 'image') as any
         if (typeof wikiResult === 'string') return wikiResult
 
         await session.send(`正在获取页面...\n完整内容：${wikiResult.url}`)
-        const result = await handleWikiScreenshot(keyword, wikiResult.pageUrl, userLangs.get(session.userId) || config.wiki.defaultLanguage, config, ctx)
+        const result = await handleWikiScreenshot(keyword, wikiResult.pageUrl, userLanguageSettings.get(session.userId) || pluginConfig.wiki.defaultLanguage, pluginConfig, ctx)
         return result.image
       } catch (error) {
         return error.message
@@ -189,7 +186,7 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
       if (!keyword) return '请输入要查询的关键词'
 
       try {
-        const result = await handleModScreenshot(keyword, config, ctx)
+        const result = await handleModScreenshot(keyword, pluginConfig, ctx)
         await session.send(`正在获取页面...\n完整内容：${result.url}`)
         return result.image
       } catch (error) {
@@ -204,9 +201,9 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
     })
 
   // 版本更新检查
-  if (config.versionCheck.enabled && config.versionCheck.groups.length) {
-    checkMinecraftUpdate(versions, ctx, config)
-    setInterval(() => checkMinecraftUpdate(versions, ctx, config), config.versionCheck.interval * 60 * 1000)
+  if (pluginConfig.versionCheck.enabled && pluginConfig.versionCheck.groups.length) {
+    checkMinecraftUpdate(minecraftVersions, ctx, pluginConfig)
+    setInterval(() => checkMinecraftUpdate(minecraftVersions, ctx, pluginConfig), pluginConfig.versionCheck.interval * 60 * 1000)
   }
 
   ctx.command('mcinfo [server]', '查询 MC 服务器状态')
@@ -214,7 +211,7 @@ export function apply(ctx: Context, config: MinecraftToolsConfig) {
     .example('mcinfo mc.example.com:25566 - 查询指定端口的服务器')
     .action(async ({ }, server) => {
       try {
-        return await checkServerStatus(server, config)
+        return await checkServerStatus(server, pluginConfig)
       } catch (error) {
         return formatErrorMessage(error)
       }

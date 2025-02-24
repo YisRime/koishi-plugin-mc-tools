@@ -31,37 +31,63 @@ const CLEANUP_SELECTORS = [
   '.file-display-header' // 文件显示头部
 ]
 
+
+// 提取通用的页面加载逻辑
+async function loadPage(page: any, url: string, timeout: number) {
+  let retries = 3
+  while (retries > 0) {
+    try {
+      await page.goto(url, {
+        waitUntil: 'networkidle0',
+        timeout: timeout * 1000
+      })
+      break
+    } catch (err) {
+      retries--
+      if (retries === 0) throw err
+      await new Promise(resolve => setTimeout(resolve, 1000))
+    }
+  }
+}
+
+// 提取通用的截图配置
+async function takeScreenshot(page: any, dimensions: { width: number, height: number }) {
+  await page.setViewport({
+    width: dimensions.width,
+    height: dimensions.height,
+    deviceScaleFactor: 1
+  })
+
+  await new Promise(resolve => setTimeout(resolve, 500))
+
+  return await page.screenshot({
+    type: 'jpeg',
+    quality: 80,
+    omitBackground: true,
+    fullPage: false,
+    clip: {
+      x: 0,
+      y: 0,
+      ...dimensions
+    }
+  })
+}
+
 export async function captureWikiPageScreenshot(page: any, url: string, lang: LangCode, config: MinecraftToolsConfig) {
   try {
-    // 设置初始视口
     await page.setViewport({
       width: 1080,
       height: 1920,
       deviceScaleFactor: 1
     })
 
-    // 设置语言和请求头
     await page.setExtraHTTPHeaders({
       'Accept-Language': `${lang},${lang}-*;q=0.9,en;q=0.8`,
       'Cookie': `language=${lang}; hl=${lang}; uselang=${lang}`,
       'Cache-Control': 'no-cache'
     })
 
-    // 页面加载与重试机制
-    let retries = 3
-    while (retries > 0) {
-      try {
-        await page.goto(url, {
-          waitUntil: 'networkidle0',
-          timeout: config.wiki.pageTimeout * 1000
-        })
-        break
-      } catch (err) {
-        retries--
-        if (retries === 0) throw err
-        await new Promise(resolve => setTimeout(resolve, 1000))
-      }
-    }
+    await loadPage(page, url, config.wiki.pageTimeout)
 
     // 等待内容加载
     await page.waitForSelector('#bodyContent', {
@@ -140,28 +166,7 @@ export async function captureWikiPageScreenshot(page: any, url: string, lang: La
       throw new Error('无法获取页面内容区域')
     }
 
-    // 调整视口并截图
-    await page.setViewport({
-      width: dimensions.width,
-      height: dimensions.height,
-      deviceScaleFactor: 1
-    })
-
-    // 等待内容完全渲染
-    await new Promise(resolve => setTimeout(resolve, 500))
-
-    const screenshot = await page.screenshot({
-      type: 'jpeg',
-      quality: 80,
-      omitBackground: true,
-      fullPage: false,
-      clip: {
-        x: 0,
-        y: 0,
-        width: dimensions.width,
-        height: dimensions.height
-      }
-    })
+    const screenshot = await takeScreenshot(page, dimensions)
 
     return {
       image: screenshot,
@@ -180,20 +185,7 @@ export async function captureMCMODPageScreenshot(page: any, url: string, config:
       deviceScaleFactor: 1
     })
 
-    let retries = 3
-    while (retries > 0) {
-      try {
-        await page.goto(url, {
-          waitUntil: 'networkidle0',
-          timeout: config.wiki.pageTimeout * 1000
-        })
-        break
-      } catch (err) {
-        retries--
-        if (retries === 0) throw err
-        await new Promise(resolve => setTimeout(resolve, 1000))
-      }
-    }
+    await loadPage(page, url, config.wiki.pageTimeout)
 
     const pageType = url.includes('/item/') ? 'item' : 'other'
     const mainSelector = pageType === 'item' ? '.maintext' : '.col-lg-12.center'
@@ -253,20 +245,7 @@ export async function captureMCMODPageScreenshot(page: any, url: string, config:
       throw new Error('无法获取页面内容区域')
     }
 
-    await page.setViewport({
-      width: 1080,
-      height: clipData.height,
-      deviceScaleFactor: 1
-    })
-
-    await new Promise(resolve => setTimeout(resolve, 500))
-
-    const screenshot = await page.screenshot({
-      type: 'jpeg',
-      quality: 85,
-      clip: clipData,
-      omitBackground: true
-    })
+    const screenshot = await takeScreenshot(page, clipData)
 
     return {
       image: screenshot,

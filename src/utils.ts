@@ -2,47 +2,29 @@ import { h } from 'koishi'
 import axios from 'axios'
 import * as mc from 'minecraft-protocol'
 
-// 1. 常量和类型定义
-export const LANGUAGES = {
-  'zh': '中文（简体）',
-  'zh-hk': '中文（繁體）',
-  'zh-tw': '中文（台灣）',
-  'en': 'English',
-  'ja': '日本語',
-  'ko': '한국어',
-  'fr': 'Français',
-  'de': 'Deutsch',
-  'es': 'Español',
-  'it': 'Italiano',
-  'pt': 'Português',
-  'ru': 'Русский',
-  'pl': 'Polski',
-  'nl': 'Nederlands',
-  'tr': 'Türkçe'
-} as const
+// 类型定义
+export type LangCode = keyof typeof MINECRAFT_LANGUAGES
 
-const PROTOCOL_VERSION_MAP = {
-  764: '1.20.1',
-  762: '1.19.4',
-  756: '1.18.2',
-  753: '1.17.1',
-  752: '1.16.5',
-  736: '1.15.2',
-  498: '1.14.4',
-  404: '1.13.2',
-  340: '1.12.2',
-  316: '1.11.2',
-  210: '1.10.2',
-  110: '1.9.4',
-  47: '1.8.9'
-} as const
-
-export type LangCode = keyof typeof LANGUAGES
-
-export interface VersionData {
+export interface MinecraftVersionInfo {
   id: string
   type: string
   releaseTime: string
+}
+
+export interface SearchResult {
+  title: string
+  url: string
+  desc?: string
+  type?: string
+  source: 'wiki' | 'mcmod'
+}
+
+export interface ModwikiConfig {
+  searchDescLength: number
+  totalPreviewLength: number
+  searchTimeout: number
+  searchResultLimit: number
+  pageTimeout: number
 }
 
 export interface MinecraftToolsConfig {
@@ -55,7 +37,7 @@ export interface MinecraftToolsConfig {
     sectionPreviewLength: number
     totalPreviewLength: number
     searchDescLength: number
-    showDescription: boolean  // 新增：是否显示描述
+    showDescription: boolean
     imageEnabled: boolean
   }
   server: {
@@ -74,6 +56,73 @@ export interface MinecraftToolsConfig {
     notifyOnRelease: boolean
   }
 }
+
+// 类型映射
+export const TypeMap = {
+  modTypes: {
+    '/modpack/': '整合包',
+    '/class/': 'MOD',
+    '/item/': '物品',
+    '/post/': '教程'
+  },
+  errorPatterns: {
+    'ECONNREFUSED': '服务器拒绝连接',
+    'ETIMEDOUT': '连接超时',
+    'ENOTFOUND': '无法解析服务器地址',
+    'ECONNRESET': '服务器断开了连接',
+    'EHOSTUNREACH': '无法访问目标服务器',
+    'ENETUNREACH': '网络不可达',
+    'EPROTO': '协议错误',
+    'ECONNABORTED': '连接被中断',
+    'EPIPE': '连接异常断开',
+    'invalid server response': '服务器响应无效',
+    'Unexpected server response': '服务器返回意外响应',
+    'Invalid hostname': '无效的服务器地址',
+    'getaddrinfo ENOTFOUND': '找不到服务器',
+    'connect ETIMEDOUT': '连接超时',
+    'read ECONNRESET': '服务器主动断开连接',
+    'connect ECONNREFUSED': '服务器拒绝连接',
+    'Request timeout': '请求超时',
+    'network unreachable': '网络不可达',
+    'port.*out of range': '端口号必须在1-65535之间',
+    'dns lookup failed': 'DNS解析失败'
+  }
+} as const
+
+// 1. 常量和类型定义
+export const MINECRAFT_LANGUAGES = {
+  'zh': '中文（简体）',
+  'zh-hk': '中文（繁體）',
+  'zh-tw': '中文（台灣）',
+  'en': 'English',
+  'ja': '日本語',
+  'ko': '한국어',
+  'fr': 'Français',
+  'de': 'Deutsch',
+  'es': 'Español',
+  'it': 'Italiano',
+  'pt': 'Português',
+  'ru': 'Русский',
+  'pl': 'Polski',
+  'nl': 'Nederlands',
+  'tr': 'Türkçe'
+} as const
+
+const MINECRAFT_PROTOCOL_VERSIONS = {
+  764: '1.20.1',
+  762: '1.19.4',
+  756: '1.18.2',
+  753: '1.17.1',
+  752: '1.16.5',
+  736: '1.15.2',
+  498: '1.14.4',
+  404: '1.13.2',
+  340: '1.12.2',
+  316: '1.11.2',
+  210: '1.10.2',
+  110: '1.9.4',
+  47: '1.8.9'
+} as const
 
 export async function fetchMinecraftVersions(timeout = 10000) {
   const { data } = await axios.get('https://launchermeta.mojang.com/mc/game/version_manifest.json', {
@@ -107,11 +156,11 @@ export async function getMinecraftVersionInfo() {
   }
 }
 
-async function sendUpdateNotification(ctx: any, gids: string[], message: string) {
-  for (const gid of gids) {
+async function notifyVersionUpdate(ctx: any, targetGroups: string[], updateMessage: string) {
+  for (const gid of targetGroups) {
     for (const bot of ctx.bots) {
       try {
-        await bot.sendMessage(gid, message)
+        await bot.sendMessage(gid, updateMessage)
       } catch (e) {
         ctx.logger('mc-tools').warn(`发送更新通知失败 (群:${gid}):`, e)
       }
@@ -130,7 +179,7 @@ export async function checkMinecraftUpdate(versions: { snapshot: string, release
     for (const { type, version, enabled } of updates) {
       if (versions[type] && version.id !== versions[type] && enabled) {
         const msg = `发现MC更新：${version.id} (${type})\n发布时间：${new Date(version.releaseTime).toLocaleString('zh-CN')}`
-        await sendUpdateNotification(ctx, config.versionCheck.groups, msg)
+        await notifyVersionUpdate(ctx, config.versionCheck.groups, msg)
       }
       versions[type] = version.id
     }
@@ -140,10 +189,10 @@ export async function checkMinecraftUpdate(versions: { snapshot: string, release
 }
 
 // 辅助函数：解析服务器地址
-function parseServerAddress(server: string | undefined, defaultConfig: MinecraftToolsConfig['server']) {
-  if (!server) return { host: defaultConfig.host, port: defaultConfig.port }
+function parseMinecraftServer(serverAddress: string | undefined, defaultConfig: MinecraftToolsConfig['server']) {
+  if (!serverAddress) return { host: defaultConfig.host, port: defaultConfig.port }
 
-  const [host, portStr] = server.split(':')
+  const [host, portStr] = serverAddress.split(':')
   if (!host) throw new Error('请输入有效的服务器地址')
 
   let port = defaultConfig.port
@@ -160,20 +209,20 @@ function parseServerAddress(server: string | undefined, defaultConfig: Minecraft
 
 // 辅助函数：获取协议对应版本
 function getVersionFromProtocol(protocol: number): string {
-  if (protocol in PROTOCOL_VERSION_MAP) {
-    return PROTOCOL_VERSION_MAP[protocol]
+  if (protocol in MINECRAFT_PROTOCOL_VERSIONS) {
+    return MINECRAFT_PROTOCOL_VERSIONS[protocol]
   }
 
-  const protocols = Object.keys(PROTOCOL_VERSION_MAP).map(Number).sort((a, b) => b - a)
+  const protocols = Object.keys(MINECRAFT_PROTOCOL_VERSIONS).map(Number).sort((a, b) => b - a)
   for (let i = 0; i < protocols.length - 1; i++) {
     const current = protocols[i]
     const next = protocols[i + 1]
 
     if (protocol > current) {
-      return `~${PROTOCOL_VERSION_MAP[current]}+`
+      return `~${MINECRAFT_PROTOCOL_VERSIONS[current]}+`
     }
     if (protocol > next && protocol < current) {
-      return `~${PROTOCOL_VERSION_MAP[next]}-${PROTOCOL_VERSION_MAP[current]}`
+      return `~${MINECRAFT_PROTOCOL_VERSIONS[next]}-${MINECRAFT_PROTOCOL_VERSIONS[current]}`
     }
   }
 
@@ -181,17 +230,17 @@ function getVersionFromProtocol(protocol: number): string {
 }
 
 // 辅助函数：解析MOTD
-function parseMOTD(obj: any): string {
-  if (!obj) return ''
-  if (typeof obj === 'string') return obj
-  if (typeof obj !== 'object') return ''
+function parseServerMotd(motdObject: any): string {
+  if (!motdObject) return ''
+  if (typeof motdObject === 'string') return motdObject
+  if (typeof motdObject !== 'object') return ''
 
-  if ('text' in obj) return obj.text
-  if ('extra' in obj && Array.isArray(obj.extra)) {
-    return obj.extra.map(parseMOTD).join('')
+  if ('text' in motdObject) return motdObject.text
+  if ('extra' in motdObject && Array.isArray(motdObject.extra)) {
+    return motdObject.extra.map(parseServerMotd).join('')
   }
-  if (Array.isArray(obj)) {
-    return obj.map(parseMOTD).join('')
+  if (Array.isArray(motdObject)) {
+    return motdObject.map(parseServerMotd).join('')
   }
   return ''
 }
@@ -200,40 +249,13 @@ function parseMOTD(obj: any): string {
 export function formatErrorMessage(error: any): string {
   const errorMessage = error?.message || String(error)
 
-  // 简化的错误映射对象
-  const errorPatterns = {
-    // 网络连接错误
-    'ECONNREFUSED': '服务器拒绝连接',
-    'ETIMEDOUT': '连接超时',
-    'ENOTFOUND': '无法解析服务器地址',
-    'ECONNRESET': '服务器断开了连接',
-    'EHOSTUNREACH': '无法访问目标服务器',
-    'ENETUNREACH': '网络不可达',
-    'EPROTO': '协议错误',
-    'ECONNABORTED': '连接被中断',
-    'EPIPE': '连接异常断开',
-
-    // 服务器响应错误
-    'invalid server response': '服务器响应无效',
-    'Unexpected server response': '服务器返回意外响应',
-    'Invalid hostname': '无效的服务器地址',
-    'getaddrinfo ENOTFOUND': '找不到服务器',
-    'connect ETIMEDOUT': '连接超时',
-    'read ECONNRESET': '服务器主动断开连接',
-    'connect ECONNREFUSED': '服务器拒绝连接',
-    'Request timeout': '请求超时',
-    'network unreachable': '网络不可达',
-    'port.*out of range': '端口号必须在1-65535之间',
-    'dns lookup failed': 'DNS解析失败'
-  } as const
-
   // 检查错误代码或消息匹配
-  if (error?.code && errorPatterns[error.code]) {
-    return errorPatterns[error.code]
+  if (error?.code && TypeMap.errorPatterns[error.code]) {
+    return TypeMap.errorPatterns[error.code]
   }
 
   // 检查错误消息包含的关键字
-  for (const [pattern, message] of Object.entries(errorPatterns)) {
+  for (const [pattern, message] of Object.entries(TypeMap.errorPatterns)) {
     if (new RegExp(pattern, 'i').test(errorMessage)) {
       return message
     }
@@ -243,7 +265,7 @@ export function formatErrorMessage(error: any): string {
 }
 
 export async function checkServerStatus(server: string | undefined, config: MinecraftToolsConfig) {
-  const { host, port } = parseServerAddress(server, config.server)
+  const { host, port } = parseMinecraftServer(server, config.server)
   const displayAddr = port === 25565 ? host : `${host}:${port}`
 
   const startTime = Date.now()
@@ -260,7 +282,7 @@ export async function checkServerStatus(server: string | undefined, config: Mine
   // 处理服务器描述
   const description = 'description' in client ? client.description : client
   if (description) {
-    const motd = parseMOTD(description).replace(/§[0-9a-fk-or]/g, '')
+    const motd = parseServerMotd(description).replace(/§[0-9a-fk-or]/g, '')
     if (motd) lines.push(motd)
   }
 

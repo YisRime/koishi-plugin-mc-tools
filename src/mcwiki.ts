@@ -1,30 +1,26 @@
 import * as cheerio from 'cheerio'
 import axios from 'axios'
-import {
-  MinecraftToolsConfig,
-  LangCode,
-} from './utils'
+import { MinecraftToolsConfig, LangCode } from './utils'
 import { searchWikiArticles } from './search'
 
 // 3. 配置和处理函数
-// 修改 constructWikiUrl 函数,添加 variant 参数
-export function constructWikiUrl(title: string, lang: LangCode | string, includeVariant = false) {
-  let domain: string
-  let variant: string = ''
+export function constructWikiUrl(articleTitle: string, languageCode: LangCode | string, includeLanguageVariant = false) {
+  let wikiDomain: string
+  let languageVariant: string = ''
 
-  if (typeof lang === 'string') {
-    if (lang.startsWith('zh')) {
-      domain = 'zh.minecraft.wiki'
-      variant = lang === 'zh' ? 'zh-cn' :
-                lang === 'zh-hk' ? 'zh-hk' :
-                lang === 'zh-tw' ? 'zh-tw' : 'zh-cn'
+  if (typeof languageCode === 'string') {
+    if (languageCode.startsWith('zh')) {
+      wikiDomain = 'zh.minecraft.wiki'
+      languageVariant = languageCode === 'zh' ? 'zh-cn' :
+                languageCode === 'zh-hk' ? 'zh-hk' :
+                languageCode === 'zh-tw' ? 'zh-tw' : 'zh-cn'
     } else {
-      domain = lang === 'en' ? 'minecraft.wiki' : `${lang}.minecraft.wiki`
+      wikiDomain = languageCode === 'en' ? 'minecraft.wiki' : `${languageCode}.minecraft.wiki`
     }
   }
 
-  const baseUrl = `https://${domain}/w/${encodeURIComponent(title)}`
-  return includeVariant && variant ? `${baseUrl}?variant=${variant}` : baseUrl
+  const baseUrl = `https://${wikiDomain}/w/${encodeURIComponent(articleTitle)}`
+  return includeLanguageVariant && languageVariant ? `${baseUrl}?variant=${languageVariant}` : baseUrl
 }
 
 export function formatArticleTitle(data: any): string {
@@ -39,18 +35,18 @@ export function formatArticleTitle(data: any): string {
   return parts.join(' ')
 }
 
-export async function fetchWikiArticleContent(pageUrl: string, lang: LangCode, config: MinecraftToolsConfig) {
-  const variant = lang.startsWith('zh') ?
-    (lang === 'zh' ? 'zh-cn' :
-     lang === 'zh-hk' ? 'zh-hk' :
-     lang === 'zh-tw' ? 'zh-tw' : 'zh-cn') : ''
+export async function fetchWikiArticleContent(articleUrl: string, languageCode: LangCode, config: MinecraftToolsConfig) {
+  const languageVariant = languageCode.startsWith('zh') ?
+    (languageCode === 'zh' ? 'zh-cn' :
+     languageCode === 'zh-hk' ? 'zh-hk' :
+     languageCode === 'zh-tw' ? 'zh-tw' : 'zh-cn') : ''
 
-  const requestUrl = pageUrl.includes('?') ? pageUrl : `${pageUrl}?variant=${variant}`
+  const requestUrl = articleUrl.includes('?') ? articleUrl : `${articleUrl}?variant=${languageVariant}`
 
   const response = await axios.get(requestUrl, {
     params: {
-      uselang: lang,
-      setlang: lang
+      uselang: languageCode,
+      setlang: languageCode
     }
   })
   const $ = cheerio.load(response.data)
@@ -95,7 +91,7 @@ export async function fetchWikiArticleContent(pageUrl: string, lang: LangCode, c
   }
 
   if (!sections.length) {
-    const cleanUrl = pageUrl.split('?')[0]
+    const cleanUrl = articleUrl.split('?')[0]
     return { title, content: `${title}：本页面目前没有内容。`, url: cleanUrl }
   }
 
@@ -112,7 +108,7 @@ export async function fetchWikiArticleContent(pageUrl: string, lang: LangCode, c
     .join('\n')
     .slice(0, config.wiki.totalPreviewLength)
 
-  const cleanUrl = pageUrl.split('?')[0]
+  const cleanUrl = articleUrl.split('?')[0]
   return {
     title,
     content: formattedContent.length >= config.wiki.totalPreviewLength ? formattedContent + '...' : formattedContent,

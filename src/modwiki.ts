@@ -1,15 +1,7 @@
 import { h } from 'koishi'
 import axios from 'axios'
 import * as cheerio from 'cheerio'
-
-// 基础类型定义
-export interface ModwikiConfig {
-  searchDescLength: number
-  totalPreviewLength: number
-  searchTimeout: number
-  searchResultLimit: number
-  pageTimeout: number
-}
+import { ModwikiConfig } from './utils'
 
 // 内容处理函数
 export async function processMCMODContent(url: string, config: ModwikiConfig) {
@@ -45,28 +37,6 @@ export async function processMCMODContent(url: string, config: ModwikiConfig) {
     }
     throw new Error(`内容处理失败: ${error.message}`)
   }
-}
-
-// 搜索结果处理函数组
-export const processModSearchResult = async (url: string, config: ModwikiConfig) =>
-  formatContentSections(await processMCMODContent(url, config), url)
-
-export const processItemSearchResult = processModSearchResult
-export const processPostSearchResult = processModSearchResult
-
-// 工具函数
-function normalizeUrl(url: string): string {
-  return url.startsWith('http') ? url : `https://www.mcmod.cn${url}`
-}
-
-function getContentType(url: string): string {
-  const types = {
-    '/modpack/': '整合包',
-    '/class/': 'MOD',
-    '/item/': '物品',
-    '/post/': '教程'
-  }
-  return Object.entries(types).find(([key]) => url.includes(key))?.[1] || '未知'
 }
 
 // 处理函数映射
@@ -433,7 +403,7 @@ function processModVersionInfo($: cheerio.CheerioAPI, sections: string[], isModp
 }
 
 // 修改内容格式化函数
-function formatContentSections(result: { sections: string[]; links: string[] }, url: string) {
+export function formatContentSections(result: { sections: string[]; links: string[] }, url: string) {
   try {
     // 添加额外的空值检查
     if (!result) {
