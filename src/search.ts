@@ -12,9 +12,8 @@ export async function handleSearch(params: {
   config: MinecraftToolsConfig
   ctx?: any
   lang?: LangCode
-  processContent?: (url: string) => Promise<string>
 }) {
-  const { keyword, source, session, config, ctx, lang, processContent } = params
+  const { keyword, source, session, config, ctx, lang } = params
 
   if (!keyword) return '请输入要查询的关键词'
 
@@ -39,7 +38,7 @@ export async function handleSearch(params: {
     const response = await session.prompt(config.wiki.searchTimeout * 1000)
     if (!response) return '操作超时'
 
-    return await handleUserSelection({ response, results, source, config, ctx, lang, processContent })
+    return await handleUserSelection({ response, results, source, config, ctx, lang })
   } catch (error) {
     return error.message
   }
@@ -107,15 +106,12 @@ async function handleUserSelection(params: {
   config: MinecraftToolsConfig
   ctx?: any
   lang?: LangCode
-  processContent?: (url: string) => Promise<string>
 }) {
   const { response, results, source, config, ctx, lang } = params
 
-  // 解析用户输入
   const [input, flag] = response.split('-')
   const index = parseInt(input) - 1
 
-  // 验证输入有效性
   if (isNaN(index) || index < 0 || index >= results.length) {
     return '请输入有效的序号'
   }
@@ -146,7 +142,6 @@ async function handleImageRequest(
   }
 
   const context = await ctx.puppeteer.browser.createBrowserContext()
-  const page = await context.newPage()
 
   try {
     if (source === 'wiki') {

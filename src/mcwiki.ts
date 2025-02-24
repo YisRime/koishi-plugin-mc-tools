@@ -28,8 +28,6 @@ export function formatArticleTitle(data: any): string {
 
   const parts = []
 
-  if (data.short_name) parts.push(`${data.short_name}`)
-  if (data.subtitle) parts.push(` ${data.subtitle} | `)
   if (data.title) parts.push(`${data.title}`)
 
   return parts.join(' ')
@@ -116,7 +114,7 @@ export async function fetchWikiArticleContent(articleUrl: string, languageCode: 
   }
 }
 
-export async function processWikiRequest(keyword: string, userId: string, config: MinecraftToolsConfig, ctx: any, userLangs: Map<string, LangCode>, mode: 'text' | 'image' | 'search' = 'text') {
+export async function processWikiRequest(keyword: string, userId: string, config: MinecraftToolsConfig, userLangs: Map<string, LangCode>, mode: 'text' | 'image' | 'search' = 'text') {
   if (!keyword) return '请输入要查询的内容关键词'
 
   try {

@@ -148,7 +148,7 @@ async function capturePageScreenshot({ url, page, config, type, lang }: Screensh
           itemRow.setAttribute('style', 'margin:0 auto !important;padding:20px !important;width:auto !important;max-width:1000px !important;background:white !important;')
         } else if (center) {
           // 处理模组页面
-          center.setAttribute('style', 'margin:0 !important;padding:0 20px !important;width:1080px !重要;background:white !important;')
+          center.setAttribute('style', 'margin:0 !important;padding:0 20px !important;width:1080px !important;background:white !important;')
           const left = center.querySelector('.left')
           const right = center.querySelector('.right')
           if (left) left.setAttribute('style', 'margin:0 !important;padding:0 !important;')
@@ -162,7 +162,7 @@ async function capturePageScreenshot({ url, page, config, type, lang }: Screensh
 
     // 获取内容区域尺寸
     const dimensions = await page.evaluate((params) => {
-      const { type, url, mainSelector } = params
+      const { type, mainSelector } = params
       const element = type === 'wiki' ?
         document.querySelector('#content') :
         document.querySelector(mainSelector)
@@ -181,7 +181,7 @@ async function capturePageScreenshot({ url, page, config, type, lang }: Screensh
         height: Math.min(type === 'wiki' ? 4000 : 6000,
                         type === 'wiki' ? Math.ceil(rect.height) : Math.max(800, Math.ceil(rect.height)))
       }
-    }, { type, url, mainSelector })
+    }, { type, mainSelector })
 
     if (!dimensions) {
       throw new Error('无法获取页面内容区域')

@@ -11,7 +11,7 @@ import {
 } from './utils'
 import { processMCMODContent, formatContentSections } from './modwiki'
 import { processWikiRequest } from './mcwiki'
-import { handleModScreenshot, handleWikiScreenshot } from './shot'
+import { handleModScreenshot } from './shot'
 import { searchMCMOD, handleSearch } from './search'
 
 export const name = 'mc-tools'
@@ -22,53 +22,53 @@ export const Config: Schema<MinecraftToolsConfig> = Schema.object({
   wiki: Schema.object({
     defaultLanguage: Schema.union(Object.keys(MINECRAFT_LANGUAGES) as LangCode[])
       .default('zh')
-      .description('默认的 Wiki 浏览语言'),
+      .description('Wiki 显示语言'),
     pageTimeout: Schema.number()
       .default(30)
       .description('页面超时时间（秒）'),
+    minSectionLength: Schema.number()
+      .default(12)
+      .description('Wiki 段落最小字数'),
+    sectionPreviewLength: Schema.number()
+      .default(50)
+      .description('Wiki 段落预览字数'),
+    totalPreviewLength: Schema.number()
+      .default(500)
+      .description('总预览字数'),
+    imageEnabled: Schema.boolean()
+      .default(true)
+      .description('是否启用图片显示'),
     searchTimeout: Schema.number()
       .default(10)
       .description('搜索选择超时时间（秒）'),
     searchResultLimit: Schema.number()
       .default(10)
       .description('搜索结果最大显示数量'),
-    minSectionLength: Schema.number()
-      .default(12)
-      .description('段落最小字数'),
-    sectionPreviewLength: Schema.number()
-      .default(50)
-      .description('非首段预览字数'),
-    totalPreviewLength: Schema.number()
-      .default(500)
-      .description('总预览字数限制'),
-    searchDescLength: Schema.number()
-      .default(60)
-      .description('MCMOD搜索结果描述的最大字数'),
     showDescription: Schema.boolean()
       .default(true)
-      .description('是否显示搜索结果的描述'),
-    imageEnabled: Schema.boolean()
-      .default(true)
-      .description('是否启用图片显示')
-  }).description('Wiki与模组百科相关设置'),
+      .description('MCMOD 搜索结果描述'),
+    searchDescLength: Schema.number()
+      .default(60)
+      .description('MCMOD 搜索结果描述字数')
+  }).description('Wiki & MCMOD 设置'),
 
   versionCheck: Schema.object({
     enabled: Schema.boolean()
       .default(false)
-      .description('是否启用版本更新检查'),
+      .description('启用版本更新检查'),
     groups: Schema.array(Schema.string())
       .default([])
-      .description('接收版本更新通知的群组 ID'),
+      .description('接收版本更新通知 ID'),
     interval: Schema.number()
       .default(60)
       .description('版本检查间隔时间（分钟）'),
-    notifyOnSnapshot: Schema.boolean()
-      .default(true)
-      .description('快照版本更新时通知'),
     notifyOnRelease: Schema.boolean()
       .default(true)
-      .description('正式版本更新时通知')
-  }).description('版本更新检查设置'),
+      .description('正式版本更新通知'),
+    notifyOnSnapshot: Schema.boolean()
+      .default(true)
+      .description('快照版本更新通知')
+  }).description('Version 设置'),
 
   server: Schema.object({
     host: Schema.string()
@@ -77,19 +77,19 @@ export const Config: Schema<MinecraftToolsConfig> = Schema.object({
     port: Schema.number()
       .description('默认服务器端口')
       .default(25565),
-    showPlayers: Schema.boolean()
+    showIcon: Schema.boolean()
       .default(true)
-      .description('显示在线玩家'),
-    showSettings: Schema.boolean()
-      .default(true)
-      .description('显示服务器设置'),
+      .description('显示服务器图标'),
     showPing: Schema.boolean()
       .default(true)
       .description('显示延迟信息'),
-    showIcon: Schema.boolean()
+    showSettings: Schema.boolean()
       .default(true)
-      .description('显示服务器图标')
-  }).description('默认的 Minecraft 服务器配置')
+      .description('显示服务器设置'),
+    showPlayers: Schema.boolean()
+      .default(true)
+      .description('显示在线玩家')
+  }).description('Info 设置')
 })
 
 /**
@@ -107,7 +107,7 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
 
   mcwiki.action(async ({ session }, keyword) => {
     try {
-      const result = await processWikiRequest(keyword, session.userId, pluginConfig, ctx, userLanguageSettings)
+      const result = await processWikiRequest(keyword, session.userId, pluginConfig, userLanguageSettings)
       return result
     } catch (error) {
       return error.message
@@ -151,11 +151,7 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
         source: 'mcmod',
         session,
         config: pluginConfig,
-        ctx,
-        processContent: async (url) => {
-          const content = await processMCMODContent(url, pluginConfig.wiki)
-          return content.sections.join('\n')
-        }
+        ctx
       })
     })
 
@@ -165,7 +161,7 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
 
       try {
         const { handleWikiScreenshot } = require('./shot')
-        const wikiResult = await processWikiRequest(keyword, session.userId, pluginConfig, ctx, userLanguageSettings, 'image') as any
+        const wikiResult = await processWikiRequest(keyword, session.userId, pluginConfig, userLanguageSettings, 'image') as any
         if (typeof wikiResult === 'string') return wikiResult
 
         await session.send(`正在获取页面...\n完整内容：${wikiResult.url}`)
