@@ -14,63 +14,18 @@ interface ProcessResult {
 }
 
 /**
- * 清理文本内容
- * @param {string} text - 待清理的文本
- * @returns {string} 清理后的文本
- */
-function cleanText(text: string): string {
-  return text
-    .replace(/[\u0000-\u001F\u007F-\u009F\u200B-\u200D\uFEFF]/g, '')
-    .replace(/\s+/g, ' ')
-    .replace(/\[(\w+)\]/g, '')
-    .trim();
-}
-
-/**
- * 处理图片元素
- * @param {cheerio.CheerioAPI} $ - Cheerio 实例
- * @param {cheerio.Cheerio<any>} $img - 图片元素
- * @param {string[]} sections - 现有段落列表
- * @returns {string[]} 更新后的段落列表
- */
-function processImage($: cheerio.CheerioAPI, $img: cheerio.Cheerio<any>, sections: string[]): string[] {
-  let imgSrc = $img.attr('data-src') || $img.attr('src');
-  if (imgSrc?.startsWith('//')) {
-    imgSrc = `https:${imgSrc}`;
-  }
-  return imgSrc ? [...sections, h.image(imgSrc).toString()] : sections;
-}
-
-/**
- * 判断文本是否为段落标题
- * @param {string} text - 待判断文本
- * @returns {boolean} 是否为段落标题
- */
-function isSectionTitle(text: string): boolean {
-  return /^(简介|注意事项|相关消息|相关链接)$/.test(text.trim()) ||
-         /^[\u4e00-\u9fa5\w\s]+$/.test(text.trim());
-}
-
-function formatSection(text: string): string {
-  if (text.length < 20 && !text.includes('：') && !text.includes(':')) {
-    return isSectionTitle(text) ? `『${text.trim()}』` : text;
-  }
-  return text;
-}
-
-/**
  * 处理HTML元素内容
  * @param {cheerio.Cheerio<any>} $elem - 要处理的元素
  * @returns {string | null} 处理后的文本或null
  */
 function processElement($: cheerio.CheerioAPI, $elem: cheerio.Cheerio<any>): string | null {
-  // 跳过脚本和弹出相关内容
-  if ($elem.find('script').length ||
-      $elem.is('script') ||
-      $elem.text().includes('前往链接') ||
-      $elem.text().includes('不要再提示我')) {
-    return null;
-  }
+  const cleanText = (text: string): string => {
+    return text
+      .replace(/[\u0000-\u001F\u007F-\u009F\u200B-\u200D\uFEFF]/g, '')
+      .replace(/\s+/g, ' ')
+      .replace(/\[(\w+)\]/g, '')
+      .trim();
+  };
 
   // 处理图片
   if ($elem.find('.figure').length || $elem.is('.figure')) {
@@ -95,7 +50,11 @@ function processElement($: cheerio.CheerioAPI, $elem: cheerio.Cheerio<any>): str
     const urlMatch = scriptContent.match(/content:"[^"]*?<strong>([^<]+)/);
     if (urlMatch && urlMatch[1]) {
       const url = urlMatch[1];
-      $link.text(`${$link.text()} (${url})`);
+      const text = $link.text().trim();
+      // 只有当文本不是URL时才添加URL
+      if (!text.includes('http') && !text.includes('www.')) {
+        $link.text(`${text} (${url})`);
+      }
       $link.removeAttr('onclick');
       $link.attr('href', url);
     }
@@ -116,8 +75,9 @@ function processElement($: cheerio.CheerioAPI, $elem: cheerio.Cheerio<any>): str
       if ($link.attr('id')?.startsWith('link_')) {
         return;
       }
-      // 将链接文本替换为 "文本 (链接)"
-      if (!href.includes('javascript:') && !href.startsWith('#')) {
+      // 只有当文本不是URL时才添加URL
+      if (!text.includes('http') && !text.includes('www.') &&
+          !href.includes('javascript:') && !href.startsWith('#')) {
         $link.text(`${text} (${href})`);
       }
     }
@@ -150,11 +110,19 @@ function processPageContent($: cheerio.CheerioAPI, pageType: 'mod' | 'modpack' |
       ($('.class-title h4').first().text().trim() ? ` (${$('.class-title h4').first().text().trim()})` : '');
     sections.push(title);
 
+    const processImage = ($img: cheerio.Cheerio<any>): string | null => {
+      let imgSrc = $img.attr('data-src') || $img.attr('src');
+      if (imgSrc?.startsWith('//')) {
+        imgSrc = `https:${imgSrc}`;
+      }
+      return imgSrc ? h.image(imgSrc).toString() : null;
+    };
+
     const $itemIcon = $('.item-info-table img').first();
     if ($itemIcon.length) {
-      const imgSrc = $itemIcon.attr('data-src') || $itemIcon.attr('src');
-      if (imgSrc) {
-        sections.push(h.image(imgSrc.startsWith('//') ? `https:${imgSrc}` : imgSrc).toString());
+      const imgResult = processImage($itemIcon);
+      if (imgResult) {
+        sections.push(imgResult);
       }
     }
   } else if (pageType === 'mod' || pageType === 'modpack') {
@@ -204,13 +172,24 @@ function processBasicInfo($: cheerio.CheerioAPI): string[] {
     modStatusLabels.length ? ` (${modStatusLabels.join(' | ')})` : ''
   }`);
 
+  const processImage = ($img: cheerio.Cheerio<any>): string | null => {
+    let imgSrc = $img.attr('data-src') || $img.attr('src');
+    if (imgSrc?.startsWith('//')) {
+      imgSrc = `https:${imgSrc}`;
+    }
+    return imgSrc ? h.image(imgSrc).toString() : null;
+  };
+
   const $coverImage = $('.class-cover-image img').first();
   if ($coverImage.length) {
-    sections.push(...processImage($, $coverImage, []));
+    const imgResult = processImage($coverImage);
+    if (imgResult) {
+      sections.push(imgResult);
+    }
   }
 
   $('.class-info-left .col-lg-4').each((_, elem) => {
-    const text = cleanText($(elem).text()).replace(/：/g, ':');
+    const text = $(elem).text().trim().replace(/\s+/g, ' ').replace(/：/g, ':');
     if (text.includes('支持的MC版本')) return;
 
     const infoTypes = ['整合包类型', '运作方式', '打包方式', '运行环境'];
@@ -295,6 +274,17 @@ export function formatContentSections(result: ProcessResult, url: string): strin
   if (!result?.sections) {
     return `获取内容失败，请访问：${url}`;
   }
+
+  const formatSection = (text: string): string => {
+    const isSectionTitle = (text: string): boolean =>
+      /^(简介|注意事项|相关消息|相关链接)$/.test(text.trim()) ||
+      /^[\u4e00-\u9fa5\w\s]+$/.test(text.trim());
+
+    if (text.length < 20 && !text.includes('：') && !text.includes(':')) {
+      return isSectionTitle(text) ? `『${text.trim()}』` : text;
+    }
+    return text;
+  };
 
   const sections = result.sections.filter(Boolean).map(section =>
     section.toString().trim()
