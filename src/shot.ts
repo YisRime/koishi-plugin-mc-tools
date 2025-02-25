@@ -34,7 +34,7 @@ export async function capturePageScreenshot(
   url: string,
   config: MinecraftToolsConfig,
   ctx: any,
-  options: { type: 'wiki' | 'mcmod', lang?: LangCode }
+  options: { type: 'wiki' | 'mcmod' | 'mcmod-item', lang?: LangCode }
 ) {
   if (!config.wiki.imageEnabled) {
     throw new Error('图片功能已禁用')
@@ -146,8 +146,22 @@ export async function capturePageScreenshot(
     })
 
     // 获取截图区域
-    const clipData = await page.evaluate((isWiki) => {
-      const selector = isWiki ? '#content' : '.maintext, .col-lg-12.center'
+    const clipData = await page.evaluate((type) => {
+      let selector
+      switch(type) {
+        case 'wiki':
+          selector = '#content'
+          break
+        case 'mcmod-item':
+          selector = '.col-lg-12.maintext'
+          break
+        case 'mcmod':
+          selector = '.col-lg-12.center'
+          break
+        default:
+          return null
+      }
+
       const element = document.querySelector(selector)
       if (!element) return null
 
@@ -158,7 +172,7 @@ export async function capturePageScreenshot(
         width: 1080,
         height: Math.min(4096, Math.ceil(rect.height))
       }
-    }, options.type === 'wiki')
+    }, options.type)
 
     if (!clipData) {
       throw new Error('无法获取页面内容区域')
