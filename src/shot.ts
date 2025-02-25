@@ -30,24 +30,25 @@ const CLEANUP_SELECTORS = [
   '.file-display-header' // 文件显示头部
 ]
 
-/**
- * 通用截图处理函数
- */
-async function capturePageScreenshot(params: {
-  page: any
-  url: string
-  config: MinecraftToolsConfig
-  type: 'wiki' | 'mcmod'
-  lang?: LangCode
-}) {
-  const { page, url, type, lang } = params
+export async function capturePageScreenshot(
+  url: string,
+  config: MinecraftToolsConfig,
+  ctx: any,
+  options: { type: 'wiki' | 'mcmod', lang?: LangCode }
+) {
+  if (!config.wiki.imageEnabled) {
+    throw new Error('图片功能已禁用')
+  }
+
+  const context = await ctx.puppeteer.browser.createBrowserContext()
+  const page = await context.newPage()
 
   try {
     // 设置公共请求头和重试机制
-    if (type === 'wiki' && lang) {
+    if (options.type === 'wiki' && options.lang) {
       await page.setExtraHTTPHeaders({
-        'Accept-Language': `${lang},${lang}-*;q=0.9,en;q=0.8`,
-        'Cookie': `language=${lang}; hl=${lang}; uselang=${lang}`,
+        'Accept-Language': `${options.lang},${options.lang}-*;q=0.9,en;q=0.8`,
+        'Cookie': `language=${options.lang}; hl=${options.lang}; uselang=${options.lang}`,
         'Cache-Control': 'no-cache'
       })
     }
@@ -69,7 +70,7 @@ async function capturePageScreenshot(params: {
     }
 
     // 根据类型处理页面
-    if (type === 'wiki') {
+    if (options.type === 'wiki') {
       await page.waitForSelector('#bodyContent', { timeout: 10000, visible: true })
 
       // 处理Wiki页面内容
@@ -93,30 +94,29 @@ async function capturePageScreenshot(params: {
 
     } else {
       const pageType = url.includes('/item/') ? 'item' : 'other'
-      const mainSelector = pageType === 'item' ? '.item-row' : '.col-lg-12.right'
+      const mainSelector = pageType === 'item' ? '.maintext' : '.col-lg-12.center'
 
       await page.waitForSelector(mainSelector, { timeout: 10000, visible: true })
 
       // 处理MCMOD页面内容
-      await page.evaluate(() => {
-        // 移除不需要的元素
+      await page.evaluate((type) => {
         document.querySelectorAll(`
-          header, footer, .header-container,
-          .common-nav, .common-menu-page,
-          .comment-ad, .ad-leftside, .slidetips,
-          .common-icon-text-frame, script,
-          .ad-class-page,
-          .common-ad-frame,
-          .item-table-tips
+          header, footer, .header-container, .common-background,
+          .common-nav, .common-menu-page, .common-comment-block,
+          .comment-ad, .ad-leftside, .slidetips, .item-table-tips,
+          .common-icon-text-frame, script, .common-ad-frame,
+          .ad-class-page, .item-data
         `).forEach(el => el.remove())
 
-        if(document.querySelector('.item-row')) {
-          // 调整物品页面布局
-          document.querySelector('.item-row').setAttribute('style', 'margin:0 !important; padding:20px !important; width:auto !important; background:white !important;')
-          document.querySelector('.maintext').setAttribute('style', 'margin:0 !important; float:none !important; width:100% !important;')
+        if (type === 'item') {
+          const maintext = document.querySelector('.maintext')
+          const itemRow = document.querySelector('.item-row')
+          if (maintext && itemRow) {
+            maintext.setAttribute('style', 'margin:0 !important;padding:0 !important;float:none !important;width:100% !important;')
+            itemRow.setAttribute('style', 'margin:0 auto !important;padding:20px !important;width:auto !important;background:white !important;')
+          }
         }
-      })
-
+      }, pageType)
     }
 
     // 注入通用样式
@@ -159,18 +159,18 @@ async function capturePageScreenshot(params: {
 
     // 获取截图区域
     const clipData = await page.evaluate((isWiki) => {
-      const selector = isWiki ? '#content' : '.item-row, .col-lg-12.right'
+      const selector = isWiki ? '#content' : '.maintext, .col-lg-12.center'
       const element = document.querySelector(selector)
       if (!element) return null
 
       const rect = element.getBoundingClientRect()
       return {
-        x: Math.max(0, Math.floor(rect.left)),
+        x: 0,
         y: Math.max(0, Math.floor(rect.top)),
-        width: Math.min(1080, Math.ceil(rect.width)),
+        width: 1080,
         height: Math.min(4096, Math.ceil(rect.height))
       }
-    }, type === 'wiki')
+    }, options.type === 'wiki')
 
     if (!clipData) {
       throw new Error('无法获取页面内容区域')
@@ -192,41 +192,12 @@ async function capturePageScreenshot(params: {
     })
 
     return {
-      image: screenshot,
-      height: clipData.height
+      url,
+      image: h.image(screenshot, 'image/jpeg')
     }
 
   } catch (error) {
     throw new Error(`截图失败: ${error.message}`)
-  }
-}
-
-export async function capture(
-  url: string,
-  config: MinecraftToolsConfig,
-  ctx: any,
-  options: {
-    type: 'wiki' | 'mcmod'
-    lang?: LangCode
-  }
-) {
-  if (!config.wiki.imageEnabled) {
-    throw new Error('图片功能已禁用')
-  }
-
-  const context = await ctx.puppeteer.browser.createBrowserContext()
-  const page = await context.newPage()
-  try {
-    const { image } = await capturePageScreenshot({
-      page,
-      url,
-      config,
-      ...options
-    })
-    return {
-      url,
-      image: h.image(image, 'image/jpeg')
-    }
   } finally {
     await context.close()
   }

@@ -12,6 +12,7 @@ import {
 import { processMCMODContent, formatContentSections } from './modwiki'
 import { processWikiRequest } from './mcwiki'
 import { searchMCMOD, handleSearch } from './search'
+import { capturePageScreenshot } from './shot'
 
 /**
  * Minecraft 工具箱插件
@@ -152,12 +153,11 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
       if (!keyword) return '请输入要查询的关键词'
 
       try {
-        const { capture } = require('./shot')
         const wikiResult = await processWikiRequest(keyword, session.userId, pluginConfig, userLanguageSettings, 'image') as any
         if (typeof wikiResult === 'string') return wikiResult
 
         await session.send(`正在获取页面...\n完整内容：${wikiResult.url}`)
-        const result = await capture(
+        const result = await capturePageScreenshot(
           wikiResult.pageUrl,
           pluginConfig,
           ctx,
@@ -177,13 +177,12 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
       if (!keyword) return '请输入要查询的关键词'
 
       try {
-        const { capture } = require('./shot')
         const results = await searchMCMOD(keyword, pluginConfig)
         if (!results.length) throw new Error('未找到相关内容')
         const targetUrl = results[0].url
 
         await session.send(`正在获取页面...\n完整内容：${targetUrl}`)
-        const result = await capture(
+        const result = await capturePageScreenshot(
           targetUrl,
           pluginConfig,
           ctx,
