@@ -93,7 +93,7 @@ async function capturePageScreenshot(params: {
 
     } else {
       const pageType = url.includes('/item/') ? 'item' : 'other'
-      const mainSelector = pageType === 'item' ? '.item-text' : '.col-lg-12.right'
+      const mainSelector = pageType === 'item' ? '.item-row' : '.col-lg-12.right'
 
       await page.waitForSelector(mainSelector, { timeout: 10000, visible: true })
 
@@ -110,11 +110,10 @@ async function capturePageScreenshot(params: {
           .item-table-tips
         `).forEach(el => el.remove())
 
-        if(document.querySelector('.item-text')) {
+        if(document.querySelector('.item-row')) {
           // 调整物品页面布局
-          document.querySelector('.item-text').setAttribute('style', 'margin:0 !important; padding:20px !important; width:100% !important; background:white !important;')
-          document.querySelector('.itemname').setAttribute('style', 'margin-bottom:20px !important;')
-          document.querySelector('.item-content').setAttribute('style', 'margin:0 !important;')
+          document.querySelector('.item-row').setAttribute('style', 'margin:0 !important; padding:20px !important; width:auto !important; background:white !important;')
+          document.querySelector('.maintext').setAttribute('style', 'margin:0 !important; float:none !important; width:100% !important;')
         }
       })
 
@@ -160,7 +159,7 @@ async function capturePageScreenshot(params: {
 
     // 获取截图区域
     const clipData = await page.evaluate((isWiki) => {
-      const selector = isWiki ? '#content' : '.item-text, .col-lg-12.center'
+      const selector = isWiki ? '#content' : '.item-row, .col-lg-12.right'
       const element = document.querySelector(selector)
       if (!element) return null
 
