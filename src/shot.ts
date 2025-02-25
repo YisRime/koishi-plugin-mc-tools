@@ -93,7 +93,7 @@ async function capturePageScreenshot(params: {
 
     } else {
       const pageType = url.includes('/item/') ? 'item' : 'other'
-      const mainSelector = pageType === 'item' ? '.item-row' : '.col-lg-12.center'
+      const mainSelector = pageType === 'item' ? '.item-row' : '.col-lg-12.right'
 
       await page.waitForSelector(mainSelector, { timeout: 10000, visible: true })
 
@@ -115,12 +115,7 @@ async function capturePageScreenshot(params: {
           document.querySelector('.col-lg-12.right').setAttribute('style', 'float:none !important; width:100% !important;')
           document.querySelector('.item-row').setAttribute('style', 'margin:0 !重要; padding:20px !important; width:auto !important; background:white !important;')
           document.querySelector('.maintext').setAttribute('style', 'margin:0 !important; padding:0 !important; float:none !important; width:100% !important;')
-
-          // 移除左侧栏
-          const left = document.querySelector('.col-lg-12.left')
-          if(left) left.remove()
         }
-
         // 移除右侧空白
         document.querySelector('.col-lg-12.right')?.setAttribute('style', 'width:100% !important; margin:0 !important; float:none !important;')
         document.querySelector('.center')?.setAttribute('style', 'padding:20px !important;')
