@@ -2,69 +2,70 @@
 
 [![npm](https://img.shields.io/npm/v/koishi-plugin-mc-tools?style=flat-square)](https://www.npmjs.com/package/koishi-plugin-mc-tools)
 
-Minecraft(我的世界)工具箱插件,提供Wiki查询、版本检查、服务器状态查询等功能。
+基于 Koishi 框架的 Minecraft 工具箱，提供多功能查询和信息服务。
 
-## 功能
+## 功能特性
 
-- Wiki查询
-  - `mcwiki <关键词>` - 直接查询Wiki内容
-  - `mcwiki.search <关键词>` - 搜索并选择Wiki条目
-  - `mcwiki.shot <关键词>` - 获取Wiki页面截图
-  - `mcwiki.lang [语言]` - 设置Wiki显示语言
+- 快速查询 Minecraft Wiki 和 MCMOD 百科
+- 支持生成 Wiki 和 MCMOD 页面截图
+- Minecraft 服务器状态实时查询
+- 自动检查并推送 Minecraft 版本更新
+- 支持多语言 Wiki 切换
+- 高度可配置的功能选项
 
-- MCMOD百科查询
-  - `modwiki <关键词>` - 直接查询模组信息
-  - `modwiki.search <关键词>` - 搜索并选择模组
-  - `modwiki.latest` - 查看最新更新的模组
+## 命令列表
 
-- 版本检查
-  - `mcver` - 获取Minecraft最新版本信息
-  - 自动检查版本更新并推送通知(可配置)
+### Wiki 相关命令
 
-- 服务器状态
-  - `mcinfo [服务器地址]` - 查询MC服务器状态
+- `mcwiki <关键词>` - 直接查询 Wiki 内容
+- `mcwiki.search <关键词>` - 搜索并选择 Wiki 条目
+- `mcwiki.shot <关键词>` - 获取 Wiki 页面截图
 
-## 配置项
+### MCMOD 相关命令
+
+- `modwiki <关键词>` - 直接查询 MCMOD 内容
+- `modwiki.search <关键词>` - 搜索并选择 MCMOD 条目
+- `modwiki.shot <关键词>` - 获取 MCMOD 页面截图
+
+### 其他功能
+
+- `mcver` - 获取 Minecraft 最新版本信息
+- `mcinfo [服务器地址:端口]` - 查询 MC 服务器状态
+
+## 配置说明
+
+### Wiki 设置
 
 ```yaml
-# Wiki相关设置
 wiki:
-  defaultLanguage: zh    # 默认的Wiki浏览语言
-  pageTimeout: 30        # 获取页面超时时间(秒)
-  searchResultLimit: 10  # 搜索结果最大显示数量
-
-# 版本更新检查设置
-versionCheck:
-  enabled: false        # 是否启用版本更新检查
-  groups: []           # 接收版本更新通知的群组ID
-  interval: 60         # 版本检查间隔时间(分钟)
-
-# 默认的Minecraft服务器配置
-server:
-  address: localhost:25565  # 默认服务器地址和端口
-  showIcon: true           # 是否显示服务器图标
-  showPlayers: true       # 是否显示在线玩家列表
+  defaultLanguage: zh    # Wiki 默认显示语言
+  minSectionLength: 12   # Wiki 段落最小字数
+  sectionPreviewLength: 50    # Wiki 段落预览字数
+  totalPreviewLength: 500     # 总预览字数
+  showVersions: true     # 是否显示支持版本
+  showLinks: true       # 是否显示相关链接
+  showDescription: true # 是否显示简介
+  imageEnabled: true    # 是否显示图片
+  searchTimeout: 10     # 搜索选择时间（秒）
+  searchDescLength: 60  # 搜索结果描述字数
 ```
 
-## 支持的Wiki语言
+### 版本检查设置
 
-- 中文(简体) - zh
-- 中文(繁體) - zh-hk
-- English - en
-- 日本語 - ja
-- 한국어 - ko
-- Français - fr
-- Deutsch - de
-- Español - es
-- Italiano - it
-- Português - pt
-- Русский - ru
-- Polski - pl
-- Nederlands - nl
-- Türkçe - tr
+```yaml
+versionCheck:
+  enabled: false        # 是否启用版本更新检查
+  groups: []           # 接收版本更新通知的群组 ID
+  interval: 60         # 检查间隔时间（分钟）
+  notifyOnRelease: true    # 是否通知正式版更新
+  notifyOnSnapshot: true   # 是否通知快照版更新
+```
 
-## 注意事项
+### 服务器查询设置
 
-1. Wiki截图功能需要安装并配置koishi-plugin-puppeteer插件
-2. 服务器状态查询功能支持所有版本的Minecraft服务器
-3. 部分功能可能需要良好的网络环境
+```yaml
+server:
+  address: localhost:25565    # 默认服务器地址
+  showIcon: true             # 是否显示服务器图标
+  showPlayers: true          # 是否显示在线玩家列表
+```

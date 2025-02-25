@@ -59,6 +59,59 @@ function formatSection(text: string): string {
 }
 
 /**
+ * 处理HTML元素内容
+ * @param {cheerio.Cheerio<any>} $elem - 要处理的元素
+ * @returns {string | null} 处理后的文本或null
+ */
+function processElement($: cheerio.CheerioAPI, $elem: cheerio.Cheerio<any>): string | null {
+  // 跳过脚本和弹出相关内容
+  if ($elem.find('script').length ||
+      $elem.is('script') ||
+      $elem.attr('onclick')?.includes('webuiPopover') ||
+      $elem.text().includes('webuiPopover') ||
+      $elem.text().includes('前往链接') ||
+      $elem.text().includes('不要再提示我')) {
+    return null;
+  }
+
+  // 处理图片
+  if ($elem.find('.figure').length || $elem.is('.figure')) {
+    const $img = $elem.find('img');
+    const imgSrc = $img.attr('data-src') || $img.attr('src');
+    return imgSrc ? h.image(imgSrc.startsWith('//') ? `https:${imgSrc}` : imgSrc).toString() : null;
+  }
+
+  // 处理文本之前先处理链接
+  const cleanedElem = $elem.clone();
+  cleanedElem.find('script, [onclick*="webuiPopover"]').remove();
+
+  // 处理链接
+  cleanedElem.find('a').each((_, link) => {
+    const $link = $(link);
+    const href = $link.attr('href');
+    const text = $link.text().trim();
+
+    if (href && text) {
+      // 如果是站内链接，保持原样
+      if (href.startsWith('//www.mcmod.cn') || href.startsWith('/')) {
+        return;
+      }
+      // 将链接文本替换为 "文本 (链接)"
+      if (!href.includes('javascript:') && !href.startsWith('#')) {
+        $link.text(`${text} (${href})`);
+      }
+    }
+  });
+
+  const text = cleanText(cleanedElem.text());
+
+  return text &&
+         !text.includes('webuiPopover') &&
+         !text.includes('前往链接') &&
+         !text.includes('不要再提示我') ? text : null;
+}
+
+/**
  * 处理页面主要内容
  * @param {cheerio.CheerioAPI} $ - Cheerio 实例
  * @param {'mod' | 'modpack' | 'post' | 'item'} pageType - 页面类型
@@ -100,24 +153,21 @@ function processPageContent($: cheerio.CheerioAPI, pageType: 'mod' | 'modpack' |
   $(contentSelector).children().each((_, element) => {
     if (totalLength >= maxLength) return false;
 
-    const $elem = $(element);
-    if ($elem.find('.figure').length || $elem.is('.figure')) {
-      const $img = $elem.find('img');
-      const imgSrc = $img.attr('data-src') || $img.attr('src');
-      if (imgSrc) {
-        sections.push(h.image(imgSrc.startsWith('//') ? `https:${imgSrc}` : imgSrc).toString());
-      }
-    } else {
-      const text = cleanText($elem.clone().find('script').remove().end().text());
-      if (text) {
-        sections.push(text);
-        totalLength += text.length;
+    const result = processElement($, $(element));
+    if (result) {
+      sections.push(result);
+      if (!result.startsWith('http')) {
+        totalLength += result.length;
       }
     }
   });
 
   return {
-    sections,
+    sections: sections
+      // 清理空白行和重复内容
+      .filter((section, index, array) =>
+        section.trim() && array.indexOf(section) === index
+      ),
     links: processRelatedLinks($)
   };
 }

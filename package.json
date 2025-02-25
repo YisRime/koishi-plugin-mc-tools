@@ -1,19 +1,42 @@
 {
   "name": "koishi-plugin-mc-tools",
-  "description": "我的世界工具箱（Minecraft-MC-Tools）",
-  "version": "1.2.22",
+  "description": "我的世界工具箱（Minecraft-MC-Tools）支持查阅百科，查询服务器，查询 MC 版本",
+  "version": "1.2.23",
+  "contributors": [
+    "Yis_Rime <yis_rime@outlook.com>"
+  ],
+  "homepage": "https://github.com/YisRime/koishi-plugin-mc-tools",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/YisRime/koishi-plugin-mc-tools.git"
+  },
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",
   "files": [
     "lib",
     "dist"
   ],
-  "license": "MIT",
+  "license": "GPL-3.0",
   "scripts": {},
   "keywords": [
     "chatbot",
     "koishi",
-    "plugin"
+    "plugin",
+    "minecraft",
+    "mc",
+    "tools",
+    "mcmodcn",
+    "wiki",
+    "server",
+    "mcping",
+    "info",
+    "mcver",
+    "mcinfo",
+    "mcwiki",
+    "modwiki",
+    "PCL",
+    "我的世界",
+    "MC百科"
   ],
   "devDependencies": {},
   "peerDependencies": {
