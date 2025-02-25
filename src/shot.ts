@@ -44,10 +44,8 @@ export async function capturePageScreenshot(
       const resourceType = request.resourceType()
       if (['media', 'font', 'script', 'manifest'].includes(resourceType)) {
         request.abort()
-      } else if (resourceType === 'document') {
-        request.continue()
       } else {
-        request.abort()
+        request.continue()
       }
     })
 
