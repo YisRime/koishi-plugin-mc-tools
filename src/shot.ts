@@ -112,14 +112,19 @@ async function capturePageScreenshot(params: {
 
         if(document.querySelector('.item-row')) {
           // 调整物品页面样式
-          const itemRow = document.querySelector('.item-row')
-          const maintext = document.querySelector('.maintext')
-          if (maintext && itemRow) {
-            maintext.setAttribute('style', 'margin:0 !important;padding:0 !important;float:none !important;width:100% !important;')
-            itemRow.setAttribute('style', 'margin:0 auto !important;padding:20px !important;width:auto !important;background:white !important;')
-          }
+          document.querySelector('.col-lg-12.right').setAttribute('style', 'float:none !important; width:100% !important;')
+          document.querySelector('.item-row').setAttribute('style', 'margin:0 !重要; padding:20px !important; width:auto !important; background:white !important;')
+          document.querySelector('.maintext').setAttribute('style', 'margin:0 !important; padding:0 !important; float:none !important; width:100% !important;')
+
+          // 移除左侧栏
+          const left = document.querySelector('.col-lg-12.left')
+          if(left) left.remove()
         }
-      }, CLEANUP_SELECTORS)
+
+        // 移除右侧空白
+        document.querySelector('.col-lg-12.right')?.setAttribute('style', 'width:100% !important; margin:0 !important; float:none !important;')
+        document.querySelector('.center')?.setAttribute('style', 'padding:20px !important;')
+      })
 
     }
 
@@ -169,9 +174,9 @@ async function capturePageScreenshot(params: {
 
       const rect = element.getBoundingClientRect()
       return {
-        x: 0,
+        x: Math.max(0, Math.floor(rect.left)),
         y: Math.max(0, Math.floor(rect.top)),
-        width: 1080,
+        width: Math.min(1080, Math.ceil(rect.width)),
         height: Math.min(4096, Math.ceil(rect.height))
       }
     }, type === 'wiki')
