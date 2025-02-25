@@ -33,13 +33,21 @@ export async function capturePageScreenshot(
   const page = await context.newPage()
 
   try {
-    await page.setRequestInterception(true)
+    await Promise.all([
+      page.setJavaScriptEnabled(false),
+      page.setRequestInterception(true),
+      page.setCacheEnabled(true),
+    ])
+
+    // 更严格的资源拦截
     page.on('request', request => {
       const resourceType = request.resourceType()
-      if (['image', 'media', 'font', 'manifest'].includes(resourceType)) {
+      if (['media', 'font', 'script', 'manifest'].includes(resourceType)) {
         request.abort()
-      } else {
+      } else if (resourceType === 'document') {
         request.continue()
+      } else {
+        request.abort()
       }
     })
 
@@ -52,8 +60,8 @@ export async function capturePageScreenshot(
       })
     }
 
-    // 设置更短的超时时间
-    let retries = 2
+    // 超时策略
+    let retries = 1
     while (retries > 0) {
       try {
         await page.goto(url, {
@@ -64,11 +72,10 @@ export async function capturePageScreenshot(
       } catch (err) {
         retries--
         if (retries === 0) throw err
-        await new Promise(resolve => setTimeout(resolve, 500))
       }
     }
 
-    // 根据类型处理页面
+    // 页面处理优化
     if (options.type === 'wiki') {
       await page.evaluate(() => {
         const content = document.querySelector('#mw-content-text .mw-parser-output')
@@ -89,42 +96,9 @@ export async function capturePageScreenshot(
       })
     }, CLEANUP_SELECTORS)
 
-    // 注入通用样式
+    // 精简的样式注入
     await page.evaluate(() => {
-      const style = document.createElement('style')
-      style.textContent = `
-        body {
-          margin: 0 !important;
-          padding: 0 !important;
-          background: white !important;
-          font-family: system-ui, -apple-system, sans-serif;
-        }
-        #content {
-          margin: 0 auto;
-          padding: 20px;
-          box-sizing: border-box;
-          width: 100%;
-        }
-        .mw-parser-output {
-          max-width: 960px;
-          margin: 0 auto;
-          line-height: 1.6;
-        }
-        img { max-width: 100%; height: auto; }
-        table {
-          margin: 1em auto;
-          border-collapse: collapse;
-          max-width: 100%;
-        }
-        td, th { padding: 0.5em; border: 1px solid #ccc; }
-        pre {
-          padding: 1em;
-          background: #f5f5f5;
-          border-radius: 4px;
-          overflow-x: auto;
-        }
-      `
-      document.head.appendChild(style)
+      document.head.innerHTML = '<style>body{margin:0;padding:0;background:#fff}#content{margin:0 auto;padding:20px;width:100%}img{max-width:100%}</style>'
     })
 
     // 获取截图区域
