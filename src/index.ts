@@ -5,13 +5,13 @@ import {
   MINECRAFT_LANGUAGES,
   LangCode,
   checkServerStatus,
-  getMinecraftVersionInfo,
-  checkMinecraftUpdate,
+  getVersionInfo,
+  checkUpdate,
   formatErrorMessage,
 } from './utils'
-import { processMCMODContent, formatContentSections } from './modwiki'
+import { fetchModContent, formatContent } from './modwiki'
 import { processWikiRequest } from './mcwiki'
-import { searchMCMOD, handleSearch, capturePageScreenshot } from './subwiki'
+import { searchMod, search, capture } from './subwiki'
 
 /**
  * Minecraft 工具箱插件
@@ -115,12 +115,12 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
       if (!keyword) return '请输入要查询的关键词'
 
       try {
-        const results = await searchMCMOD(keyword, pluginConfig)
+        const results = await searchMod(keyword, pluginConfig)
         if (!results.length) return '未找到相关内容'
 
         const result = results[0]
-        const content = await processMCMODContent(result.url, pluginConfig.wiki)
-        return formatContentSections(content, result.url)
+        const content = await fetchModContent(result.url, pluginConfig.wiki)
+        return formatContent(content, result.url)
       } catch (error) {
         return error.message
       }
@@ -128,7 +128,7 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
 
     mcwiki.subcommand('.search <keyword:text>', '搜索 Wiki 页面（使用 -i 后缀以获取页面截图）')
     .action(async ({ session }, keyword) => {
-      return await handleSearch({
+      return await search({
         keyword,
         source: 'wiki',
         session,
@@ -140,7 +140,7 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
 
   modWikiCommand.subcommand('.search <keyword:text>', '搜索 MCMOD 页面（使用 -i 后缀以获取页面截图）')
     .action(async ({ session }, keyword) => {
-      return await handleSearch({
+      return await search({
         keyword,
         source: 'mcmod',
         session,
@@ -158,7 +158,7 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
         if (typeof wikiResult === 'string') return wikiResult
 
         await session.send(`正在获取页面...\n完整内容：${wikiResult.url}`)
-        const result = await capturePageScreenshot(
+        const result = await capture(
           wikiResult.pageUrl,
           pluginConfig,
           ctx,
@@ -178,12 +178,12 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
       if (!keyword) return '请输入要查询的关键词'
 
       try {
-        const results = await searchMCMOD(keyword, pluginConfig)
+        const results = await searchMod(keyword, pluginConfig)
         if (!results.length) throw new Error('未找到相关内容')
         const targetUrl = results[0].url
 
         await session.send(`正在获取页面...\n完整内容：${targetUrl}`)
-        const result = await capturePageScreenshot(
+        const result = await capture(
           targetUrl,
           pluginConfig,
           ctx,
@@ -197,13 +197,13 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
 
   ctx.command('mcver', '获取 Minecraft 最新版本')
     .action(async () => {
-      const result = await getMinecraftVersionInfo()
+      const result = await getVersionInfo()
       return result.success ? result.data : result.error
     })
 
   if (pluginConfig.versionCheck.enabled && pluginConfig.versionCheck.groups.length) {
-    checkMinecraftUpdate(minecraftVersions, ctx, pluginConfig)
-    setInterval(() => checkMinecraftUpdate(minecraftVersions, ctx, pluginConfig), pluginConfig.versionCheck.interval * 60 * 1000)
+    checkUpdate(minecraftVersions, ctx, pluginConfig)
+    setInterval(() => checkUpdate(minecraftVersions, ctx, pluginConfig), pluginConfig.versionCheck.interval * 60 * 1000)
   }
 
   ctx.command('mcinfo [server]', '查询 MC 服务器状态')

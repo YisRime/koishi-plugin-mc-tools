@@ -2,21 +2,21 @@ import { h } from 'koishi'
 import axios from 'axios'
 import * as cheerio from 'cheerio'
 import { MinecraftToolsConfig, LangCode, SearchResult, CLEANUP_SELECTORS } from './utils'
-import { constructWikiUrl, fetchWikiArticleContent } from './mcwiki'
-import { processMCMODContent, formatContentSections } from './modwiki'
+import { buildUrl, fetchContent } from './mcwiki'
+import { fetchModContent, formatContent } from './modwiki'
 
 /**
  * 捕获页面截图
- * @param {string} url - 要截图的页面 URL
- * @param {MinecraftToolsConfig} config - 插件配置
- * @param {any} ctx - Koishi 上下文
+ * @param {string} url - 要截图的页面URL
+ * @param {MinecraftToolsConfig} config - Minecraft工具配置
+ * @param {any} ctx - Koishi上下文对象
  * @param {Object} options - 截图选项
  * @param {('wiki'|'mcmod')} options.type - 页面类型
- * @param {LangCode} [options.lang] - 语言代码（可选）
- * @returns {Promise<{url: string, image: any}>} 包含URL和图片数据的对象
- * @throws {Error} 当截图失败或图片功能禁用时
+ * @param {LangCode} [options.lang] - 语言代码
+ * @returns {Promise<{url: string, image: h.Fragment}>} 返回截图结果
+ * @throws {Error} 当截图功能禁用或截图失败时抛出错误
  */
-export async function capturePageScreenshot(
+export async function capture(
   url: string,
   config: MinecraftToolsConfig,
   ctx: any,
@@ -40,17 +40,13 @@ export async function capturePageScreenshot(
       const resourceType = request.resourceType()
       const url = request.url().toLowerCase()
 
-      // 始终允许的资源类型
+      // 允许的资源类型
       const allowedTypes = ['stylesheet', 'image', 'fetch', 'xhr', 'document']
-      // 允许的资源URL关键词
       const allowedKeywords = ['.svg', 'canvas', 'swiper', '.css', '.png', '.jpg', '.jpeg']
-
-      // 检查是否应该允许请求
       const shouldAllow =
         allowedTypes.includes(resourceType) ||
         allowedKeywords.some(keyword => url.includes(keyword)) ||
-        url.includes('static') || // 静态资源
-        url.includes('assets') // 资源文件
+        url.includes('static') || url.includes('assets')
 
       if (!shouldAllow && ['media', 'font', 'manifest', 'script'].includes(resourceType)) {
         request.abort()
@@ -59,7 +55,6 @@ export async function capturePageScreenshot(
       }
     })
 
-    // 设置公共请求头
     if (options.type === 'wiki' && options.lang) {
       await page.setExtraHTTPHeaders({
         'Accept-Language': `${options.lang},${options.lang}-*;q=0.9,en;q=0.8`,
@@ -82,7 +77,6 @@ export async function capturePageScreenshot(
       }
     }
 
-    // 根据类型处理页面
     if (options.type === 'wiki') {
       await page.evaluate(() => {
         const content = document.querySelector('#mw-content-text .mw-parser-output')
@@ -96,7 +90,6 @@ export async function capturePageScreenshot(
       })
     }
 
-    // 统一使用清理选择器
     await page.evaluate((selectors) => {
       selectors.forEach(selector => {
         document.querySelectorAll(selector).forEach(el => el.remove())
@@ -160,17 +153,17 @@ export async function capturePageScreenshot(
 }
 
 /**
- * 统一的搜索处理函数
+ * 统一的搜索处理
  * @param {Object} params - 搜索参数
  * @param {string} params.keyword - 搜索关键词
- * @param {'wiki' | 'mcmod'} params.source - 搜索源
- * @param {any} params.session - Koishi 会话实例
- * @param {MinecraftToolsConfig} params.config - 插件配置
- * @param {any} [params.ctx] - Koishi 上下文(可选)
- * @param {LangCode} [params.lang] - 语言代码(可选)
+ * @param {('wiki'|'mcmod')} params.source - 搜索源
+ * @param {any} params.session - 会话对象
+ * @param {MinecraftToolsConfig} params.config - Minecraft工具配置
+ * @param {any} [params.ctx] - Koishi上下文对象
+ * @param {LangCode} [params.lang] - 语言代码
  * @returns {Promise<string>} 搜索结果或错误信息
  */
-export async function handleSearch(params: {
+export async function search(params: {
   keyword: string
   source: 'wiki' | 'mcmod'
   session: any
@@ -183,42 +176,32 @@ export async function handleSearch(params: {
   if (!keyword) return '请输入要查询的关键词'
 
   try {
-    const searchFunction = source === 'wiki'
-      ? (kw: string, cfg: MinecraftToolsConfig) => searchWikiArticles(kw)
-      : searchMCMOD
-    const results = await searchFunction(keyword, config)
+    const searchFn = source === 'wiki' ? searchWiki : searchMod
+    const results = await searchFn(keyword, config)
 
     if (!results.length) return '未找到相关内容'
 
-    const items = results.map((r, i) => {
-      const base = `${i + 1}. ${r.title}`
-      const desc = source === 'mcmod' && config.wiki.searchDescLength > 0 && r.desc
-        ? `\n    ${r.desc}` : ''
-      return `${base}${desc}`
-    })
-    const searchResultMessage = `${results[0].source === 'wiki' ? 'Wiki' : 'MCMOD'} 搜索结果：\n${items.join('\n')}
-请回复序号查看详细内容（使用 -i 后缀以获取页面截图）`
-
-    await session.send(searchResultMessage)
+    const message = formatSearchResults(results, source, config)
+    await session.send(message)
 
     const response = await session.prompt(config.wiki.searchTimeout * 1000)
     if (!response) return '操作超时'
 
-    return await handleUserSelection({ response, results, source, config, ctx, lang })
+    return await processSelection({ response, results, source, config, ctx, lang })
   } catch (error) {
     return error.message
   }
 }
 
 /**
- * Wiki 搜索功能
+ * Wiki 搜索
  * @param {string} keyword - 搜索关键词
  * @returns {Promise<SearchResult[]>} 搜索结果列表
  * @throws {Error} 搜索失败时抛出错误
  */
-export async function searchWikiArticles(keyword: string): Promise<SearchResult[]> {
+export async function searchWiki(keyword: string): Promise<SearchResult[]> {
   try {
-    const searchUrl = constructWikiUrl('api.php', 'zh', true).replace('/w/', '/')
+    const searchUrl = buildUrl('api.php', 'zh', true).replace('/w/', '/')
       + `&action=opensearch&search=${encodeURIComponent(keyword)}&limit=10`;
 
     const { data } = await axios.get(searchUrl, {
@@ -234,13 +217,13 @@ export async function searchWikiArticles(keyword: string): Promise<SearchResult[
 }
 
 /**
- * MCMOD 搜索功能
+ * MCMOD 搜索
  * @param {string} keyword - 搜索关键词
- * @param {MinecraftToolsConfig} config - 插件配置
+ * @param {MinecraftToolsConfig} config - Minecraft工具配置
  * @returns {Promise<SearchResult[]>} 搜索结果列表
  * @throws {Error} 搜索失败时抛出错误
  */
-export async function searchMCMOD(keyword: string, config: MinecraftToolsConfig): Promise<SearchResult[]> {
+export async function searchMod(keyword: string, config: MinecraftToolsConfig): Promise<SearchResult[]> {
   try {
     const response = await axios.get(
       `https://search.mcmod.cn/s?key=${encodeURIComponent(keyword)}`,
@@ -279,17 +262,40 @@ export async function searchMCMOD(keyword: string, config: MinecraftToolsConfig)
 }
 
 /**
- * 处理用户搜索结果选择
- * @param {Object} params - 参数对象
- * @param {string} params.response - 用户响应内容
+ * 格式化搜索结果
+ * @param {SearchResult[]} results - 搜索结果列表
+ * @param {('wiki'|'mcmod')} source - 搜索源
+ * @param {MinecraftToolsConfig} config - Minecraft工具配置
+ * @returns {string} 格式化后的搜索结果文本
+ */
+function formatSearchResults(
+  results: SearchResult[],
+  source: 'wiki' | 'mcmod',
+  config: MinecraftToolsConfig
+): string {
+  const items = results.map((r, i) => {
+    const base = `${i + 1}. ${r.title}`
+    const desc = source === 'mcmod' && config.wiki.searchDescLength > 0 && r.desc
+      ? `\n    ${r.desc}` : ''
+    return `${base}${desc}`
+  })
+
+  return `${results[0].source === 'wiki' ? 'Wiki' : 'MCMOD'} 搜索结果：\n${items.join('\n')}
+请回复序号查看详细内容（使用 -i 后缀以获取页面截图）`
+}
+
+/**
+ * 处理用户选择
+ * @param {Object} params - 处理参数
+ * @param {string} params.response - 用户响应
  * @param {SearchResult[]} params.results - 搜索结果列表
  * @param {('wiki'|'mcmod')} params.source - 搜索源
- * @param {MinecraftToolsConfig} params.config - 插件配置
- * @param {any} [params.ctx] - Koishi 上下文（可选）
- * @param {LangCode} [params.lang] - 语言代码（可选）
- * @returns {Promise<string|any>} 处理结果，可能是文本内容或图片
+ * @param {MinecraftToolsConfig} params.config - Minecraft工具配置
+ * @param {any} [params.ctx] - Koishi上下文对象
+ * @param {LangCode} [params.lang] - 语言代码
+ * @returns {Promise<string>} 处理结果或错误信息
  */
-async function handleUserSelection(params: {
+async function processSelection(params: {
   response: string
   results: SearchResult[]
   source: 'wiki' | 'mcmod'
@@ -307,52 +313,44 @@ async function handleUserSelection(params: {
   }
 
   const result = results[index]
-  const isImageRequest = flag?.trim() === 'i'
+  const isImage = flag?.trim() === 'i'
 
   try {
-    if (isImageRequest) {
-      return await handleImageRequest(result, source, ctx, config, lang)
-    }
-    return await handleContentRequest(result, source, config, lang)
+    return isImage
+      ? await fetchImage(result, source, ctx, config, lang)
+      : await fetchwikiContent(result, source, config, lang)
   } catch (error) {
-    const errorMessage = error?.message || String(error)
-    return `处理内容时出错 (${errorMessage})，请直接访问：${result.url}`
+    return `处理内容时出错 (${error?.message || String(error)})，请直接访问：${result.url}`
   }
 }
 
 /**
- * 处理图片请求
- * @param {SearchResult} result - 搜索结果对象
- * @param {('wiki'|'mcmod')} source - 内容来源
- * @param {any} ctx - Koishi 上下文
- * @param {MinecraftToolsConfig} config - 插件配置
- * @param {LangCode} [lang] - 语言代码（可选）
- * @returns {Promise<any>} 图片处理结果
- * @throws {Error} 截图功能不可用时抛出错误
+ * 获取页面截图
+ * @param {SearchResult} result - 搜索结果项
+ * @param {('wiki'|'mcmod')} source - 内容源
+ * @param {any} ctx - Koishi上下文对象
+ * @param {MinecraftToolsConfig} config - Minecraft工具配置
+ * @param {LangCode} [lang] - 语言代码
+ * @returns {Promise<string>} 截图结果或错误信息
  */
-async function handleImageRequest(
+async function fetchImage(
   result: SearchResult,
   source: 'wiki' | 'mcmod',
   ctx: any,
   config: MinecraftToolsConfig,
   lang?: LangCode
 ) {
-  if (!ctx?.puppeteer) {
-    return '截图功能不可用'
-  }
+  if (!ctx?.puppeteer) return '截图功能不可用'
 
   const context = await ctx.puppeteer.browser.createBrowserContext()
-
   try {
+    const { handleWikiScreenshot, handleModScreenshot } = require('./shot')
+
     if (source === 'wiki') {
-      const pageUrl = constructWikiUrl(result.title, lang, true)
-      const { handleWikiScreenshot } = require('./shot')
-      const res = await handleWikiScreenshot('', pageUrl, lang, config, ctx)
-      return res
+      const pageUrl = buildUrl(result.title, lang, true)
+      return await handleWikiScreenshot('', pageUrl, lang, config, ctx)
     } else {
-      const { handleModScreenshot } = require('./shot')
-      const res = await handleModScreenshot(result.title, config, ctx)
-      return res
+      return await handleModScreenshot(result.title, config, ctx)
     }
   } finally {
     await context.close()
@@ -360,28 +358,26 @@ async function handleImageRequest(
 }
 
 /**
- * 处理内容请求
- * @param {SearchResult} result - 搜索结果对象
- * @param {('wiki'|'mcmod')} source - 内容来源
- * @param {MinecraftToolsConfig} config - 插件配置
- * @param {LangCode} [lang] - 语言代码（可选）
- * @returns {Promise<string>} 格式化的内容
- * @throws {Error} 内容处理失败时抛出错误
+ * 获取页面内容
+ * @param {SearchResult} result - 搜索结果项
+ * @param {('wiki'|'mcmod')} source - 内容源
+ * @param {MinecraftToolsConfig} config - Minecraft工具配置
+ * @param {LangCode} [lang] - 语言代码
+ * @returns {Promise<string>} 页面内容或错误信息
  */
-async function handleContentRequest(
+async function fetchwikiContent(
   result: SearchResult,
   source: 'wiki' | 'mcmod',
   config: MinecraftToolsConfig,
   lang?: LangCode
 ) {
   if (source === 'wiki') {
-    const pageUrl = constructWikiUrl(result.title, lang, true)
-    const displayUrl = constructWikiUrl(result.title, lang)
-    const { title, content } = await fetchWikiArticleContent(pageUrl, lang, config)
+    const pageUrl = buildUrl(result.title, lang, true)
+    const displayUrl = buildUrl(result.title, lang)
+    const { title, content } = await fetchContent(pageUrl, lang, config)
     return `『${title}』${content}\n详细内容：${displayUrl}`
   }
 
-  const content = await processMCMODContent(result.url, config.wiki)
-  const formattedContent = formatContentSections(content, result.url)
-  return formattedContent || `获取内容失败，请直接访问：${result.url}`
+  const content = await fetchModContent(result.url, config.wiki)
+  return formatContent(content, result.url) || `获取内容失败，请直接访问：${result.url}`
 }

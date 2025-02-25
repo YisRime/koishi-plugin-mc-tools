@@ -1,7 +1,7 @@
 import * as cheerio from 'cheerio'
 import axios from 'axios'
 import { MinecraftToolsConfig, LangCode } from './utils'
-import { searchWikiArticles } from './subwiki'
+import { searchWiki } from './subwiki'
 
 /**
  * 构建 Wiki URL
@@ -10,7 +10,7 @@ import { searchWikiArticles } from './subwiki'
  * @param {boolean} includeLanguageVariant - 是否包含语言变体参数
  * @returns {string} 构建好的 Wiki URL
  */
-export function constructWikiUrl(articleTitle: string, languageCode: LangCode | string, includeLanguageVariant = false) {
+export function buildUrl(articleTitle: string, languageCode: LangCode | string, includeLanguageVariant = false) {
   let wikiDomain: string
   let languageVariant: string = ''
 
@@ -34,7 +34,7 @@ export function constructWikiUrl(articleTitle: string, languageCode: LangCode | 
  * @param {any} data - 文章数据
  * @returns {string} 格式化后的标题
  */
-export function formatArticleTitle(data: any): string {
+export function formatTitle(data: any): string {
   if (!data) return '未知条目'
 
   const parts = []
@@ -51,7 +51,7 @@ export function formatArticleTitle(data: any): string {
  * @param {MinecraftToolsConfig} config - 插件配置
  * @returns {Promise<{title: string, content: string, url: string}>}
  */
-export async function fetchWikiArticleContent(articleUrl: string, languageCode: LangCode, config: MinecraftToolsConfig) {
+export async function fetchContent(articleUrl: string, languageCode: LangCode, config: MinecraftToolsConfig) {
   const languageVariant = languageCode.startsWith('zh') ?
     (languageCode === 'zh' ? 'zh-cn' :
      languageCode === 'zh-hk' ? 'zh-hk' :
@@ -145,7 +145,7 @@ export async function processWikiRequest(keyword: string, userId: string, config
 
   try {
     const lang = userLangs.get(userId) || config.wiki.defaultLanguage
-    const results = await searchWikiArticles(keyword)
+    const results = await searchWiki(keyword)
 
     if (!results.length) return `${keyword}：本页面目前没有内容。`
 
@@ -158,8 +158,8 @@ export async function processWikiRequest(keyword: string, userId: string, config
     }
 
     const result = results[0]
-    const pageUrl = constructWikiUrl(result.title, lang, true)
-    const displayUrl = constructWikiUrl(result.title, lang)
+    const pageUrl = buildUrl(result.title, lang, true)
+    const displayUrl = buildUrl(result.title, lang)
 
     if (mode === 'image') {
       return {
@@ -168,7 +168,7 @@ export async function processWikiRequest(keyword: string, userId: string, config
       }
     }
 
-    const { content, url } = await fetchWikiArticleContent(pageUrl, lang, config)
+    const { content, url } = await fetchContent(pageUrl, lang, config)
     return `${content}\n详细内容：${url}`
 
   } catch (error) {

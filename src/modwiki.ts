@@ -1,3 +1,8 @@
+/**
+ * @module modwiki
+ * @description MCMOD.CN 内容抓取和解析模块
+ */
+
 import { h } from 'koishi'
 import axios from 'axios'
 import * as cheerio from 'cheerio'
@@ -5,6 +10,7 @@ import { ModwikiConfig } from './utils'
 
 /**
  * 处理结果接口
+ * @interface ProcessResult
  */
 interface ProcessResult {
   /** 处理后的内容段落 */
@@ -14,153 +20,220 @@ interface ProcessResult {
 }
 
 /**
- * 处理HTML元素内容
- * @param {cheerio.Cheerio<any>} $elem - 要处理的元素
- * @returns {string | null} 处理后的文本或null
+ * 解析图片元素
+ * @param {cheerio.CheerioAPI} $ Cheerio实例
+ * @param {cheerio.Cheerio} $elem 包含图片的元素
+ * @returns {string|null} 图片HTML字符串或null
  */
-function processElement($: cheerio.CheerioAPI, $elem: cheerio.Cheerio<any>): string | null {
-  const cleanText = (text: string): string => {
-    return text
-      .replace(/[\u0000-\u001F\u007F-\u009F\u200B-\u200D\uFEFF]/g, '')
-      .replace(/\s+/g, ' ')
-      .replace(/\[(\w+)\]/g, '')
-      .trim();
-  };
-
-  // 处理图片
-  if ($elem.find('.figure').length || $elem.is('.figure')) {
-    const $img = $elem.find('img');
-    const imgSrc = $img.attr('data-src') || $img.attr('src');
-    return imgSrc ? h.image(imgSrc.startsWith('//') ? `https:${imgSrc}` : imgSrc).toString() : null;
-  }
-
-  // 处理文本之前先处理链接
-  const cleanedElem = $elem.clone();
-  cleanedElem.find('script').remove();
-
-  // 处理站外弹出链接
-  cleanedElem.find('[id^="link_"]').each((_, elem) => {
-    const $link = $(elem);
-    const id = $link.attr('id');
-    if (!id) return;
-
-    // 查找包含这个链接ID的script标签
-    const scriptContent = $(`script:contains(${id})`).text();
-    // 提取URL - 修改正则表达式以更准确地匹配URL格式
-    const urlMatch = scriptContent.match(/content:"[^"]*?<strong>([^<]+)/);
-    if (urlMatch && urlMatch[1]) {
-      const url = urlMatch[1];
-      const text = $link.text().trim();
-      // 只有当文本不是URL时才添加URL
-      if (!text.includes('http') && !text.includes('www.')) {
-        $link.text(`${text} (${url})`);
-      }
-      $link.removeAttr('onclick');
-      $link.attr('href', url);
-    }
-  });
-
-  // 处理普通链接
-  cleanedElem.find('a').each((_, link) => {
-    const $link = $(link);
-    const href = $link.attr('href');
-    const text = $link.text().trim();
-
-    if (href && text) {
-      // 如果是站内链接，保持原样
-      if (href.startsWith('//www.mcmod.cn') || href.startsWith('/')) {
-        return;
-      }
-      // 如果已经处理过的站外弹出链接，跳过
-      if ($link.attr('id')?.startsWith('link_')) {
-        return;
-      }
-      // 只有当文本不是URL时才添加URL
-      if (!text.includes('http') && !text.includes('www.') &&
-          !href.includes('javascript:') && !href.startsWith('#')) {
-        $link.text(`${text} (${href})`);
-      }
-    }
-  });
-
-  const text = cleanText(cleanedElem.text());
-
-  return text &&
-         !text.includes('前往链接') &&
-         !text.includes('不要再提示我') ? text : null;
+function parseImage($: cheerio.CheerioAPI, $elem: cheerio.Cheerio<any>): string | null {
+  const $img = $elem.find('img')
+  const src = $img.attr('data-src') || $img.attr('src')
+  return src ? h.image(src.startsWith('//') ? `https:${src}` : src).toString() : null
 }
 
 /**
- * 处理页面主要内容
- * @param {cheerio.CheerioAPI} $ - Cheerio 实例
- * @param {'mod' | 'modpack' | 'post' | 'item'} pageType - 页面类型
- * @param {number} maxLength - 最大内容长度
- * @returns {{sections: string[], links: string[]}} 处理结果
+ * 解析链接元素
+ * @param {cheerio.CheerioAPI} $ Cheerio实例
+ * @param {cheerio.Cheerio} $elem 包含链接的元素
+ * @returns {string|null} 处理后的链接文本或null
  */
-function processPageContent($: cheerio.CheerioAPI, pageType: 'mod' | 'modpack' | 'post' | 'item', maxLength: number): {
-  sections: string[];
-  links: string[];
-} {
-  const sections: string[] = [];
-  let totalLength = 0;
+function parseLink($: cheerio.CheerioAPI, $elem: cheerio.Cheerio<any>): string | null {
+  const links: string[] = []
 
-  if (pageType === 'item') {
-    const itemName = $('.itemname .name h5').first().text().trim();
-    const title = itemName || $('.class-title h3').first().text().trim() +
-      ($('.class-title h4').first().text().trim() ? ` (${$('.class-title h4').first().text().trim()})` : '');
-    sections.push(title);
+  $elem.find('[id^="link_"]').each((_, elem) => {
+    const $link = $(elem)
+    const id = $link.attr('id')
+    if (!id) return
 
-    const processImage = ($img: cheerio.Cheerio<any>): string | null => {
-      let imgSrc = $img.attr('data-src') || $img.attr('src');
-      if (imgSrc?.startsWith('//')) {
-        imgSrc = `https:${imgSrc}`;
+    const scriptContent = $(`script:contains(${id})`).text()
+    const urlMatch = scriptContent.match(/content:"[^"]*?<strong>([^<]+)/)
+    if (urlMatch && urlMatch[1]) {
+      const url = urlMatch[1]
+      // 获取链接文本描述
+      let prefix = ''
+      let prevNode = $link[0].previousSibling
+      while (prevNode && prevNode.type === 'text') {
+        prefix = prevNode.data.trim() + ' ' + prefix
+        prevNode = prevNode.previousSibling
       }
-      return imgSrc ? h.image(imgSrc).toString() : null;
-    };
-
-    const $itemIcon = $('.item-info-table img').first();
-    if ($itemIcon.length) {
-      const imgResult = processImage($itemIcon);
-      if (imgResult) {
-        sections.push(imgResult);
-      }
+      prefix = prefix.trim()
+      // 组合链接文本
+      const text = prefix ? `${prefix}: ${url}` : url
+      links.push(text)
     }
-  } else if (pageType === 'mod' || pageType === 'modpack') {
-    sections.push(...processBasicInfo($));
-    sections.push(...processVersionInfo($));
+  })
+
+  return links.length > 0 ? links.join('\n') : null
+}
+
+/**
+ * 解析文本元素
+ * @param {cheerio.CheerioAPI} $ Cheerio实例
+ * @param {cheerio.Cheerio} $elem 包含文本的元素
+ * @returns {string|null} 处理后的文本或null
+ */
+function parseText($: cheerio.CheerioAPI, $elem: cheerio.Cheerio<any>): string | null {
+  const cleanText = (text: string): string => {
+    const clearedText = text
+      .replace(/[\u0000-\u001F\u007F-\u009F\u200B-\u200D\uFEFF]/g, '')
+      .replace(/\s+/g, ' ')
+      .replace(/\[(\w+)\]/g, '')
+      .trim()
+
+    // 判断是否为标题
+    const isTitle = (text: string): boolean => {
+
+      // 检查长度
+      if (text.length > 30) return false
+
+      // 检查HTML结构
+      const $parent = $elem.parent()
+      if ($parent.find('strong').length ||
+          $parent.find('span.common-text-title').length) {
+        return true
+      }
+      return false
+    }
+    return !clearedText ? '' : isTitle(clearedText) ? `『${clearedText}』` : clearedText
   }
 
+  const cleanedElem = $elem.clone()
+  cleanedElem.find('script').remove()
+
+  // 处理普通链接
+  cleanedElem.find('a').each((_, link) => {
+    const $link = $(link)
+    const href = $link.attr('href')
+    const text = $link.text().trim()
+
+    if (href && text) {
+      if (!href.startsWith('//www.mcmod.cn') && !href.startsWith('/') &&
+          !href.includes('javascript:') && !href.startsWith('#')) {
+        let prefix = ''
+        let prevNode = link.previousSibling
+        while (prevNode && prevNode.type === 'text') {
+          prefix = prevNode.data.trim() + ' ' + prefix
+          prevNode = prevNode.previousSibling
+        }
+        prefix = prefix.trim()
+
+        if (prefix) {
+          $link.text(`${prefix}: ${text}`)
+        }
+      }
+    }
+  })
+
+  const text = cleanText(cleanedElem.text())
+  return text && !text.includes('此链接会跳转到') && !text.includes('不要再提示我') ? text : null
+}
+
+/**
+ * 解析页面内容
+ * @param {cheerio.CheerioAPI} $ Cheerio实例
+ * @param {'mod'|'modpack'|'post'|'item'} pageType 页面类型
+ * @param {number} maxLength 最大内容长度
+ * @returns {ProcessResult} 处理结果
+ */
+function parseContent($: cheerio.CheerioAPI, pageType: 'mod' | 'modpack' | 'post' | 'item', maxLength: number): ProcessResult {
+  const sections: string[] = []
+  const relatedLinks: string[] = []
+  let totalLength = 0
+
+  // 解析头部信息
+  if (pageType === 'item') {
+    parseItemHeader($, sections)
+  } else if (['mod', 'modpack'].includes(pageType)) {
+    sections.push(...parseBasicInfo($))
+  }
+
+  // 解析主要内容区域
   const contentSelector = {
     mod: '.common-text',
     modpack: '.common-text',
     post: 'div.text',
     item: '.item-content.common-text'
-  }[pageType];
+  }[pageType]
 
-  $(contentSelector).children().each((_, element) => {
-    if (totalLength >= maxLength) return false;
+  const $content = $(contentSelector)
+  // 顺序处理每个元素
+  $content.children().each((_, element) => {
+    const $elem = $(element)
 
-    const result = processElement($, $(element));
-    if (result) {
-      sections.push(result);
-      if (!result.startsWith('http')) {
-        totalLength += result.length;
+    // 解析图片
+    const image = parseImage($, $elem)
+    if (image) {
+      sections.push(image)
+      return
+    }
+
+    // 解析链接
+    const link = parseLink($, $elem)
+    if (link) {
+      sections.push(link)
+      return
+    }
+
+    // 解析文本
+    const text = parseText($, $elem)
+    if (text && totalLength < maxLength) {
+      sections.push(text)
+      if (!text.startsWith('http')) {
+        totalLength += text.length
       }
     }
-  });
+  })
 
+  // 获取相关链接
+  relatedLinks.push(...parseRelatedLinks($))
+
+  // 过滤重复内容
   return {
-    sections: sections
-      // 清理空白行和重复内容
-      .filter((section, index, array) =>
-        section.trim() && array.indexOf(section) === index
-      ),
-    links: processRelatedLinks($)
-  };
+    sections: sections.filter((s, i, arr) => s.trim() && arr.indexOf(s) === i),
+    links: relatedLinks
+  }
 }
 
-function processBasicInfo($: cheerio.CheerioAPI): string[] {
+/**
+ * 解析物品头部信息
+ * @param {cheerio.CheerioAPI} $ Cheerio实例
+ * @param {string[]} sections 段落数组
+ */
+function parseItemHeader($: cheerio.CheerioAPI, sections: string[]): void {
+  const itemName = $('.itemname .name h5').first().text().trim()
+  const title = itemName || $('.class-title h3').first().text().trim() +
+    ($('.class-title h4').first().text().trim() ? ` (${$('.class-title h4').first().text().trim()})` : '')
+  sections.push(title)
+
+  const $itemIcon = $('.item-info-table')
+  if ($itemIcon.length) {
+    const image = parseImage($, $itemIcon)
+    if (image) sections.push(image)
+  }
+}
+
+/**
+ * 解析基础信息
+ * @param {cheerio.CheerioAPI} $ Cheerio实例
+ * @returns {string[]} 基础信息数组
+ */
+function parseBasicInfo($: cheerio.CheerioAPI): string[] {
+  return [
+    ...parseHeader($),
+    ...parseInfoBlock($),
+    ...parseVersions($)
+  ]
+}
+
+/**
+ * 解析标题和封面
+ * @param {cheerio.CheerioAPI} $ Cheerio实例
+ * @returns {string[]} 标题和封面信息数组
+ */
+function parseHeader($: cheerio.CheerioAPI): string[] {
   const sections: string[] = [];
+
+  // 处理标题
   const shortName = $('.short-name').first().text().trim();
   const title = $('.class-title h3').first().text().trim();
   const enTitle = $('.class-title h4').first().text().trim();
@@ -172,21 +245,25 @@ function processBasicInfo($: cheerio.CheerioAPI): string[] {
     modStatusLabels.length ? ` (${modStatusLabels.join(' | ')})` : ''
   }`);
 
-  const processImage = ($img: cheerio.Cheerio<any>): string | null => {
-    let imgSrc = $img.attr('data-src') || $img.attr('src');
-    if (imgSrc?.startsWith('//')) {
-      imgSrc = `https:${imgSrc}`;
-    }
-    return imgSrc ? h.image(imgSrc).toString() : null;
-  };
-
-  const $coverImage = $('.class-cover-image img').first();
+  // 处理封面图片
+  const $coverImage = $('.class-cover-image');
   if ($coverImage.length) {
-    const imgResult = processImage($coverImage);
-    if (imgResult) {
-      sections.push(imgResult);
+    const imageResult = parseImage($, $coverImage);
+    if (imageResult) {
+      sections.push(imageResult);
     }
   }
+
+  return sections;
+}
+
+/**
+ * 解析信息块
+ * @param {cheerio.CheerioAPI} $ Cheerio实例
+ * @returns {string[]} 信息块内容数组
+ */
+function parseInfoBlock($: cheerio.CheerioAPI): string[] {
+  const sections: string[] = [];
 
   $('.class-info-left .col-lg-4').each((_, elem) => {
     const text = $(elem).text().trim().replace(/\s+/g, ' ').replace(/：/g, ':');
@@ -201,7 +278,12 @@ function processBasicInfo($: cheerio.CheerioAPI): string[] {
   return sections;
 }
 
-function processVersionInfo($: cheerio.CheerioAPI): string[] {
+/**
+ * 解析版本信息
+ * @param {cheerio.CheerioAPI} $ Cheerio实例
+ * @returns {string[]} 版本信息数组
+ */
+function parseVersions($: cheerio.CheerioAPI): string[] {
   const sections: string[] = ['支持版本:'];
   const processedLoaders = new Set<string>();
 
@@ -224,8 +306,12 @@ function processVersionInfo($: cheerio.CheerioAPI): string[] {
   return sections.length > 1 ? sections : [];
 }
 
-// 处理相关链接
-function processRelatedLinks($: cheerio.CheerioAPI): string[] {
+/**
+ * 解析相关链接
+ * @param {cheerio.CheerioAPI} $ Cheerio实例
+ * @returns {string[]} 相关链接数组
+ */
+function parseRelatedLinks($: cheerio.CheerioAPI): string[] {
   const linkMap = new Map<string, { url: string; name: string }>()
 
   $('.common-link-frame .list ul li').each((_, item) => {
@@ -265,26 +351,15 @@ function processRelatedLinks($: cheerio.CheerioAPI): string[] {
 }
 
 /**
- * 格式化内容段落
- * @param {ProcessResult} result - 处理结果
- * @param {string} url - 原始URL
+ * 格式化内容
+ * @param {ProcessResult} result 处理结果
+ * @param {string} url 原始页面URL
  * @returns {string} 格式化后的内容
  */
-export function formatContentSections(result: ProcessResult, url: string): string {
+export function formatContent(result: ProcessResult, url: string): string {
   if (!result?.sections) {
     return `获取内容失败，请访问：${url}`;
   }
-
-  const formatSection = (text: string): string => {
-    const isSectionTitle = (text: string): boolean =>
-      /^(简介|注意事项|相关消息|相关链接)$/.test(text.trim()) ||
-      /^[\u4e00-\u9fa5\w\s]+$/.test(text.trim());
-
-    if (text.length < 20 && !text.includes('：') && !text.includes(':')) {
-      return isSectionTitle(text) ? `『${text.trim()}』` : text;
-    }
-    return text;
-  };
 
   const sections = result.sections.filter(Boolean).map(section =>
     section.toString().trim()
@@ -293,7 +368,7 @@ export function formatContentSections(result: ProcessResult, url: string): strin
 
   const categorizedSections = {
     title: sections[0],
-    images: sections.filter(s => s.startsWith('http')),
+    coverImage: sections[1],
     basicInfo: sections.filter(s =>
       ['运行环境', '整合包类型', '运作方式', '打包方式']
         .some(type => s.includes(type))
@@ -302,51 +377,49 @@ export function formatContentSections(result: ProcessResult, url: string): strin
       s === '支持版本:' || ['行为包:', 'Forge:', 'Fabric:']
         .some(type => s.includes(type))
     ),
-    content: sections.filter(s =>
-      !s.startsWith('http') &&
+    content: sections.filter((s, index) =>
+      index > 1 &&
       !['运行环境', '整合包类型', '运作方式', '打包方式']
         .some(type => s.includes(type)) &&
       !['支持版本:', '行为包:', 'Forge:', 'Fabric:']
-        .some(type => s.includes(type)) &&
-      s !== sections[0]
-    ).map(formatSection)
+        .some(type => s.includes(type))
+    ),
+    images: sections.filter((s, index) =>
+      index > 1 && s.startsWith('http') && !s.includes(':')
+    )
   };
 
   const output = [
     categorizedSections.title,
-    '',
-    categorizedSections.images[0],
-    '',
+    categorizedSections.coverImage,
     ...categorizedSections.basicInfo,
-    '',
     ...categorizedSections.versionInfo,
-    '',
     ...(result.links?.length ? [
       '相关链接:',
       ...result.links,
-      ''
     ] : []),
     '简介:',
     ...categorizedSections.content,
-    '',
-    ...categorizedSections.images.slice(1),
-    '',
+    ...categorizedSections.images,
     `详细内容: ${url}`
   ];
 
   return output
-    .filter(Boolean)
+    .filter(s => s && s.length > 0) // 过滤掉空字符串
     .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/:{2,}/g, ':')
     .trim() || `无法获取详细内容，请访问：${url}`;
 }
 
 /**
- * 处理 MCMOD 内容
- * @param {string} url - 页面URL
- * @param {ModwikiConfig} config - 插件配置
- * @returns {Promise<ProcessResult>} 处理结果
+ * 获取MCMOD内容
+ * @param {string} url MCMOD.CN页面URL
+ * @param {ModwikiConfig} config 配置项
+ * @returns {Promise<ProcessResult>} 处理结果Promise
+ * @throws {Error} 当请求失败或页面不存在时抛出错误
  */
-export async function processMCMODContent(url: string, config: ModwikiConfig): Promise<ProcessResult> {
+export async function fetchModContent(url: string, config: ModwikiConfig): Promise<ProcessResult> {
   try {
     const response = await axios.get(url, {
       timeout: 30000,
@@ -364,7 +437,7 @@ export async function processMCMODContent(url: string, config: ModwikiConfig): P
                    : url.includes('/post/') ? 'post'
                    : url.includes('/item/') ? 'item'
                    : 'mod';
-    const content = processPageContent($, pageType, config.totalPreviewLength);
+    const content = parseContent($, pageType, config.totalPreviewLength);
     const sections = content.sections;
 
     return {

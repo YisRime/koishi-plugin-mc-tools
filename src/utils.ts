@@ -2,7 +2,6 @@ import { h } from 'koishi'
 import axios from 'axios'
 import * as mc from 'minecraft-protocol'
 
-// 类型定义
 export type LangCode = keyof typeof MINECRAFT_LANGUAGES
 
 export interface MinecraftVersionInfo {
@@ -51,7 +50,6 @@ export interface MinecraftToolsConfig {
   }
 }
 
-// 类型映射
 export const CLEANUP_SELECTORS = [
   // Wiki 相关
   '.mw-editsection', '#mw-navigation', '#footer', '.noprint', '#toc',
@@ -61,7 +59,6 @@ export const CLEANUP_SELECTORS = [
   '.mw-jump-link', '.vector-toc', '.vector-menu',
   '.mw-cite-backlink', '.reference', '.treeview',
   '.file-display-header',
-
   // MCMOD 相关
   'header', 'footer', '.header-container', '.common-background',
   '.common-nav', '.common-menu-page', '.common-comment-block',
@@ -101,7 +98,6 @@ export const TypeMap = {
   }
 } as const
 
-// 1. 常量和类型定义
 export const MINECRAFT_LANGUAGES = {
   'zh': '中文（简体）',
   'zh-hk': '中文（繁體）',
@@ -142,7 +138,7 @@ const MINECRAFT_PROTOCOL_VERSIONS = {
  * @returns {Promise<{latest: MinecraftVersionInfo, release: MinecraftVersionInfo, versions: MinecraftVersionInfo[]}>}
  * @throws {Error} 当版本数据无效或请求失败时抛出错误
  */
-export async function fetchMinecraftVersions(timeout = 10000) {
+export async function fetchVersions(timeout = 10000) {
   const { data } = await axios.get('https://launchermeta.mojang.com/mc/game/version_manifest.json', {
     timeout
   })
@@ -161,9 +157,9 @@ export async function fetchMinecraftVersions(timeout = 10000) {
  * 获取格式化的 Minecraft 版本信息
  * @returns {Promise<{success: boolean, data?: string, error?: string}>}
  */
-export async function getMinecraftVersionInfo() {
+export async function getVersionInfo() {
   try {
-    const { latest, release } = await fetchMinecraftVersions()
+    const { latest, release } = await fetchVersions()
     const formatDate = (date: string) => new Date(date).toLocaleDateString('zh-CN')
 
     return {
@@ -202,9 +198,9 @@ async function notifyVersionUpdate(ctx: any, targetGroups: string[], updateMessa
  * @param {any} ctx - Koishi 上下文
  * @param {MinecraftToolsConfig} config - 插件配置
  */
-export async function checkMinecraftUpdate(versions: { snapshot: string, release: string }, ctx: any, config: MinecraftToolsConfig) {
+export async function checkUpdate(versions: { snapshot: string, release: string }, ctx: any, config: MinecraftToolsConfig) {
   try {
-    const { latest, release } = await fetchMinecraftVersions()
+    const { latest, release } = await fetchVersions()
     const updates = [
       { type: 'snapshot', version: latest, enabled: config.versionCheck.notifyOnSnapshot },
       { type: 'release', version: release, enabled: config.versionCheck.notifyOnRelease }
@@ -229,12 +225,12 @@ export async function checkMinecraftUpdate(versions: { snapshot: string, release
  * @returns {{host: string, port: number}} 解析后的服务器信息
  * @throws {Error} 当地址格式无效时抛出错误
  */
-function parseMinecraftServer(serverAddress: string | undefined, defaultConfig: MinecraftToolsConfig['server']) {
+function parseServer(serverAddress: string | undefined, defaultConfig: MinecraftToolsConfig['server']) {
   const address = serverAddress || defaultConfig.address
   const [host, portStr] = address.split(':')
   if (!host) throw new Error('请输入有效的服务器地址')
 
-  let port = 25565 // 默认端口
+  let port = 25565
   if (portStr) {
     const parsedPort = parseInt(portStr)
     if (isNaN(parsedPort) || parsedPort < 1 || parsedPort > 65535) {
@@ -320,7 +316,7 @@ export function formatErrorMessage(error: any): string {
  * @returns {Promise<string>} 格式化的服务器状态信息
  */
 export async function checkServerStatus(server: string | undefined, config: MinecraftToolsConfig) {
-  const { host, port } = parseMinecraftServer(server, config.server)
+  const { host, port } = parseServer(server, config.server)
   const displayAddr = port === 25565 ? host : `${host}:${port}`
 
   const startTime = Date.now()
