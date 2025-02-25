@@ -52,6 +52,23 @@ export interface MinecraftToolsConfig {
 }
 
 // 类型映射
+export const CLEANUP_SELECTORS = [
+  // Wiki 相关
+  '.mw-editsection', '#mw-navigation', '#footer', '.noprint', '#toc',
+  '.navbox', '#siteNotice', '#contentSub', '.mw-indicators',
+  '.sister-wiki', '.external', 'script', 'meta', '#mw-head',
+  '#mw-head-base', '#mw-page-base', '#catlinks', '.printfooter',
+  '.mw-jump-link', '.vector-toc', '.vector-menu',
+  '.mw-cite-backlink', '.reference', '.treeview',
+  '.file-display-header',
+
+  // MCMOD 相关
+  'header', 'footer', '.header-container', '.common-background',
+  '.common-nav', '.common-menu-page', '.common-comment-block',
+  '.comment-ad', '.ad-leftside', '.slidetips', '.item-table-tips',
+  '.common-icon-text-frame', '.common-ad-frame', '.ad-class-page'
+]
+
 export const TypeMap = {
   modTypes: {
     '/modpack/': '整合包',

@@ -11,15 +11,14 @@ import {
 } from './utils'
 import { processMCMODContent, formatContentSections } from './modwiki'
 import { processWikiRequest } from './mcwiki'
-import { searchMCMOD, handleSearch } from './search'
-import { capturePageScreenshot } from './shot'
+import { searchMCMOD, handleSearch, capturePageScreenshot } from './subwiki'
 
 /**
  * Minecraft 工具箱插件
  * @module mc-tools
  */
 export const name = 'mc-tools'
-export const inject = {required: ['puppeteer']}
+export const inject = {optional: ['puppeteer']}
 
 /**
  * 插件配置模式
