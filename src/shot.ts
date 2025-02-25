@@ -154,7 +154,7 @@ export async function capturePageScreenshot(
         selector = '#content'
       } else {
         if (url.includes('/item/')) {
-          selector = '.col-lg-12.maintext'
+          selector = '.col-lg-12.right'
         } else {
           selector = '.col-lg-12.center'
         }
