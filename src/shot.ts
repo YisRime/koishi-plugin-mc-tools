@@ -33,6 +33,16 @@ export async function capturePageScreenshot(
   const page = await context.newPage()
 
   try {
+    await page.setRequestInterception(true)
+    page.on('request', request => {
+      const resourceType = request.resourceType()
+      if (['image', 'media', 'font', 'manifest'].includes(resourceType)) {
+        request.abort()
+      } else {
+        request.continue()
+      }
+    })
+
     // 设置公共请求头和重试机制
     if (options.type === 'wiki' && options.lang) {
       await page.setExtraHTTPHeaders({
@@ -42,27 +52,24 @@ export async function capturePageScreenshot(
       })
     }
 
-    // 重试加载页面
-    let retries = 3
+    // 设置更短的超时时间
+    let retries = 2
     while (retries > 0) {
       try {
         await page.goto(url, {
-          waitUntil: 'networkidle0',
-          timeout: 10000
+          waitUntil: 'domcontentloaded',
+          timeout: 5000
         })
         break
       } catch (err) {
         retries--
         if (retries === 0) throw err
-        await new Promise(resolve => setTimeout(resolve, 1000))
+        await new Promise(resolve => setTimeout(resolve, 500))
       }
     }
 
     // 根据类型处理页面
     if (options.type === 'wiki') {
-      await page.waitForSelector('#bodyContent', { timeout: 10000, visible: true })
-
-      // 处理Wiki页面内容
       await page.evaluate(() => {
         const content = document.querySelector('#mw-content-text .mw-parser-output')
         const newBody = document.createElement('div')
@@ -73,8 +80,6 @@ export async function capturePageScreenshot(
         document.body.innerHTML = ''
         document.body.appendChild(newBody)
       })
-    } else {
-      await page.waitForSelector('.maintext, .col-lg-12.center', { timeout: 10000, visible: true })
     }
 
     // 统一使用清理选择器
@@ -156,16 +161,18 @@ export async function capturePageScreenshot(
     await page.setViewport({
       width: clipData.width,
       height: clipData.height,
-      deviceScaleFactor: 1
+      deviceScaleFactor: 1,
+      isMobile: false
     })
 
-    await new Promise(resolve => setTimeout(resolve, 500))
+    await new Promise(resolve => setTimeout(resolve, 100))
 
     const screenshot = await page.screenshot({
       type: 'jpeg',
-      quality: 80,
+      quality: 75,
       clip: clipData,
-      omitBackground: true
+      omitBackground: true,
+      optimizeForSpeed: true
     })
 
     return {
