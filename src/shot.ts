@@ -40,7 +40,7 @@ async function capturePageScreenshot(params: {
   type: 'wiki' | 'mcmod'
   lang?: LangCode
 }) {
-  const { page, url, config, type, lang } = params
+  const { page, url, type, lang } = params
 
   try {
     // 设置公共请求头和重试机制
@@ -93,29 +93,34 @@ async function capturePageScreenshot(params: {
 
     } else {
       const pageType = url.includes('/item/') ? 'item' : 'other'
-      const mainSelector = pageType === 'item' ? '.maintext' : '.col-lg-12.center'
+      const mainSelector = pageType === 'item' ? '.item-row' : '.col-lg-12.center'
 
       await page.waitForSelector(mainSelector, { timeout: 10000, visible: true })
 
       // 处理MCMOD页面内容
-      await page.evaluate((type) => {
+      await page.evaluate(() => {
+        // 移除不需要的元素
         document.querySelectorAll(`
-          header, footer, .header-container, .common-background,
-          .common-nav, .common-menu-page, .common-comment-block,
-          .comment-ad, .ad-leftside, .slidetips, .item-table-tips,
-          .common-icon-text-frame, script, .common-ad-frame,
-          .ad-class-page, .item-data
+          header, footer, .header-container,
+          .common-nav, .common-menu-page,
+          .comment-ad, .ad-leftside, .slidetips,
+          .common-icon-text-frame, script,
+          .ad-class-page,
+          .common-ad-frame,
+          .item-table-tips
         `).forEach(el => el.remove())
 
-        if (type === 'item') {
-          const maintext = document.querySelector('.maintext')
+        if(document.querySelector('.item-row')) {
+          // 调整物品页面样式
           const itemRow = document.querySelector('.item-row')
+          const maintext = document.querySelector('.maintext')
           if (maintext && itemRow) {
             maintext.setAttribute('style', 'margin:0 !important;padding:0 !important;float:none !important;width:100% !important;')
             itemRow.setAttribute('style', 'margin:0 auto !important;padding:20px !important;width:auto !important;background:white !important;')
           }
         }
-      }, pageType)
+      }, CLEANUP_SELECTORS)
+
     }
 
     // 注入通用样式
