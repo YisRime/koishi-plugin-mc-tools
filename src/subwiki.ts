@@ -40,14 +40,19 @@ export async function capturePageScreenshot(
       const resourceType = request.resourceType()
       const url = request.url().toLowerCase()
 
-      // 需要允许的资源类型
-      const allowedTypes = ['stylesheet', 'image', 'fetch', 'xhr']
+      // 始终允许的资源类型
+      const allowedTypes = ['stylesheet', 'image', 'fetch', 'xhr', 'document']
+      // 允许的资源URL关键词
+      const allowedKeywords = ['.svg', 'canvas', 'swiper', '.css', '.png', '.jpg', '.jpeg']
 
-      // 需要拦截的特定资源
-      if (['media', 'font', 'manifest', 'script'].includes(resourceType) &&
-          !url.includes('.svg') &&
-          !url.includes('canvas') &&
-          !allowedTypes.includes(resourceType)) {
+      // 检查是否应该允许请求
+      const shouldAllow =
+        allowedTypes.includes(resourceType) ||
+        allowedKeywords.some(keyword => url.includes(keyword)) ||
+        url.includes('static') || // 静态资源
+        url.includes('assets') // 资源文件
+
+      if (!shouldAllow && ['media', 'font', 'manifest', 'script'].includes(resourceType)) {
         request.abort()
       } else {
         request.continue()
