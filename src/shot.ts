@@ -93,13 +93,10 @@ export async function capturePageScreenshot(
       }, CLEANUP_SELECTORS)
 
     } else {
-      const pageType = url.includes('/item/') ? 'item' : 'other'
-      const mainSelector = pageType === 'item' ? '.maintext' : '.col-lg-12.center'
-
-      await page.waitForSelector(mainSelector, { timeout: 10000, visible: true })
+      await page.waitForSelector('.maintext, .col-lg-12.center', { timeout: 10000, visible: true })
 
       // 处理MCMOD页面内容
-      await page.evaluate((type) => {
+      await page.evaluate(() => {
         document.querySelectorAll(`
           header, footer, .header-container, .common-background,
           .common-nav, .common-menu-page, .common-comment-block,
@@ -107,16 +104,7 @@ export async function capturePageScreenshot(
           .common-icon-text-frame, script, .common-ad-frame,
           .ad-class-page, .item-data
         `).forEach(el => el.remove())
-
-        if (type === 'item') {
-          const maintext = document.querySelector('.maintext')
-          const itemRow = document.querySelector('.item-row')
-          if (maintext && itemRow) {
-            maintext.setAttribute('style', 'margin:0 !important;padding:0 !important;float:none !important;width:100% !important;')
-            itemRow.setAttribute('style', 'margin:0 auto !important;padding:20px !important;width:auto !important;background:white !important;')
-          }
-        }
-      }, pageType)
+      })
     }
 
     // 注入通用样式

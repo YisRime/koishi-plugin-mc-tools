@@ -51,11 +51,11 @@ export const Config: Schema<MinecraftToolsConfig> = Schema.object({
       .default(true)
       .description('显示图片'),
     searchTimeout: Schema.number()
-      .default(10)
+      .default(15)
       .description('搜索选择时间（秒）'),
     searchDescLength: Schema.number()
-      .default(60)
-      .description('搜索结果描述字数(0表示不显示)'),
+      .default(20)
+      .description('搜索结果描述字数(设置为0关闭描述)'),
   }).description('Wiki & MCMOD 设置'),
 
   versionCheck: Schema.object({
@@ -109,7 +109,9 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
     }
   })
 
-  const modWikiCommand = ctx.command('modwiki <keyword:text>', 'MCMOD搜索(支持模组/整合包/物品/教程)')
+  const modWikiCommand = ctx.command('modwiki <keyword:text>', 'MCMOD 查询')
+    .usage(`modwiki <关键词> - 直接查询内容\nmodwiki.search <关键词> - 搜索并选择条目\nmodwiki.shot <关键词> - 获取页面截图`)
+
     .action(async ({ }, keyword) => {
       if (!keyword) return '请输入要查询的关键词'
 
@@ -137,7 +139,7 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
       })
     })
 
-  modWikiCommand.subcommand('.search <keyword:text>', 'MCMOD搜索并返回列表（使用 -i 后缀以获取页面截图）')
+  modWikiCommand.subcommand('.search <keyword:text>', '搜索 MCMOD 页面（使用 -i 后缀以获取页面截图）')
     .action(async ({ session }, keyword) => {
       return await handleSearch({
         keyword,
