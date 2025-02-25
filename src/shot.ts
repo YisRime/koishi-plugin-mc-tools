@@ -34,32 +34,31 @@ export async function capturePageScreenshot(
 
   try {
     await Promise.all([
-      page.setJavaScriptEnabled(false),
       page.setRequestInterception(true),
       page.setCacheEnabled(true),
+      page.setJavaScriptEnabled(false)
     ])
 
-    // 更严格的资源拦截
     page.on('request', request => {
       const resourceType = request.resourceType()
-      if (['media', 'font', 'script', 'manifest'].includes(resourceType)) {
+      // 增加更多需要拦截的资源类型
+      if (['media', 'font', 'manifest', 'script'].includes(resourceType)) {
         request.abort()
       } else {
         request.continue()
       }
     })
 
-    // 设置公共请求头和重试机制
+    // 设置公共请求头
     if (options.type === 'wiki' && options.lang) {
       await page.setExtraHTTPHeaders({
         'Accept-Language': `${options.lang},${options.lang}-*;q=0.9,en;q=0.8`,
-        'Cookie': `language=${options.lang}; hl=${options.lang}; uselang=${options.lang}`,
-        'Cache-Control': 'no-cache'
+        'Cookie': `language=${options.lang}; hl=${options.lang}; uselang=${options.lang}`
       })
     }
 
-    // 超时策略
-    let retries = 1
+    // 减少超时时间和重试等待
+    let retries = 2
     while (retries > 0) {
       try {
         await page.goto(url, {
@@ -70,10 +69,11 @@ export async function capturePageScreenshot(
       } catch (err) {
         retries--
         if (retries === 0) throw err
+        await new Promise(resolve => setTimeout(resolve, 50))
       }
     }
 
-    // 页面处理优化
+    // 根据类型处理页面
     if (options.type === 'wiki') {
       await page.evaluate(() => {
         const content = document.querySelector('#mw-content-text .mw-parser-output')
@@ -94,9 +94,42 @@ export async function capturePageScreenshot(
       })
     }, CLEANUP_SELECTORS)
 
-    // 精简的样式注入
+    // 注入通用样式
     await page.evaluate(() => {
-      document.head.innerHTML = '<style>body{margin:0;padding:0;background:#fff}#content{margin:0 auto;padding:20px;width:100%}img{max-width:100%}</style>'
+      const style = document.createElement('style')
+      style.textContent = `
+        body {
+          margin: 0 !important;
+          padding: 0 !important;
+          background: white !important;
+          font-family: system-ui, -apple-system, sans-serif;
+        }
+        #content {
+          margin: 0 auto;
+          padding: 20px;
+          box-sizing: border-box;
+          width: 100%;
+        }
+        .mw-parser-output {
+          max-width: 960px;
+          margin: 0 auto;
+          line-height: 1.6;
+        }
+        img { max-width: 100%; height: auto; }
+        table {
+          margin: 1em auto;
+          border-collapse: collapse;
+          max-width: 100%;
+        }
+        td, th { padding: 0.5em; border: 1px solid #ccc; }
+        pre {
+          padding: 1em;
+          background: #f5f5f5;
+          border-radius: 4px;
+          overflow-x: auto;
+        }
+      `
+      document.head.appendChild(style)
     })
 
     // 获取截图区域
@@ -137,7 +170,7 @@ export async function capturePageScreenshot(
       isMobile: false
     })
 
-    await new Promise(resolve => setTimeout(resolve, 100))
+    await new Promise(resolve => setTimeout(resolve, 50))
 
     const screenshot = await page.screenshot({
       type: 'jpeg',
