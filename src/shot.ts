@@ -93,7 +93,7 @@ async function capturePageScreenshot(params: {
 
     } else {
       const pageType = url.includes('/item/') ? 'item' : 'other'
-      const mainSelector = pageType === 'item' ? '.item-row' : '.col-lg-12.right'
+      const mainSelector = pageType === 'item' ? '.item-text' : '.col-lg-12.right'
 
       await page.waitForSelector(mainSelector, { timeout: 10000, visible: true })
 
@@ -110,15 +110,12 @@ async function capturePageScreenshot(params: {
           .item-table-tips
         `).forEach(el => el.remove())
 
-        if(document.querySelector('.item-row')) {
-          // 调整物品页面样式
-          document.querySelector('.col-lg-12.right').setAttribute('style', 'float:none !important; width:100% !important;')
-          document.querySelector('.item-row').setAttribute('style', 'margin:0 !重要; padding:20px !important; width:auto !important; background:white !important;')
-          document.querySelector('.maintext').setAttribute('style', 'margin:0 !important; padding:0 !important; float:none !important; width:100% !important;')
+        if(document.querySelector('.item-text')) {
+          // 调整物品页面布局
+          document.querySelector('.item-text').setAttribute('style', 'margin:0 !important; padding:20px !important; width:100% !important; background:white !important;')
+          document.querySelector('.itemname').setAttribute('style', 'margin-bottom:20px !important;')
+          document.querySelector('.item-content').setAttribute('style', 'margin:0 !important;')
         }
-        // 移除右侧空白
-        document.querySelector('.col-lg-12.right')?.setAttribute('style', 'width:100% !important; margin:0 !important; float:none !important;')
-        document.querySelector('.center')?.setAttribute('style', 'padding:20px !important;')
       })
 
     }
@@ -163,7 +160,7 @@ async function capturePageScreenshot(params: {
 
     // 获取截图区域
     const clipData = await page.evaluate((isWiki) => {
-      const selector = isWiki ? '#content' : '.maintext, .col-lg-12.center'
+      const selector = isWiki ? '#content' : '.item-text, .col-lg-12.center'
       const element = document.querySelector(selector)
       if (!element) return null
 
@@ -205,38 +202,14 @@ async function capturePageScreenshot(params: {
   }
 }
 
-export async function handleModScreenshot(
+export async function capture(
   url: string,
   config: MinecraftToolsConfig,
-  ctx: any
-) {
-  if (!config.wiki.imageEnabled) {
-    throw new Error('图片功能已禁用')
+  ctx: any,
+  options: {
+    type: 'wiki' | 'mcmod'
+    lang?: LangCode
   }
-
-  const context = await ctx.puppeteer.browser.createBrowserContext()
-  const page = await context.newPage()
-  try {
-    const imageResult = await capturePageScreenshot({
-      page,
-      url,
-      config,
-      type: 'mcmod'
-    })
-    return {
-      url,
-      image: h.image(imageResult.image, 'image/jpeg')
-    }
-  } finally {
-    await context.close()
-  }
-}
-
-export async function handleWikiScreenshot(
-  url: string,
-  lang: LangCode,
-  config: MinecraftToolsConfig,
-  ctx: any
 ) {
   if (!config.wiki.imageEnabled) {
     throw new Error('图片功能已禁用')
@@ -249,8 +222,7 @@ export async function handleWikiScreenshot(
       page,
       url,
       config,
-      type: 'wiki',
-      lang
+      ...options
     })
     return {
       url,

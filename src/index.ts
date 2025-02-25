@@ -11,7 +11,6 @@ import {
 } from './utils'
 import { processMCMODContent, formatContentSections } from './modwiki'
 import { processWikiRequest } from './mcwiki'
-import { handleModScreenshot } from './shot'
 import { searchMCMOD, handleSearch } from './search'
 
 /**
@@ -153,16 +152,19 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
       if (!keyword) return '请输入要查询的关键词'
 
       try {
-        const { handleWikiScreenshot } = require('./shot')
+        const { capture } = require('./shot')
         const wikiResult = await processWikiRequest(keyword, session.userId, pluginConfig, userLanguageSettings, 'image') as any
         if (typeof wikiResult === 'string') return wikiResult
 
         await session.send(`正在获取页面...\n完整内容：${wikiResult.url}`)
-        const result = await handleWikiScreenshot(
+        const result = await capture(
           wikiResult.pageUrl,
-          userLanguageSettings.get(session.userId) || pluginConfig.wiki.defaultLanguage,
           pluginConfig,
-          ctx
+          ctx,
+          {
+            type: 'wiki',
+            lang: userLanguageSettings.get(session.userId) || pluginConfig.wiki.defaultLanguage
+          }
         )
         return result.image
       } catch (error) {
@@ -175,12 +177,18 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
       if (!keyword) return '请输入要查询的关键词'
 
       try {
+        const { capture } = require('./shot')
         const results = await searchMCMOD(keyword, pluginConfig)
         if (!results.length) throw new Error('未找到相关内容')
         const targetUrl = results[0].url
 
         await session.send(`正在获取页面...\n完整内容：${targetUrl}`)
-        const result = await handleModScreenshot(targetUrl, pluginConfig, ctx)
+        const result = await capture(
+          targetUrl,
+          pluginConfig,
+          ctx,
+          { type: 'mcmod' }
+        )
         return result.image
       } catch (error) {
         return error.message
