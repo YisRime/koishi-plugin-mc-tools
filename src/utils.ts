@@ -66,7 +66,8 @@ export const CLEANUP_SELECTORS = [
   'header', 'footer', '.header-container', '.common-background',
   '.common-nav', '.common-menu-page', '.common-comment-block',
   '.comment-ad', '.ad-leftside', '.slidetips', '.item-table-tips',
-  '.common-icon-text-frame', '.common-ad-frame', '.ad-class-page'
+  '.common-icon-text-frame', '.common-ad-frame', '.ad-class-page',
+  '.class-rating-submit', '.common-icon-text.edit-history'
 ]
 
 export const TypeMap = {

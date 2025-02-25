@@ -67,8 +67,6 @@ function processElement($: cheerio.CheerioAPI, $elem: cheerio.Cheerio<any>): str
   // 跳过脚本和弹出相关内容
   if ($elem.find('script').length ||
       $elem.is('script') ||
-      $elem.attr('onclick')?.includes('webuiPopover') ||
-      $elem.text().includes('webuiPopover') ||
       $elem.text().includes('前往链接') ||
       $elem.text().includes('不要再提示我')) {
     return null;
@@ -83,9 +81,27 @@ function processElement($: cheerio.CheerioAPI, $elem: cheerio.Cheerio<any>): str
 
   // 处理文本之前先处理链接
   const cleanedElem = $elem.clone();
-  cleanedElem.find('script, [onclick*="webuiPopover"]').remove();
+  cleanedElem.find('script').remove();
 
-  // 处理链接
+  // 处理站外弹出链接
+  cleanedElem.find('[id^="link_"]').each((_, elem) => {
+    const $link = $(elem);
+    const id = $link.attr('id');
+    if (!id) return;
+
+    // 查找包含这个链接ID的script标签
+    const scriptContent = $(`script:contains(${id})`).text();
+    // 提取URL - 修改正则表达式以更准确地匹配URL格式
+    const urlMatch = scriptContent.match(/content:"[^"]*?<strong>([^<]+)/);
+    if (urlMatch && urlMatch[1]) {
+      const url = urlMatch[1];
+      $link.text(`${$link.text()} (${url})`);
+      $link.removeAttr('onclick');
+      $link.attr('href', url);
+    }
+  });
+
+  // 处理普通链接
   cleanedElem.find('a').each((_, link) => {
     const $link = $(link);
     const href = $link.attr('href');
@@ -94,6 +110,10 @@ function processElement($: cheerio.CheerioAPI, $elem: cheerio.Cheerio<any>): str
     if (href && text) {
       // 如果是站内链接，保持原样
       if (href.startsWith('//www.mcmod.cn') || href.startsWith('/')) {
+        return;
+      }
+      // 如果已经处理过的站外弹出链接，跳过
+      if ($link.attr('id')?.startsWith('link_')) {
         return;
       }
       // 将链接文本替换为 "文本 (链接)"
@@ -106,7 +126,6 @@ function processElement($: cheerio.CheerioAPI, $elem: cheerio.Cheerio<any>): str
   const text = cleanText(cleanedElem.text());
 
   return text &&
-         !text.includes('webuiPopover') &&
          !text.includes('前往链接') &&
          !text.includes('不要再提示我') ? text : null;
 }

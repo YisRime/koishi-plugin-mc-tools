@@ -38,7 +38,16 @@ export async function capturePageScreenshot(
 
     page.on('request', request => {
       const resourceType = request.resourceType()
-      if (['media', 'font', 'manifest', 'script'].includes(resourceType)) {
+      const url = request.url().toLowerCase()
+
+      // 需要允许的资源类型
+      const allowedTypes = ['stylesheet', 'image', 'fetch', 'xhr']
+
+      // 需要拦截的特定资源
+      if (['media', 'font', 'manifest', 'script'].includes(resourceType) &&
+          !url.includes('.svg') &&
+          !url.includes('canvas') &&
+          !allowedTypes.includes(resourceType)) {
         request.abort()
       } else {
         request.continue()
