@@ -1,33 +1,22 @@
 import { h } from 'koishi'
 import { MinecraftToolsConfig, LangCode } from './utils'
 
-// 通用截图清理选择器
+// 通用清理选择器
 const CLEANUP_SELECTORS = [
-  '.mw-editsection',  // 编辑节按钮
-  '#mw-navigation',   // 导航
-  '#footer',          // 页脚
-  '.noprint',         // 不可打印内容
-  '#toc',            // 目录
-  '.navbox',         // 导航框
-  '#siteNotice',     // 站点通知
-  '#contentSub',     // 子标题
-  '.mw-indicators', // 指示器
-  '.sister-wiki',    // 姊妹维基链接
-  '.external',      // 外部链接
-  'script',         // 脚本
-  'meta',           // 元数据
-  '#mw-head',       // 页面头部
-  '#mw-head-base',  // 头部基础
-  '#mw-page-base',  // 页面基础
-  '#catlinks',      // 分类链接
-  '.printfooter',   // 打印页脚
-  '.mw-jump-link',  // 跳转链接
-  '.vector-toc',    // 矢量目录
-  '.vector-menu',   // 矢量菜单
-  '.mw-cite-backlink', // 引用回链
-  '.reference',     // 引用
-  '.treeview',      // 树状视图
-  '.file-display-header' // 文件显示头部
+  // Wiki 相关
+  '.mw-editsection', '#mw-navigation', '#footer', '.noprint', '#toc',
+  '.navbox', '#siteNotice', '#contentSub', '.mw-indicators',
+  '.sister-wiki', '.external', 'script', 'meta', '#mw-head',
+  '#mw-head-base', '#mw-page-base', '#catlinks', '.printfooter',
+  '.mw-jump-link', '.vector-toc', '.vector-menu',
+  '.mw-cite-backlink', '.reference', '.treeview',
+  '.file-display-header',
+
+  // MCMOD 相关
+  'header', 'footer', '.header-container', '.common-background',
+  '.common-nav', '.common-menu-page', '.common-comment-block',
+  '.comment-ad', '.ad-leftside', '.slidetips', '.item-table-tips',
+  '.common-icon-text-frame', '.common-ad-frame', '.ad-class-page'
 ]
 
 export async function capturePageScreenshot(
@@ -84,28 +73,16 @@ export async function capturePageScreenshot(
         document.body.innerHTML = ''
         document.body.appendChild(newBody)
       })
-
-      // 清理Wiki特定元素
-      await page.evaluate((selectors) => {
-        selectors.forEach(selector => {
-          document.querySelectorAll(selector).forEach(el => el.remove())
-        })
-      }, CLEANUP_SELECTORS)
-
     } else {
       await page.waitForSelector('.maintext, .col-lg-12.center', { timeout: 10000, visible: true })
-
-      // 处理MCMOD页面内容
-      await page.evaluate(() => {
-        document.querySelectorAll(`
-          header, footer, .header-container, .common-background,
-          .common-nav, .common-menu-page, .common-comment-block,
-          .comment-ad, .ad-leftside, .slidetips, .item-table-tips,
-          .common-icon-text-frame, script, .common-ad-frame,
-          .ad-class-page
-        `).forEach(el => el.remove())
-      })
     }
+
+    // 统一使用清理选择器
+    await page.evaluate((selectors) => {
+      selectors.forEach(selector => {
+        document.querySelectorAll(selector).forEach(el => el.remove())
+      })
+    }, CLEANUP_SELECTORS)
 
     // 注入通用样式
     await page.evaluate(() => {
