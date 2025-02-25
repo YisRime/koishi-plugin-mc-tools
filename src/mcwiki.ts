@@ -1,7 +1,7 @@
 import * as cheerio from 'cheerio'
 import axios from 'axios'
 import { MinecraftToolsConfig, LangCode } from './utils'
-import { searchWikiArticles } from './subcommand'
+import { searchWikiArticles } from './search'
 
 /**
  * 构建 Wiki URL

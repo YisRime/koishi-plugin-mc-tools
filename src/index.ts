@@ -11,7 +11,8 @@ import {
 } from './utils'
 import { processMCMODContent, formatContentSections } from './modwiki'
 import { processWikiRequest } from './mcwiki'
-import { searchMCMOD, handleSearch, capturePageScreenshot } from './subcommand'
+import { searchMCMOD, handleSearch } from './search'
+import { capturePageScreenshot } from './shot'
 
 /**
  * Minecraft 工具箱插件
