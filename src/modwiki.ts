@@ -78,9 +78,8 @@ function parseLink($: cheerio.CheerioAPI, $elem: cheerio.Cheerio<any>): string |
 function parseText($: cheerio.CheerioAPI, $elem: cheerio.Cheerio<any>): string | null {
   const cleanText = (text: string): string => {
     const clearedText = text
-      .replace(/[\u0000-\u001F\u007F-\u009F\u200B-\u200D\uFEFF]/g, '')
+      .replace(/[\u0000-\u001F\u007F-\u009F\u200B-\u200D\uFEFF]|\[(\w+)\]|本帖最后由.+编辑|复制代码/g, '')
       .replace(/\s+/g, ' ')
-      .replace(/\[(\w+)\]/g, '')
       .trim()
 
     // 判断是否为标题
@@ -101,7 +100,7 @@ function parseText($: cheerio.CheerioAPI, $elem: cheerio.Cheerio<any>): string |
   }
 
   const cleanedElem = $elem.clone()
-  cleanedElem.find('script').remove()
+  cleanedElem.find('script, i.pstatus, .fastcopy').remove()
 
   // 处理链接
   cleanedElem.find('a').each((_, link) => {
@@ -145,11 +144,11 @@ function parseText($: cheerio.CheerioAPI, $elem: cheerio.Cheerio<any>): string |
 /**
  * 解析页面内容
  * @param {cheerio.CheerioAPI} $ Cheerio实例
- * @param {'mod'|'modpack'|'post'|'item'} pageType 页面类型
+ * @param {'mod'|'modpack'|'post'|'item'|'bbs'} pageType 页面类型
  * @param {number} maxLength 最大内容长度
  * @returns {ProcessResult} 处理结果
  */
-function parseContent($: cheerio.CheerioAPI, pageType: 'mod' | 'modpack' | 'post' | 'item', maxLength: number): ProcessResult {
+function parseContent($: cheerio.CheerioAPI, pageType: 'mod' | 'modpack' | 'post' | 'item' | 'bbs', maxLength: number): ProcessResult {
   const sections: string[] = []
   const relatedLinks: string[] = []
   let totalLength = 0
@@ -159,6 +158,9 @@ function parseContent($: cheerio.CheerioAPI, pageType: 'mod' | 'modpack' | 'post
     parseItemHeader($, sections)
   } else if (['mod', 'modpack'].includes(pageType)) {
     sections.push(...parseBasicInfo($))
+  } else if (pageType === 'bbs') {
+    const title = $('#thread_subject').first().text().trim()
+    if (title) sections.push(title)
   }
 
   // 解析主要内容区域
@@ -166,10 +168,11 @@ function parseContent($: cheerio.CheerioAPI, pageType: 'mod' | 'modpack' | 'post
     mod: '.common-text',
     modpack: '.common-text',
     post: 'div.text',
-    item: '.item-content.common-text'
+    item: '.item-content.common-text',
+    bbs: '[id^="postmessage_"]'
   }[pageType]
 
-  const $content = $(contentSelector)
+  const $content = $(contentSelector).first()
   // 顺序处理每个元素
   $content.children().each((_, element) => {
     const $elem = $(element)
@@ -448,6 +451,7 @@ export async function fetchModContent(url: string, config: ModwikiConfig): Promi
     const pageType = url.includes('/modpack/') ? 'modpack'
                    : url.includes('/post/') ? 'post'
                    : url.includes('/item/') ? 'item'
+                   : url.includes('bbs.mcmod.cn') ? 'bbs'
                    : 'mod';
     const content = parseContent($, pageType, config.totalPreviewLength);
     const sections = content.sections;
