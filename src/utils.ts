@@ -2,6 +2,12 @@ import { Context, h } from 'koishi'
 import axios from 'axios'
 import * as mc from 'minecraft-protocol'
 
+declare global {
+  interface Window {
+    skinview3d: any
+  }
+}
+
 export type LangCode = keyof typeof MINECRAFT_LANGUAGES
 
 export interface MinecraftVersionInfo {
@@ -603,11 +609,11 @@ export async function renderPlayerSkin(ctx: Context, skinUrl: string, capeUrl?: 
   await page.waitForFunction(() => typeof window['skinview3d'] !== 'undefined')
 
   // 注入并执行渲染逻辑
-  await page.evaluate(({ skinUrl, capeUrl }) => {
+  await page.evaluate((params) => {
     return new Promise((resolve, reject) => {
       try {
-        const createView = (id: string, rotationAngle: number) => {
-          const viewer = new window['skinview3d'].SkinViewer({
+        const createView = (id, rotationAngle) => {
+          const viewer = new window.skinview3d.SkinViewer({
             canvas: document.getElementById(id),
             width: 200,
             height: 400,
@@ -626,13 +632,13 @@ export async function renderPlayerSkin(ctx: Context, skinUrl: string, capeUrl?: 
         const view2 = createView('view2', Math.PI * 4 / 5);
 
         Promise.all([
-          view1.loadSkin(skinUrl),
-          view2.loadSkin(skinUrl)
+          view1.loadSkin(params.skinUrl),
+          view2.loadSkin(params.skinUrl)
         ]).then(() => {
-          if (capeUrl) {
+          if (params.capeUrl) {
             return Promise.all([
-              view1.loadCape(capeUrl),
-              view2.loadCape(capeUrl)
+              view1.loadCape(params.capeUrl),
+              view2.loadCape(params.capeUrl)
             ]);
           }
         }).then(() => {
