@@ -1,4 +1,4 @@
-import { h } from 'koishi'
+import { Context, h } from 'koishi'
 import axios from 'axios'
 import * as mc from 'minecraft-protocol'
 
@@ -46,6 +46,33 @@ export interface MinecraftToolsConfig {
     interval: number
     notifyOnSnapshot: boolean
     notifyOnRelease: boolean
+  }
+}
+
+interface TexturesData {
+  textures: {
+    SKIN?: {
+      url: string
+      metadata?: {
+        model: 'slim' | 'classic'
+      }
+    }
+    CAPE?: {
+      url: string
+    }
+  }
+}
+
+interface PlayerProfile {
+  name: string
+  uuid: string
+  uuidDashed: string
+  skin?: {
+    url: string
+    model: 'slim' | 'classic'
+  }
+  cape?: {
+    url: string
   }
 }
 
@@ -116,22 +143,6 @@ export const MINECRAFT_LANGUAGES = {
   'pl': 'Polski',
   'nl': 'Nederlands',
   'tr': 'Türkçe'
-} as const
-
-const MINECRAFT_PROTOCOL_VERSIONS = {
-  764: '1.20.1',
-  762: '1.19.4',
-  756: '1.18.2',
-  753: '1.17.1',
-  752: '1.16.5',
-  736: '1.15.2',
-  498: '1.14.4',
-  404: '1.13.2',
-  340: '1.12.2',
-  316: '1.11.2',
-  210: '1.10.2',
-  110: '1.9.4',
-  47: '1.8.9'
 } as const
 
 /**
@@ -245,52 +256,6 @@ function parseServer(serverAddress: string | undefined, defaultConfig: Minecraft
 }
 
 /**
- * 根据协议版本号获取对应的 Minecraft 版本
- * @param {number} protocol - 协议版本号
- * @returns {string} Minecraft 版本字符串
- */
-function getVersionFromProtocol(protocol: number): string {
-  if (protocol in MINECRAFT_PROTOCOL_VERSIONS) {
-    return MINECRAFT_PROTOCOL_VERSIONS[protocol]
-  }
-
-  const protocols = Object.keys(MINECRAFT_PROTOCOL_VERSIONS).map(Number).sort((a, b) => b - a)
-  for (let i = 0; i < protocols.length - 1; i++) {
-    const current = protocols[i]
-    const next = protocols[i + 1]
-
-    if (protocol > current) {
-      return `~${MINECRAFT_PROTOCOL_VERSIONS[current]}+`
-    }
-    if (protocol > next && protocol < current) {
-      return `~${MINECRAFT_PROTOCOL_VERSIONS[next]}-${MINECRAFT_PROTOCOL_VERSIONS[current]}`
-    }
-  }
-
-  return protocol < 47 ? '~1.8.9' : `未知版本(协议:${protocol})`
-}
-
-/**
- * 解析服务器 MOTD 信息
- * @param {any} motdObject - MOTD 对象或字符串
- * @returns {string} 解析后的 MOTD 文本
- */
-function parseServerMotd(motdObject: any): string {
-  if (!motdObject) return ''
-  if (typeof motdObject === 'string') return motdObject
-  if (typeof motdObject !== 'object') return ''
-
-  if ('text' in motdObject) return motdObject.text
-  if ('extra' in motdObject && Array.isArray(motdObject.extra)) {
-    return motdObject.extra.map(parseServerMotd).join('')
-  }
-  if (Array.isArray(motdObject)) {
-    return motdObject.map(parseServerMotd).join('')
-  }
-  return ''
-}
-
-/**
  * 格式化错误消息
  * @param {any} error - 错误对象
  * @returns {string} 格式化后的错误消息
@@ -335,7 +300,23 @@ export async function checkServerStatus(server: string | undefined, config: Mine
   // 处理服务器描述
   const description = 'description' in client ? client.description : client
   if (description) {
-    const motd = parseServerMotd(description).replace(/§[0-9a-fk-or]/g, '')
+    const parseMOTD = (motd: any): string => {
+      if (!motd) return ''
+      if (typeof motd === 'string') return motd.replace(/§[0-9a-fk-or]/gi, '')
+      if (typeof motd !== 'object') return String(motd)
+
+      let result = ''
+      if ('text' in motd) result += motd.text
+      if ('extra' in motd && Array.isArray(motd.extra)) {
+        result += motd.extra.map(parseMOTD).join('')
+      }
+      if (Array.isArray(motd)) {
+        result += motd.map(parseMOTD).join('')
+      }
+      return result.replace(/§[0-9a-fk-or]/gi, '')
+    }
+
+    const motd = parseMOTD(description)
     if (motd) lines.push(motd)
   }
 
@@ -348,9 +329,7 @@ export async function checkServerStatus(server: string | undefined, config: Mine
   } : null
 
   const versionStr = !version ? '未知版本' : (
-    typeof version === 'object'
-      ? `${version.name}(${getVersionFromProtocol(version.protocol)})`
-      : String(version)
+    typeof version === 'object' ? version.name : String(version)
   )
 
   // 状态行
@@ -376,4 +355,158 @@ export async function checkServerStatus(server: string | undefined, config: Mine
 
   const data = lines.join('\n')
   return server ? data : `${displayAddr}\n${data}`
+}
+
+/**
+ * 获取完整的玩家信息
+ * @param {string} username - 玩家用户名
+ * @returns {Promise<PlayerProfile>} 完整的玩家信息
+ * @throws {Error} 当无法获取玩家信息时抛出错误
+ */
+export async function getPlayerProfile(username: string): Promise<PlayerProfile> {
+  try {
+    // 1. 获取基础信息
+    const { data: basicData } = await axios.get(`https://api.mojang.com/users/profiles/minecraft/${username}`);
+    if (!basicData) throw new Error('玩家不存在');
+
+    // 2. 获取档案数据
+    const { data: profileData } = await axios.get(`https://sessionserver.mojang.com/session/minecraft/profile/${basicData.id}`);
+
+    // 3. 解析材质信息
+    let texturesData: TexturesData | null = null;
+    if (profileData.properties?.[0]?.value) {
+      texturesData = JSON.parse(Buffer.from(profileData.properties[0].value, 'base64').toString());
+    }
+
+    // 4. 格式化UUID
+    const uuidDashed = [
+      basicData.id.slice(0, 8),
+      basicData.id.slice(8, 12),
+      basicData.id.slice(12, 16),
+      basicData.id.slice(16, 20),
+      basicData.id.slice(20)
+    ].join('-');
+
+    // 5. 构建玩家档案
+    const profile: PlayerProfile = {
+      name: basicData.name,
+      uuid: basicData.id,
+      uuidDashed
+    };
+
+    // 6. 添加皮肤和披风信息
+    if (texturesData?.textures) {
+      if (texturesData.textures.SKIN) {
+        profile.skin = {
+          url: texturesData.textures.SKIN.url,
+          model: texturesData.textures.SKIN.metadata?.model || 'classic'
+        };
+      }
+
+      if (texturesData.textures.CAPE) {
+        profile.cape = {
+          url: texturesData.textures.CAPE.url
+        };
+      }
+    }
+
+    return profile;
+
+  } catch (error) {
+    if (error.response?.status === 404) {
+      throw new Error('找不到该玩家');
+    }
+    if (error.response?.status === 400) {
+      throw new Error('无效的UUID格式');
+    }
+    if (error.response?.status === 204) {
+      throw new Error('该UUID未关联任何玩家');
+    }
+    if (error.response?.status === 429) {
+      throw new Error('请求过于频繁');
+    }
+    throw new Error(`无法获取玩家信息: ${error.response?.data?.error || error.message}`);
+  }
+}
+
+/**
+ * 渲染玩家皮肤和披风，生成两个不同角度的视图
+ * @param {Context} ctx - Koishi 上下文对象，用于获取 Puppeteer 实例
+ * @param {string} skinUrl - 玩家皮肤的 URL 地址
+ * @param {string} [capeUrl] - 玩家披风的 URL 地址（可选）
+ * @returns {Promise<string>} 返回渲染后的图片 Base64 编码字符串
+ */
+export async function renderPlayerSkin(ctx: Context, skinUrl: string, capeUrl?: string): Promise<string> {
+  const page = await ctx.puppeteer.page()
+  await page.setViewport({ width: 400, height: 400 })
+
+  const html = `
+    <html>
+      <head>
+        <script src="https://unpkg.com/skinview3d@3.1.0/bundles/skinview3d.bundle.js"></script>
+        <style>
+          body { margin: 0; background: transparent; display: flex; justify-content: center; align-items: center; }
+          .container { display: flex; width: 400px; height: 400px; }
+          .view { width: 200px; height: 400px; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <canvas id="view1" class="view"></canvas>
+          <canvas id="view2" class="view"></canvas>
+        </div>
+        <script>
+          const createView = (id, rotationAngle) => {
+            const viewer = new skinview3d.SkinViewer({
+              canvas: document.getElementById(id),
+              width: 200,
+              height: 400,
+              preserveDrawingBuffer: true,
+              fov: 30,
+              zoom: 0.95
+            });
+
+            viewer.renderer.setClearColor(0x000000, 0);  // 设置透明背景
+            viewer.playerObject.rotation.y = rotationAngle;
+            viewer.animation = null;  // 完全禁用动画
+
+            return viewer;
+          };
+
+          (async () => {
+            // 创建左右两个视图，分别旋转 -36° 和 144° (-36° + 180°)
+            const view1 = createView('view1', -Math.PI / 5);
+            const view2 = createView('view2', Math.PI * 4 / 5);
+            // 为每个视图加载皮肤和披风（如果有）
+            for (const view of [view1, view2]) {
+              await view.loadSkin("${skinUrl}");
+              ${capeUrl ? `await view.loadCape("${capeUrl}");` : ''}
+              view.render();
+            }
+          })();
+        </script>
+      </body>
+    </html>
+  `
+
+  await page.setContent(html)
+  await page.waitForFunction(() => {
+    const v1 = document.getElementById('view1')
+    const v2 = document.getElementById('view2')
+    return v1 && v2 &&
+           (v1 as HTMLCanvasElement).toDataURL() !== 'data:,' &&
+           (v2 as HTMLCanvasElement).toDataURL() !== 'data:,'
+  }, { timeout: 5000 })
+
+  await new Promise(resolve => setTimeout(resolve, 100))
+
+  // 截取渲染结果
+  const element = await page.$('.container')
+  const screenshot = await element.screenshot({
+    encoding: 'base64',
+    omitBackground: true
+  }) as string
+
+  await page.close()
+  return screenshot
 }

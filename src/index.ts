@@ -1,4 +1,4 @@
-import { Context, Schema } from 'koishi'
+import { Context, Schema, h } from 'koishi'
 import {} from 'koishi-plugin-puppeteer'
 import {
   MinecraftToolsConfig,
@@ -12,6 +12,7 @@ import {
 import { fetchModContent, formatContent } from './modwiki'
 import { processWikiRequest } from './mcwiki'
 import { searchMod, search, capture } from './subwiki'
+import { getPlayerProfile, renderPlayerSkin } from './utils'
 
 /**
  * Minecraft 工具箱插件
@@ -211,6 +212,33 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
         return await checkServerStatus(server, pluginConfig)
       } catch (error) {
         return formatErrorMessage(error)
+      }
+    })
+
+  ctx.command('mcskin <username>', '查询 Minecraft 玩家信息')
+    .usage('mcskin <用户名> - 获取玩家信息和3D皮肤预览')
+    .example('mcskin Notch - 获取 Notch 的信息')
+    .action(async ({ }, username) => {
+      if (!username) return '请输入要查询的用户名';
+
+      try {
+        const profile = await getPlayerProfile(username);
+        const parts = [
+          `${profile.name}[${profile.uuidDashed}]${profile.skin ? ` (${profile.skin.model === 'slim' ? '纤细' : '经典'})` : ''}`
+        ];
+
+        if (profile.skin) {
+          const skinImage = await renderPlayerSkin(ctx, profile.skin.url, profile.cape?.url);
+          parts.push(h.image(`data:image/png;base64,${skinImage}`).toString());
+          parts.push(`获取 ${profile.name} 的头:`);
+          parts.push(`(≤1.12)/give @p minecraft:skull 1 3 {SkullOwner:"${profile.name}"}`);
+          parts.push(`(≥1.13)/give @p minecraft:player_head{SkullOwner:"${profile.name}"}`);
+        } else {
+          parts.push('未设置皮肤');
+        }
+        return parts.join('\n');
+      } catch (error) {
+        return error.message;
       }
     })
 }

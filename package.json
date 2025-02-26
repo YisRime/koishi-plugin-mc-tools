@@ -1,6 +1,6 @@
 {
   "name": "koishi-plugin-mc-tools",
-  "description": "我的世界工具箱（Minecraft-MC-Tools）支持查阅百科，查询服务器，查询 MC 版本",
+  "description": "我的世界工具箱（Minecraft-MC-Tools）支持查阅百科，查询服务器，查询 MC 最新版本和玩家皮肤等功能",
   "version": "1.4.5",
   "contributors": [
     "Yis_Rime <yis_rime@outlook.com>"
@@ -27,12 +27,14 @@
     "tools",
     "mcmodcn",
     "wiki",
+    "skin",
     "server",
     "mcping",
     "info",
     "mcver",
     "mcinfo",
     "mcwiki",
+    "mcskin",
     "modwiki",
     "PCL",
     "我的世界",

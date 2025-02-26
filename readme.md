@@ -2,7 +2,7 @@
 
 [![npm](https://img.shields.io/npm/v/koishi-plugin-mc-tools?style=flat-square)](https://www.npmjs.com/package/koishi-plugin-mc-tools)
 
-基于 Koishi 框架的 Minecraft 工具箱，提供多功能查询和信息服务。
+基于 Koishi 的 Minecraft 工具箱，支持查阅百科，查询服务器，查询 MC 最新版本和玩家皮肤等功能
 
 ## 功能特性
 
