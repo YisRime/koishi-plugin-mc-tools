@@ -10,6 +10,19 @@ export interface MinecraftVersionInfo {
   releaseTime: string
 }
 
+interface ParsedServer {
+  host: string
+  port: number
+}
+interface BedrockServerInfo {
+  edition: string
+  motd: string
+  protocol: string
+  version: string
+  online: number
+  max: number
+}
+
 export interface SearchResult {
   title: string
   url: string
@@ -235,10 +248,10 @@ export async function checkUpdate(versions: { snapshot: string, release: string 
  * 解析 Minecraft 服务器地址和端口
  * @param {string | undefined} serverAddress - 服务器地址字符串
  * @param {MinecraftToolsConfig['server']} defaultConfig - 默认服务器配置
- * @returns {{host: string, port: number}} 解析后的服务器信息
+ * @returns {ParsedServer} 解析后的服务器信息
  * @throws {Error} 当地址格式无效时抛出错误
  */
-function parseServer(serverAddress: string | undefined, defaultConfig: MinecraftToolsConfig['server']) {
+function parseServer(serverAddress: string | undefined, defaultConfig: MinecraftToolsConfig['server']): ParsedServer {
   const address = serverAddress || defaultConfig.address
   const [host, portStr] = address.split(':')
   if (!host) throw new Error('请输入有效的服务器地址')
@@ -273,88 +286,199 @@ export function formatErrorMessage(error: any): string {
     }
   }
 
-  return `无法连接到服务器: ${errorMessage}`
+  return `无法连接到服务器：${errorMessage}`
 }
 
 /**
- * 检查服务器状态
- * @param {string | undefined} server - 服务器地址
- * @param {MinecraftToolsConfig} config - 插件配置
- * @returns {Promise<string>} 格式化的服务器状态信息
+ * 查询Java版服务器状态
  */
-export async function checkServerStatus(server: string | undefined, config: MinecraftToolsConfig) {
-  const { host, port } = parseServer(server, config.server)
-  const displayAddr = port === 25565 ? host : `${host}:${port}`
-
+async function queryJavaServer(host: string, port: number): Promise<{
+  motd: string
+  version: string
+  online: number
+  max: number
+  playerList?: string[]
+  favicon?: string
+  ping: number
+}> {
   const startTime = Date.now()
   const client = await mc.ping({ host, port })
-  const pingTime = Date.now() - startTime
+  const ping = Date.now() - startTime
 
-  const lines: string[] = []
+  const parseMOTD = (motd: any): string => {
+    if (!motd) return ''
+    if (typeof motd === 'string') return motd.replace(/§[0-9a-fk-or]/gi, '')
+    if (typeof motd !== 'object') return String(motd)
 
-  // 处理服务器图标
-  if (config.server.showIcon && 'favicon' in client && client.favicon?.startsWith('data:image/png;base64,')) {
-    lines.push(h.image(client.favicon).toString())
-  }
-
-  // 处理服务器描述
-  const description = 'description' in client ? client.description : client
-  if (description) {
-    const parseMOTD = (motd: any): string => {
-      if (!motd) return ''
-      if (typeof motd === 'string') return motd.replace(/§[0-9a-fk-or]/gi, '')
-      if (typeof motd !== 'object') return String(motd)
-
-      let result = ''
-      if ('text' in motd) result += motd.text
-      if ('extra' in motd && Array.isArray(motd.extra)) {
-        result += motd.extra.map(parseMOTD).join('')
-      }
-      if (Array.isArray(motd)) {
-        result += motd.map(parseMOTD).join('')
-      }
-      return result.replace(/§[0-9a-fk-or]/gi, '')
+    let result = ''
+    if ('text' in motd) result += motd.text
+    if ('extra' in motd && Array.isArray(motd.extra)) {
+      result += motd.extra.map(parseMOTD).join('')
     }
-
-    const motd = parseMOTD(description)
-    if (motd) lines.push(motd)
+    if (Array.isArray(motd)) {
+      result += motd.map(parseMOTD).join('')
+    }
+    return result.replace(/§[0-9a-fk-or]/gi, '')
   }
 
-  // 处理版本信息和玩家数据
-  const version = client?.version
+  const description = 'description' in client ? client.description : client
+  const motd = parseMOTD(description)
+  const version = !client?.version ? '未知版本' : (
+    typeof client.version === 'object' ? client.version.name : String(client.version)
+  )
+
   const players = 'players' in client ? {
     online: client.players?.online ?? 0,
     max: client.players?.max ?? 0,
     sample: client.players?.sample ?? []
-  } : null
+  } : { online: 0, max: 0, sample: [] }
 
-  const versionStr = !version ? '未知版本' : (
-    typeof version === 'object' ? version.name : String(version)
-  )
+  const playerList = players.sample
+    ?.filter(p => p && typeof p.name === 'string')
+    .map(p => p.name)
 
-  // 状态行
-  const statusParts = [versionStr]
-  if (players) statusParts.push(`${players.online}/${players.max}`)
-  statusParts.push(`${pingTime}ms`)
-  lines.push(statusParts.join(' | '))
+  return {
+    motd,
+    version,
+    online: players.online,
+    max: players.max,
+    playerList,
+    favicon: 'favicon' in client ? client.favicon : undefined,
+    ping
+  }
+}
 
-  // 在线玩家列表
-  if (config.server.showPlayers && players?.sample?.length > 0) {
-    const playerNames = players.sample
-      .filter(p => p && typeof p.name === 'string')
-      .map(p => p.name)
+/**
+ * 查询基岩版服务器状态
+ */
+async function queryBedrockServer(host: string, port: number): Promise<{
+  motd: string
+  version: string
+  online: number
+  max: number
+  ping: number
+}> {
+  const startTime = Date.now()
+  const result = await new Promise<BedrockServerInfo>((resolve, reject) => {
+    const dgram = require('dgram')
+    const client = dgram.createSocket('udp4')
 
-    if (playerNames.length > 0) {
-      const playerInfo = ['当前在线：' + playerNames.join(', ')]
-      if (playerNames.length < players.online) {
-        playerInfo.push(`（仅显示 ${playerNames.length}/${players.online} 名玩家）`)
+    const timeout = setTimeout(() => {
+      client.close()
+      const error = new Error('请求超时')
+      error['code'] = 'ETIMEDOUT'
+      reject(error)
+    }, 5000)
+
+    const query = Buffer.from([
+      0x01,
+      0x00,
+      ...Buffer.from([Math.floor(Date.now() / 1000)].map(n => [
+        (n >> 24) & 0xFF, (n >> 16) & 0xFF, (n >> 8) & 0xFF, n & 0xFF
+      ]).flat()),
+      0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00
+    ])
+
+    client.on('message', (msg) => {
+      clearTimeout(timeout)
+      client.close()
+
+      try {
+        const data = msg.toString('utf8', 35).split(';')
+        if (data.length < 6) {
+          const error = new Error('无效的服务器响应')
+          error['code'] = 'invalid server response'
+          throw error
+        }
+
+        resolve({
+          edition: data[0],
+          motd: data[1],
+          protocol: data[2],
+          version: data[3],
+          online: parseInt(data[4]),
+          max: parseInt(data[5])
+        })
+      } catch (error) {
+        reject(error)
+      }
+    })
+
+    client.on('error', (err: any) => {
+      clearTimeout(timeout)
+      client.close()
+      reject(err)
+    })
+
+    client.send(query, port, host)
+  })
+
+  return {
+    motd: result.motd,
+    version: `${result.version}`,
+    online: result.online,
+    max: result.max,
+    ping: Date.now() - startTime
+  }
+}
+
+/**
+ * 检查服务器状态
+ */
+export async function checkServerStatus(server: string | undefined, config: MinecraftToolsConfig) {
+  const { host, port } = parseServer(server, config.server)
+
+  const isDefaultJava = port === 25565
+  const isDefaultBedrock = port === 19132
+
+  try {
+    let result
+    if (isDefaultBedrock) {
+      result = await queryBedrockServer(host, port)
+    } else if (isDefaultJava) {
+      result = await queryJavaServer(host, port)
+    } else {
+      const results = await Promise.race([
+        queryJavaServer(host, port).catch(e => ({ error: e, type: 'java' })),
+        queryBedrockServer(host, port).catch(e => ({ error: e, type: 'bedrock' }))
+      ])
+
+      if ('error' in results) {
+        throw results.error
+      }
+      result = results
+    }
+
+    const lines: string[] = []
+
+    if (config.server.showIcon && 'favicon' in result && result.favicon?.startsWith('data:image/png;base64,')) {
+      lines.push(h.image(result.favicon).toString())
+    }
+
+    if (result.motd) lines.push(result.motd)
+
+    const statusParts = [
+      result.version,
+      `${result.online}/${result.max}`,
+      `${result.ping}ms`
+    ]
+    lines.push(statusParts.join(' | '))
+
+    if (config.server.showPlayers && result.playerList?.length > 0) {
+      const playerInfo = ['当前在线：' + result.playerList.join(', ')]
+      if (result.playerList.length < result.online) {
+        playerInfo.push(`（仅显示 ${result.playerList.length}/${result.online} 名玩家）`)
       }
       lines.push(playerInfo.join(''))
     }
-  }
 
-  const data = lines.join('\n')
-  return server ? data : `${displayAddr}\n${data}`
+    const data = lines.join('\n')
+    return server ? data : `${host}:${port}\n${data}`
+
+  } catch (error) {
+    throw new Error(formatErrorMessage(error))
+  }
 }
 
 /**
