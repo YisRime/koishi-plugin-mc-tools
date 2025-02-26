@@ -77,7 +77,7 @@ export async function fetchContent(articleUrl: string, languageCode: LangCode, c
     if (el.is('h2, h3, h4')) {
       if (currentSection.content.length) {
         const totalLength = currentSection.content.join(' ').length
-        if (totalLength >= config.wiki.minSectionLength) {
+        if (totalLength >= 12) {
           sections.push(currentSection)
         }
       }
@@ -100,7 +100,7 @@ export async function fetchContent(articleUrl: string, languageCode: LangCode, c
 
   if (currentSection.content.length) {
     const totalLength = currentSection.content.join(' ').length
-    if (totalLength >= config.wiki.minSectionLength) {
+    if (totalLength >= 12) {
       sections.push(currentSection)
     }
   }

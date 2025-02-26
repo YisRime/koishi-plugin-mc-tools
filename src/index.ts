@@ -28,9 +28,6 @@ export const Config: Schema<MinecraftToolsConfig> = Schema.object({
     defaultLanguage: Schema.union(Object.keys(MINECRAFT_LANGUAGES) as LangCode[])
       .default('zh')
       .description('Wiki 显示语言'),
-    minSectionLength: Schema.number()
-      .default(12)
-      .description('Wiki 段落最小字数'),
     sectionPreviewLength: Schema.number()
       .default(50)
       .description('Wiki 段落预览字数'),

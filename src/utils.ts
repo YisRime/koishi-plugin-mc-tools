@@ -27,7 +27,6 @@ export interface MinecraftToolsConfig {
   wiki: {
     defaultLanguage: LangCode
     searchTimeout: number
-    minSectionLength: number
     sectionPreviewLength: number
     totalPreviewLength: number
     searchDescLength: number
