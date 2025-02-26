@@ -140,6 +140,9 @@ export const TypeMap = {
   }
 } as const
 
+/**
+ * Minecraft 支持的语言代码及其显示名称
+ */
 export const MINECRAFT_LANGUAGES = {
   'zh': '中文（简体）',
   'zh-hk': '中文（繁體）',
@@ -202,9 +205,10 @@ export async function getVersionInfo() {
 
 /**
  * 向目标群组发送版本更新通知
- * @param {any} ctx - Koishi 上下文
+ * @param {Context} ctx - Koishi 上下文
  * @param {string[]} targetGroups - 目标群组ID列表
  * @param {string} updateMessage - 更新消息内容
+ * @private
  */
 async function notifyVersionUpdate(ctx: any, targetGroups: string[], updateMessage: string) {
   for (const gid of targetGroups) {
@@ -246,10 +250,11 @@ export async function checkUpdate(versions: { snapshot: string, release: string 
 
 /**
  * 解析 Minecraft 服务器地址和端口
- * @param {string | undefined} serverAddress - 服务器地址字符串
+ * @param {string | undefined} serverAddress - 服务器地址字符串，格式为 "host:port" 或 "host"
  * @param {MinecraftToolsConfig['server']} defaultConfig - 默认服务器配置
- * @returns {ParsedServer} 解析后的服务器信息
- * @throws {Error} 当地址格式无效时抛出错误
+ * @returns {ParsedServer} 解析后的服务器信息对象
+ * @throws {Error} 当地址格式无效或端口号不合法时抛出错误
+ * @private
  */
 function parseServer(serverAddress: string | undefined, defaultConfig: MinecraftToolsConfig['server']): ParsedServer {
   const address = serverAddress || defaultConfig.address
@@ -291,6 +296,10 @@ export function formatErrorMessage(error: any): string {
 
 /**
  * 查询Java版服务器状态
+ * @param {string} host - 服务器主机地址
+ * @param {number} port - 服务器端口
+ * @returns {Promise<Object>} 服务器状态信息
+ * @private
  */
 async function queryJavaServer(host: string, port: number): Promise<{
   motd: string
@@ -350,6 +359,10 @@ async function queryJavaServer(host: string, port: number): Promise<{
 
 /**
  * 查询基岩版服务器状态
+ * @param {string} host - 服务器主机地址
+ * @param {number} port - 服务器端口
+ * @returns {Promise<Object>} 服务器状态信息
+ * @private
  */
 async function queryBedrockServer(host: string, port: number): Promise<{
   motd: string
@@ -585,27 +598,42 @@ export async function renderPlayerSkin(ctx: Context, skinUrl: string, capeUrl?: 
               canvas: document.getElementById(id),
               width: 200,
               height: 400,
-              preserveDrawingBuffer: true,
               fov: 30,
               zoom: 0.95
             });
 
-            viewer.renderer.setClearColor(0x000000, 0);  // 设置透明背景
+            viewer.renderer.setClearAlpha(0);
             viewer.playerObject.rotation.y = rotationAngle;
-            viewer.animation = null;  // 完全禁用动画
+            viewer.animation = null;
 
             return viewer;
           };
 
+          window.renderComplete = false;
           (async () => {
-            // 创建左右两个视图，分别旋转 -36° 和 144° (-36° + 180°)
-            const view1 = createView('view1', -Math.PI / 5);
-            const view2 = createView('view2', Math.PI * 4 / 5);
-            // 为每个视图加载皮肤和披风（如果有）
-            for (const view of [view1, view2]) {
-              await view.loadSkin("${skinUrl}");
-              ${capeUrl ? `await view.loadCape("${capeUrl}");` : ''}
-              view.render();
+            try {
+              const view1 = createView('view1', -Math.PI / 5);
+              const view2 = createView('view2', Math.PI * 4 / 5);
+
+              await Promise.all([
+                view1.loadSkin("${skinUrl}"),
+                view2.loadSkin("${skinUrl}")
+              ]);
+
+              ${capeUrl ? `
+              await Promise.all([
+                view1.loadCape("${capeUrl}"),
+                view2.loadCape("${capeUrl}")
+              ]);
+              ` : ''}
+
+              // 确保渲染完成
+              view1.render();
+              view2.render();
+
+              window.renderComplete = true;
+            } catch (e) {
+              console.error(e);
             }
           })();
         </script>
@@ -614,15 +642,7 @@ export async function renderPlayerSkin(ctx: Context, skinUrl: string, capeUrl?: 
   `
 
   await page.setContent(html)
-  await page.waitForFunction(() => {
-    const v1 = document.getElementById('view1')
-    const v2 = document.getElementById('view2')
-    return v1 && v2 &&
-           (v1 as HTMLCanvasElement).toDataURL() !== 'data:,' &&
-           (v2 as HTMLCanvasElement).toDataURL() !== 'data:,'
-  }, { timeout: 5000 })
-
-  await new Promise(resolve => setTimeout(resolve, 100))
+  await page.waitForFunction('window.renderComplete')
 
   // 截取渲染结果
   const element = await page.$('.container')
