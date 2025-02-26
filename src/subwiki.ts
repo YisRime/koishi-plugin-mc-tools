@@ -104,7 +104,10 @@ export async function capture(
       if (type === 'wiki') {
         selector = '#content'
       } else {
-        if (url.includes('/item/')) {
+        // 判断页面类型
+        if (url.includes('bbs.mcmod.cn')) {
+          selector = '#postlist'
+        } else if (url.includes('/item/')) {
           selector = '.col-lg-12.right'
         } else {
           selector = '.col-lg-12.center'
