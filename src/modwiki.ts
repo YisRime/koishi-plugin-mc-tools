@@ -57,9 +57,12 @@ function parseLink($: cheerio.CheerioAPI, $elem: cheerio.Cheerio<any>): string |
         prevNode = prevNode.previousSibling
       }
       prefix = prefix.trim()
-      // 组合链接文本
-      const text = prefix ? `${prefix}: ${url}` : url
-      links.push(text)
+      // 判断链接文本是否为URL格式
+      const linkText = $link.text().trim()
+      const isUrl = linkText.match(/^https?:\/\//)
+      // 使用 Markdown 格式处理链接:
+      const formattedLink = isUrl ? url : `[${linkText}](${url})`
+      links.push(prefix ? `${prefix} ${formattedLink}` : formattedLink)
     }
   })
 
@@ -84,7 +87,7 @@ function parseText($: cheerio.CheerioAPI, $elem: cheerio.Cheerio<any>): string |
     const isTitle = (text: string): boolean => {
 
       // 检查长度
-      if (text.length > 30) return false
+      if (text.length > 12) return false
 
       // 检查HTML结构
       const $parent = $elem.parent()
@@ -100,26 +103,37 @@ function parseText($: cheerio.CheerioAPI, $elem: cheerio.Cheerio<any>): string |
   const cleanedElem = $elem.clone()
   cleanedElem.find('script').remove()
 
-  // 处理普通链接
+  // 处理链接
   cleanedElem.find('a').each((_, link) => {
     const $link = $(link)
     const href = $link.attr('href')
     const text = $link.text().trim()
 
     if (href && text) {
-      if (!href.startsWith('//www.mcmod.cn') && !href.startsWith('/') &&
-          !href.includes('javascript:') && !href.startsWith('#')) {
+      let processedHref = href
+      // 处理相对路径和协议相对路径
+      if (href.startsWith('//')) {
+        processedHref = `https:${href}`
+      } else if (href.startsWith('/')) {
+        processedHref = `https://www.mcmod.cn${href}`
+      }
+
+      // 忽略 javascript 和锚点链接
+      if (!href.includes('javascript:') && !href.startsWith('#')) {
         let prefix = ''
         let prevNode = link.previousSibling
         while (prevNode && prevNode.type === 'text') {
           prefix = prevNode.data.trim() + ' ' + prefix
+          // 删除前缀文本节点避免重复
+          prevNode.data = ''
           prevNode = prevNode.previousSibling
         }
         prefix = prefix.trim()
-
-        if (prefix) {
-          $link.text(`${prefix}: ${text}`)
-        }
+        // 判断链接文本是否为URL格式
+        const isUrl = text.match(/^https?:\/\//)
+        const markdownLink = isUrl ? processedHref : `[${text}](${processedHref})`
+        const linkText = prefix ? `${prefix} ${markdownLink}` : markdownLink
+        $link.replaceWith(linkText)
       }
     }
   })
@@ -405,10 +419,8 @@ export function formatContent(result: ProcessResult, url: string): string {
   ];
 
   return output
-    .filter(s => s && s.length > 0) // 过滤掉空字符串
+    .filter(s => s && s.length > 0)
     .join('\n')
-    .replace(/\n{3,}/g, '\n\n')
-    .replace(/:{2,}/g, ':')
     .trim() || `无法获取详细内容，请访问：${url}`;
 }
 
