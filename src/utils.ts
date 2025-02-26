@@ -65,9 +65,8 @@ export const CLEANUP_SELECTORS = [
   '.common-icon-text-frame', '.common-ad-frame', '.ad-class-page',
   '.class-rating-submit', '.common-icon-text.edit-history',
   // MCMOD 论坛相关
-  '.pls', '.ad', '.under', '#scrolltop', '.po', '#f_pst',
-  '#append_parent', '.wrap-posts.total', '.rate', '.ratl',
-  '.cm', '.sign', '.modact', '.psth',
+  '.ad', '.under', '#scrolltop', '.po', '#f_pst', '.psth', '.sign', '.sd',
+  '#append_parent', '.wrap-posts.total', '.rate', '.ratl','.cm', '.modact',
 ]
 
 export const TypeMap = {
