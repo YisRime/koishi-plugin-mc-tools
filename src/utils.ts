@@ -592,57 +592,63 @@ export async function renderPlayerSkin(ctx: Context, skinUrl: string, capeUrl?: 
           <canvas id="view1" class="view"></canvas>
           <canvas id="view2" class="view"></canvas>
         </div>
-        <script>
-          const createView = (id, rotationAngle) => {
-            const viewer = new skinview3d.SkinViewer({
-              canvas: document.getElementById(id),
-              width: 200,
-              height: 400,
-              fov: 30,
-              zoom: 0.95
-            });
-
-            viewer.renderer.setClearAlpha(0);
-            viewer.playerObject.rotation.y = rotationAngle;
-            viewer.animation = null;
-
-            return viewer;
-          };
-
-          window.renderComplete = false;
-          (async () => {
-            try {
-              const view1 = createView('view1', -Math.PI / 5);
-              const view2 = createView('view2', Math.PI * 4 / 5);
-
-              await Promise.all([
-                view1.loadSkin("${skinUrl}"),
-                view2.loadSkin("${skinUrl}")
-              ]);
-
-              ${capeUrl ? `
-              await Promise.all([
-                view1.loadCape("${capeUrl}"),
-                view2.loadCape("${capeUrl}")
-              ]);
-              ` : ''}
-
-              // 确保渲染完成
-              view1.render();
-              view2.render();
-
-              window.renderComplete = true;
-            } catch (e) {
-              console.error(e);
-            }
-          })();
-        </script>
+        <div id="status">loading</div>
       </body>
     </html>
   `
 
   await page.setContent(html)
-  await page.waitForFunction('window.renderComplete')
+
+  // 等待外部脚本加载完成
+  await page.waitForFunction(() => typeof window['skinview3d'] !== 'undefined')
+
+  // 注入并执行渲染逻辑
+  await page.evaluate(({ skinUrl, capeUrl }) => {
+    return new Promise((resolve, reject) => {
+      try {
+        const createView = (id: string, rotationAngle: number) => {
+          const viewer = new window['skinview3d'].SkinViewer({
+            canvas: document.getElementById(id),
+            width: 200,
+            height: 400,
+            fov: 30,
+            zoom: 0.95
+          });
+
+          viewer.renderer.setClearAlpha(0);
+          viewer.playerObject.rotation.y = rotationAngle;
+          viewer.animation = null;
+
+          return viewer;
+        };
+
+        const view1 = createView('view1', -Math.PI / 5);
+        const view2 = createView('view2', Math.PI * 4 / 5);
+
+        Promise.all([
+          view1.loadSkin(skinUrl),
+          view2.loadSkin(skinUrl)
+        ]).then(() => {
+          if (capeUrl) {
+            return Promise.all([
+              view1.loadCape(capeUrl),
+              view2.loadCape(capeUrl)
+            ]);
+          }
+        }).then(() => {
+          view1.render();
+          view2.render();
+          document.getElementById('status').textContent = 'complete';
+          resolve(true);
+        }).catch(reject);
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }, { skinUrl, capeUrl })
+
+  // 等待渲染完成
+  await page.waitForFunction(() => document.getElementById('status').textContent === 'complete', { timeout: 10000 })
 
   // 截取渲染结果
   const element = await page.$('.container')
