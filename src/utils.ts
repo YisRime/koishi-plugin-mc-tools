@@ -2,12 +2,6 @@ import { Context, h } from 'koishi'
 import axios from 'axios'
 import * as mc from 'minecraft-protocol'
 
-declare global {
-  interface Window {
-    skinview3d: any
-  }
-}
-
 export type LangCode = keyof typeof MINECRAFT_LANGUAGES
 
 export interface MinecraftVersionInfo {
@@ -15,33 +9,17 @@ export interface MinecraftVersionInfo {
   type: string
   releaseTime: string
 }
-
-interface ParsedServer {
-  host: string
-  port: number
-}
-interface BedrockServerInfo {
-  edition: string
-  motd: string
-  protocol: string
-  version: string
-  online: number
-  max: number
-}
-
 export interface SearchResult {
   title: string
   url: string
   desc?: string
   source: 'wiki' | 'mcmod'
 }
-
 export interface ModwikiConfig {
   searchDescLength: number
   totalPreviewLength: number
   searchTimeout: number
 }
-
 export interface MinecraftToolsConfig {
   wiki: {
     defaultLanguage: LangCode
@@ -67,7 +45,35 @@ export interface MinecraftToolsConfig {
     notifyOnRelease: boolean
   }
 }
+export interface ModrinthProject {
+  slug: string
+  title: string
+  description: string
+  categories: string[]
+  author: string
+  project_type: string
+  gallery: string[]
+  client_side: string
+  server_side: string
+  body: string
+  published: string
+  updated: string
+  game_versions?: string[]
+  loaders?: string[]
+}
 
+interface ParsedServer {
+  host: string
+  port: number
+}
+interface BedrockServerInfo {
+  edition: string
+  motd: string
+  protocol: string
+  version: string
+  online: number
+  max: number
+}
 interface TexturesData {
   textures: {
     SKIN?: {
@@ -81,7 +87,6 @@ interface TexturesData {
     }
   }
 }
-
 interface PlayerProfile {
   name: string
   uuid: string
@@ -143,12 +148,25 @@ export const TypeMap = {
     'network unreachable': '网络不可达',
     'port.*out of range': '端口号必须在1-65535之间',
     'dns lookup failed': 'DNS解析失败'
+  },
+  projectTypes: {
+    'mod': '模组',
+    'resourcepack': '资源包',
+    'datapack': '数据包',
+    'shader': '光影',
+    'modpack': '整合包',
+    'plugin': '插件'
+  },
+  facets: {
+    'mod': ['project_type:mod'],
+    'resourcepack': ['project_type:resourcepack'],
+    'datapack': ['project_type:datapack'],
+    'shader': ['project_type:shader'],
+    'modpack': ['project_type:modpack'],
+    'plugin': ['project_type:plugin']
   }
 } as const
 
-/**
- * Minecraft 支持的语言代码及其显示名称
- */
 export const MINECRAFT_LANGUAGES = {
   'zh': '中文（简体）',
   'zh-hk': '中文（繁體）',

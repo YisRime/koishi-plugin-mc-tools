@@ -31,6 +31,7 @@
 
 - `mcver` - 获取 Minecraft 最新版本信息
 - `mcinfo [服务器地址:端口]` - 查询 MC 服务器状态
+- `mcskin <用户名>` - 获取玩家信息和3D皮肤预览
 
 ## 配置说明
 
@@ -69,3 +70,23 @@ server:
   showIcon: true             # 是否显示服务器图标
   showPlayers: true          # 是否显示在线玩家列表
 ```
+
+## 注意事项
+
+截图与渲染皮肤依赖 Puppeteer 服务，请先安装带有 Puppeteer 服务的插件。
+若渲染皮肤出错或渲染出的图片仅有背景，请使用 chromium-swiftshader。
+因为 koishijs/koishi 镜像中的 Chromium 并不支持 WebGL。
+
+### 解决方案
+
+```bash
+# 删除原有 Chromium （如果使用 latest-lite 镜像请忽略）
+docker exec -it <容器ID> apk del chromium
+# 更换镜像源（如果可以访问 Docker Hub 请忽略）
+docker exec -it <容器ID> sed -i 's/dl-cdn.alpinelinux.org/mirrors.ustc.edu.cn/g' /etc/apk/repositories
+# 安装 chromium-swiftshader
+docker exec -it <容器ID> apk update
+docker exec -it <容器ID> apk add chromium-swiftshader
+```
+
+之后重启 Puppeteer 插件即可

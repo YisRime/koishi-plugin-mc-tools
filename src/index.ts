@@ -8,11 +8,13 @@ import {
   getVersionInfo,
   checkUpdate,
   formatErrorMessage,
+  TypeMap,
 } from './utils'
 import { fetchModContent, formatContent } from './modwiki'
 import { processWikiRequest } from './mcwiki'
 import { searchMod, search, capture } from './subwiki'
 import { getPlayerProfile, renderPlayerSkin } from './utils'
+import { searchModrinth, getModrinthDetails, formatFullModrinthResult } from './mod'
 
 /**
  * Minecraft 工具箱插件
@@ -20,6 +22,7 @@ import { getPlayerProfile, renderPlayerSkin } from './utils'
  */
 export const name = 'mc-tools'
 export const inject = {optional: ['puppeteer']}
+export const usage = '使用 Docker 部署的用户请安装 chromium-swiftshader 来使用 mcskin 指令获取皮肤'
 
 /**
  * 插件配置模式
@@ -239,6 +242,61 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
         return parts.join('\n');
       } catch (error) {
         return error.message;
+      }
+    })
+
+  const modrCommand = ctx.command('modmr <keyword>', 'Modrinth 项目搜索')
+    .usage('modmr <关键词> - 获取项目的详细信息\nmodmr.search [type] <keyword> - 搜索指定类型的项目')
+    .example('modmr fabric api - 搜索 Fabric API')
+    .action(async ({ }, keyword) => {
+      if (!keyword) return '请输入要搜索的关键词'
+
+      try {
+        const results = await searchModrinth(keyword)
+        if (!results.length) return '未找到相关项目'
+
+        const details = await getModrinthDetails(results[0].slug)
+        return formatFullModrinthResult(details)
+      } catch (error) {
+        return `搜索失败: ${error.message}`
+      }
+    })
+
+  modrCommand.subcommand('.search [type] <keyword>', '按类型搜索 Modrinth 项目')
+    .usage('type 可选值: mod, resourcepack, datapack, shader, modpack, plugin')
+    .example('modmr.search mod fabric - 搜索 Fabric 相关模组')
+    .action(async ({ session }, type, keyword) => {
+      if (!keyword) {
+        keyword = type
+        type = undefined
+      }
+      if (!keyword) return '请输入要搜索的关键词'
+
+      try {
+        const facets = type ? TypeMap.facets[type] : undefined
+        const results = await searchModrinth(keyword, facets)
+        if (!results.length) return '未找到相关项目'
+
+        await session.send('Modrinth 搜索结果：\n' + results.map((r, i) =>
+          `${i + 1}. ${[
+            `${TypeMap.projectTypes[r.project_type] || r.project_type} | ${r.title}`,
+            `分类: ${r.categories.join(', ')}`,
+            `描述: ${r.description}`,
+          ].join('\n')}`
+        ).join('\n') + '\n请回复序号查看详细内容')
+
+        const response = await session.prompt(pluginConfig.wiki.searchTimeout * 1000)
+        if (!response) return '操作超时'
+
+        const index = parseInt(response) - 1
+        if (isNaN(index) || index < 0 || index >= results.length) {
+          return '请输入有效的序号'
+        }
+
+        const details = await getModrinthDetails(results[index].slug)
+        return formatFullModrinthResult(details)
+      } catch (error) {
+        return `搜索失败: ${error.message}`
       }
     })
 }
