@@ -586,24 +586,11 @@ export async function renderPlayerSkin(ctx: Context, skinUrl: string, capeUrl?: 
   const html = `
     <html>
       <head>
-        <script crossorigin="anonymous" src="https://unpkg.com/skinview3d@3.1.0/bundles/skinview3d.bundle.js"></script>
+        <script src="https://unpkg.com/skinview3d@3.1.0/bundles/skinview3d.bundle.js"></script>
         <style>
-          body { margin: 0; padding: 0; overflow: hidden; background: transparent; }
-          #status { display: none; }
-          .container {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 400px;
-            height: 400px;
-            display: flex;
-            background: transparent;
-          }
-          .view {
-            width: 200px;
-            height: 400px;
-            background: transparent;
-          }
+          body { margin: 0; background: transparent; display: flex; justify-content: center; align-items: center; }
+          .container { display: flex; width: 400px; height: 400px; }
+          .view { width: 200px; height: 400px; }
         </style>
       </head>
       <body>
@@ -611,69 +598,50 @@ export async function renderPlayerSkin(ctx: Context, skinUrl: string, capeUrl?: 
           <canvas id="view1" class="view"></canvas>
           <canvas id="view2" class="view"></canvas>
         </div>
-        <div id="status">loading</div>
+        <script>
+          const createView = (id, rotationAngle) => {
+            const viewer = new skinview3d.SkinViewer({
+              canvas: document.getElementById(id),
+              width: 200,
+              height: 400,
+              preserveDrawingBuffer: true,
+              fov: 30,
+              zoom: 0.95
+            });
+
+            viewer.renderer.setClearColor(0x000000, 0);  // 设置透明背景
+            viewer.playerObject.rotation.y = rotationAngle;
+            viewer.animation = null;  // 完全禁用动画
+
+            return viewer;
+          };
+
+          (async () => {
+            // 创建左右两个视图，分别旋转 -36° 和 144° (-36° + 180°)
+            const view1 = createView('view1', -Math.PI / 5);
+            const view2 = createView('view2', Math.PI * 4 / 5);
+            // 为每个视图加载皮肤和披风（如果有）
+            for (const view of [view1, view2]) {
+              await view.loadSkin("${skinUrl}");
+              ${capeUrl ? `await view.loadCape("${capeUrl}");` : ''}
+              view.render();
+            }
+          })();
+        </script>
       </body>
     </html>
   `
 
   await page.setContent(html)
+  await page.waitForFunction(() => {
+    const v1 = document.getElementById('view1')
+    const v2 = document.getElementById('view2')
+    return v1 && v2 &&
+           (v1 as HTMLCanvasElement).toDataURL() !== 'data:,' &&
+           (v2 as HTMLCanvasElement).toDataURL() !== 'data:,'
+  }, { timeout: 5000 })
 
-  // 等待外部脚本加载完成
-  await page.waitForFunction(() => typeof window['skinview3d'] !== 'undefined')
-
-  // 注入并执行渲染逻辑
-  await page.evaluate((params) => {
-    return new Promise((resolve, reject) => {
-      try {
-        const createView = (id, rotationAngle) => {
-          const viewer = new window.skinview3d.SkinViewer({
-            canvas: document.getElementById(id),
-            width: 200,
-            height: 400,
-            fov: 30,
-            zoom: 0.95
-          });
-
-          viewer.renderer.setClearAlpha(0);
-          viewer.playerObject.rotation.y = rotationAngle;
-          viewer.animation = null;
-
-          return viewer;
-        };
-
-        const view1 = createView('view1', -Math.PI / 5);
-        const view2 = createView('view2', Math.PI * 4 / 5);
-
-        Promise.all([
-          view1.loadSkin(params.skinUrl),
-          view2.loadSkin(params.skinUrl)
-        ]).then(() => {
-          if (params.capeUrl) {
-            return Promise.all([
-              view1.loadCape(params.capeUrl),
-              view2.loadCape(params.capeUrl)
-            ]);
-          }
-        }).then(() => {
-          view1.render();
-          view2.render();
-          document.getElementById('status').textContent = 'complete';
-          resolve(true);
-        }).catch(reject);
-      } catch (error) {
-        reject(error);
-      }
-    });
-  }, { skinUrl, capeUrl })
-
-  // 等待渲染完成
-  await page.waitForFunction(() => document.getElementById('status').textContent === 'complete', { timeout: 10000 })
-
-  // 截取渲染结果前移除状态文本
-  await page.evaluate(() => {
-    const status = document.getElementById('status')
-    if (status) status.remove()
-  })
+  await new Promise(resolve => setTimeout(resolve, 100))
 
   // 截取渲染结果
   const element = await page.$('.container')
