@@ -586,11 +586,24 @@ export async function renderPlayerSkin(ctx: Context, skinUrl: string, capeUrl?: 
   const html = `
     <html>
       <head>
-        <script src="https://unpkg.com/skinview3d@3.1.0/bundles/skinview3d.bundle.js"></script>
+        <script crossorigin="anonymous" src="https://unpkg.com/skinview3d@3.1.0/bundles/skinview3d.bundle.js"></script>
         <style>
-          body { margin: 0; background: transparent; display: flex; justify-content: center; align-items: center; }
-          .container { display: flex; width: 400px; height: 400px; }
-          .view { width: 200px; height: 400px; }
+          body { margin: 0; padding: 0; overflow: hidden; background: transparent; }
+          #status { display: none; }
+          .container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 400px;
+            height: 400px;
+            display: flex;
+            background: transparent;
+          }
+          .view {
+            width: 200px;
+            height: 400px;
+            background: transparent;
+          }
         </style>
       </head>
       <body>
@@ -655,6 +668,12 @@ export async function renderPlayerSkin(ctx: Context, skinUrl: string, capeUrl?: 
 
   // 等待渲染完成
   await page.waitForFunction(() => document.getElementById('status').textContent === 'complete', { timeout: 10000 })
+
+  // 截取渲染结果前移除状态文本
+  await page.evaluate(() => {
+    const status = document.getElementById('status')
+    if (status) status.remove()
+  })
 
   // 截取渲染结果
   const element = await page.$('.container')
