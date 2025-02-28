@@ -15,51 +15,40 @@ export interface SearchResult {
   desc?: string
   source: 'wiki' | 'mcmod'
 }
-export interface ModwikiConfig {
-  searchDescLength: number
-  totalPreviewLength: number
-  searchTimeout: number
-}
-export interface MinecraftToolsConfig {
-  wiki: {
-    defaultLanguage: LangCode
-    searchTimeout: number
-    sectionPreviewLength: number
-    totalPreviewLength: number
-    searchDescLength: number
-    showDescription: boolean
-    imageEnabled: boolean
-    showLinks: boolean
-    showVersions: boolean
-  }
-  server: {
-    address: string
-    showPlayers: boolean
-    showIcon: boolean
-  }
-  versionCheck: {
-    enabled: boolean
-    groups: string[]
-    interval: number
-    notifyOnSnapshot: boolean
-    notifyOnRelease: boolean
-  }
+export interface SearchModResult {
+  source: 'modrinth' | 'curseforge'
+  id: string | number
+  type: string
+  title: string
+  description: string
+  categories: string[]
 }
 export interface ModrinthProject {
   slug: string
   title: string
   description: string
   categories: string[]
-  author: string
-  project_type: string
-  gallery: string[]
   client_side: string
   server_side: string
+  project_type: string
   body: string
-  published: string
-  updated: string
   game_versions?: string[]
   loaders?: string[]
+}
+export interface CurseForgeProject {
+  id: number
+  name: string
+  summary: string
+  description: string
+  categories: (string | { name: string })[]
+  classId: number
+  latestFiles: {
+    displayName: string
+    gameVersions: string[]
+  }[]
+  links: {
+    websiteUrl: string
+  }
 }
 
 interface ParsedServer {
@@ -121,12 +110,6 @@ export const CLEANUP_SELECTORS = [
 ]
 
 export const TypeMap = {
-  modTypes: {
-    '/modpack/': '整合包',
-    '/class/': 'MOD',
-    '/item/': '物品',
-    '/post/': '教程'
-  },
   errorPatterns: {
     'ECONNREFUSED': '服务器拒绝连接',
     'ETIMEDOUT': '连接超时',
@@ -149,7 +132,7 @@ export const TypeMap = {
     'port.*out of range': '端口号必须在1-65535之间',
     'dns lookup failed': 'DNS解析失败'
   },
-  projectTypes: {
+  modrinthTypes: {
     'mod': '模组',
     'resourcepack': '资源包',
     'datapack': '数据包',
@@ -164,8 +147,33 @@ export const TypeMap = {
     'shader': ['project_type:shader'],
     'modpack': ['project_type:modpack'],
     'plugin': ['project_type:plugin']
+  } as const,
+  curseforgeTypes: {
+    6: 'mod',
+    12: 'resourcepack',
+    17: 'modpack',
+    4471: 'shader',
+    4546: 'datapack',
+    4944: 'world',
+    5141: 'addon',
+    5232: 'plugin',
+  },
+  curseforgeTypeNames: {
+    'mod': '模组',
+    'resourcepack': '资源包',
+    'modpack': '整合包',
+    'shader': '光影',
+    'datapack': '数据包',
+    'world': '地图',
+    'addon': '附加包',
+    'plugin': '插件'
+  },
+  isValidType: (source: 'modrinth' | 'curseforge', type?: string): boolean => {
+    if (!type) return true
+    const types = source === 'modrinth' ? Object.keys(TypeMap.modrinthTypes) : Object.values(TypeMap.curseforgeTypes)
+    return types.includes(type as any)
   }
-} as const
+}
 
 export const MINECRAFT_LANGUAGES = {
   'zh': '中文（简体）',
@@ -184,6 +192,34 @@ export const MINECRAFT_LANGUAGES = {
   'nl': 'Nederlands',
   'tr': 'Türkçe'
 } as const
+
+export interface CommonConfig {
+  Timeout: number
+  totalLength: number
+  descLength: number
+}
+
+export interface MinecraftToolsConfig {
+  wiki: CommonConfig
+  search: {
+    Language: LangCode
+    sectionLength: number
+    linkCount: number
+    cfApi: string
+  }
+  info: {
+    default: string
+    showPlayers: boolean
+    showIcon: boolean
+  }
+  ver: {
+    enabled: boolean
+    groups: string[]
+    interval: number
+    release: boolean
+    snapshot: boolean
+  }
+}
 
 /**
  * 获取 Minecraft 版本信息
@@ -256,14 +292,14 @@ export async function checkUpdate(versions: { snapshot: string, release: string 
   try {
     const { latest, release } = await fetchVersions()
     const updates = [
-      { type: 'snapshot', version: latest, enabled: config.versionCheck.notifyOnSnapshot },
-      { type: 'release', version: release, enabled: config.versionCheck.notifyOnRelease }
+      { type: 'snapshot', version: latest, enabled: config.ver.snapshot },
+      { type: 'release', version: release, enabled: config.ver.release }
     ]
 
     for (const { type, version, enabled } of updates) {
       if (versions[type] && version.id !== versions[type] && enabled) {
         const msg = `发现MC更新：${version.id} (${type})\n发布时间：${new Date(version.releaseTime).toLocaleString('zh-CN')}`
-        await notifyVersionUpdate(ctx, config.versionCheck.groups, msg)
+        await notifyVersionUpdate(ctx, config.ver.groups, msg)
       }
       versions[type] = version.id
     }
@@ -275,13 +311,13 @@ export async function checkUpdate(versions: { snapshot: string, release: string 
 /**
  * 解析 Minecraft 服务器地址和端口
  * @param {string | undefined} serverAddress - 服务器地址字符串，格式为 "host:port" 或 "host"
- * @param {MinecraftToolsConfig['server']} defaultConfig - 默认服务器配置
+ * @param {MinecraftToolsConfig['info']} defaultConfig - 默认服务器配置
  * @returns {ParsedServer} 解析后的服务器信息对象
  * @throws {Error} 当地址格式无效或端口号不合法时抛出错误
  * @private
  */
-function parseServer(serverAddress: string | undefined, defaultConfig: MinecraftToolsConfig['server']): ParsedServer {
-  const address = serverAddress || defaultConfig.address
+function parseServer(serverAddress: string | undefined, defaultConfig: MinecraftToolsConfig['info']): ParsedServer {
+  const address = serverAddress || defaultConfig.default
   const [host, portStr] = address.split(':')
   if (!host) throw new Error('请输入有效的服务器地址')
 
@@ -464,7 +500,7 @@ async function queryBedrockServer(host: string, port: number): Promise<{
  * 检查服务器状态
  */
 export async function checkServerStatus(server: string | undefined, config: MinecraftToolsConfig) {
-  const { host, port } = parseServer(server, config.server)
+  const { host, port } = parseServer(server, config.info)
 
   const isDefaultJava = port === 25565
   const isDefaultBedrock = port === 19132
@@ -489,7 +525,7 @@ export async function checkServerStatus(server: string | undefined, config: Mine
 
     const lines: string[] = []
 
-    if (config.server.showIcon && 'favicon' in result && result.favicon?.startsWith('data:image/png;base64,')) {
+    if (config.info.showIcon && 'favicon' in result && result.favicon?.startsWith('data:image/png;base64,')) {
       lines.push(h.image(result.favicon).toString())
     }
 
@@ -502,7 +538,7 @@ export async function checkServerStatus(server: string | undefined, config: Mine
     ]
     lines.push(statusParts.join(' | '))
 
-    if (config.server.showPlayers && result.playerList?.length > 0) {
+    if (config.info.showPlayers && result.playerList?.length > 0) {
       const playerInfo = ['当前在线：' + result.playerList.join(', ')]
       if (result.playerList.length < result.online) {
         playerInfo.push(`（仅显示 ${result.playerList.length}/${result.online} 名玩家）`)

@@ -6,7 +6,7 @@
 import { h } from 'koishi'
 import axios from 'axios'
 import * as cheerio from 'cheerio'
-import { ModwikiConfig } from './utils'
+import { CommonConfig } from './utils'
 
 /**
  * 处理结果接口
@@ -296,6 +296,27 @@ function parseInfoBlock($: cheerio.CheerioAPI): string[] {
 }
 
 /**
+ * 处理游戏版本列表，合并相似版本
+ */
+function processVersionNumbers(versions: string[]): string[] {
+  if (!versions?.length) return [];
+
+  // 按主版本号分组并排序
+  const grouped = versions.reduce((groups, version) => {
+    const mainVersion = version.match(/^(\d+\.\d+)/)?.[1] || version;
+    groups.set(mainVersion, (groups.get(mainVersion) || []).concat(version));
+    return groups;
+  }, new Map<string, string[]>());
+
+  // 格式化输出
+  return Array.from(grouped.entries())
+    .sort(([a], [b]) => b.localeCompare(a, undefined, { numeric: true }))
+    .map(([main, group]) =>
+      group.length > 1 ? `${main}(${group.length}个版本)` : group[0]
+    );
+}
+
+/**
  * 解析版本信息
  * @param {cheerio.CheerioAPI} $ Cheerio实例
  * @returns {string[]} 版本信息数组
@@ -314,7 +335,8 @@ function parseVersions($: cheerio.CheerioAPI): string[] {
         .filter(v => v.match(/^\d/));
 
       if (versions.length) {
-        sections.push(`${loader} ${versions.join(', ')}`);
+        const processedVersions = processVersionNumbers(versions);
+        sections.push(`${loader} ${processedVersions.join(', ')}`);
         processedLoaders.add(loader);
       }
     }
@@ -371,9 +393,10 @@ function parseRelatedLinks($: cheerio.CheerioAPI): string[] {
  * 格式化内容
  * @param {ProcessResult} result 处理结果
  * @param {string} url 原始页面URL
+ * @param {object} options 显示选项
  * @returns {string} 格式化后的内容
  */
-export function formatContent(result: ProcessResult, url: string): string {
+export function formatContent(result: ProcessResult, url: string, options: { showLinks?: number } = {}): string {
   if (!result?.sections) {
     return `获取内容失败，请访问：${url}`;
   }
@@ -400,21 +423,27 @@ export function formatContent(result: ProcessResult, url: string): string {
         .some(type => s.includes(type)) &&
       !['支持版本:', '行为包:', 'Forge:', 'Fabric:']
         .some(type => s.includes(type))
-    ),
+    ).map((s, i, arr) => {
+      if (i === arr.length - 1 && !s.startsWith('http') && !s.endsWith('...')) {
+        return s + '...';
+      }
+      return s;
+    }),
     images: sections.filter((s, index) =>
       index > 1 && s.startsWith('http') && !s.includes(':')
     )
   };
+
+  const links = options.showLinks && result.links?.length
+    ? ['相关链接:', ...result.links.slice(0, options.showLinks)]
+    : [];
 
   const output = [
     categorizedSections.title,
     categorizedSections.coverImage,
     ...categorizedSections.basicInfo,
     ...categorizedSections.versionInfo,
-    ...(result.links?.length ? [
-      '相关链接:',
-      ...result.links,
-    ] : []),
+    ...(links.length ? links : []),
     '简介:',
     ...categorizedSections.content,
     ...categorizedSections.images,
@@ -434,7 +463,7 @@ export function formatContent(result: ProcessResult, url: string): string {
  * @returns {Promise<ProcessResult>} 处理结果Promise
  * @throws {Error} 当请求失败或页面不存在时抛出错误
  */
-export async function fetchModContent(url: string, config: ModwikiConfig): Promise<ProcessResult> {
+export async function fetchModContent(url: string, config: CommonConfig): Promise<ProcessResult> {
   try {
     const response = await axios.get(url, {
       timeout: 30000,
@@ -453,7 +482,7 @@ export async function fetchModContent(url: string, config: ModwikiConfig): Promi
                    : url.includes('/item/') ? 'item'
                    : url.includes('bbs.mcmod.cn') ? 'bbs'
                    : 'mod';
-    const content = parseContent($, pageType, config.totalPreviewLength);
+    const content = parseContent($, pageType, config.totalLength);
     const sections = content.sections;
 
     return {

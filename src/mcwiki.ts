@@ -114,19 +114,19 @@ export async function fetchContent(articleUrl: string, languageCode: LangCode, c
     .map((section, index) => {
       const sectionText = index === 0
         ? section.content.join(' ')
-        : section.content.join(' ').slice(0, config.wiki.sectionPreviewLength)
+        : section.content.join(' ').slice(0, config.search.sectionLength)
       if (section.title) {
-        return `『${section.title}』${sectionText}${sectionText.length >= config.wiki.sectionPreviewLength && index > 0 ? '...' : ''}`
+        return `『${section.title}』${sectionText}${sectionText.length >= config.search.sectionLength && index > 0 ? '...' : ''}`
       }
       return sectionText
     })
     .join('\n')
-    .slice(0, config.wiki.totalPreviewLength)
+    .slice(0, config.wiki.totalLength)
 
   const cleanUrl = articleUrl.split('?')[0]
   return {
     title,
-    content: formattedContent.length >= config.wiki.totalPreviewLength ? formattedContent + '...' : formattedContent,
+    content: formattedContent.length >= config.wiki.totalLength ? formattedContent + '...' : formattedContent,
     url: cleanUrl
   }
 }
@@ -144,7 +144,7 @@ export async function processWikiRequest(keyword: string, userId: string, config
   if (!keyword) return '请输入要查询的内容关键词'
 
   try {
-    const lang = userLangs.get(userId) || config.wiki.defaultLanguage
+    const lang = userLangs.get(userId) || config.search.Language
     const results = await searchWiki(keyword)
 
     if (!results.length) return `${keyword}：本页面目前没有内容。`

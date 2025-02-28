@@ -22,10 +22,6 @@ export async function capture(
   ctx: any,
   options: { type: 'wiki' | 'mcmod', lang?: LangCode }
 ) {
-  if (!config.wiki.imageEnabled) {
-    throw new Error('图片功能已禁用')
-  }
-
   const context = await ctx.puppeteer.browser.createBrowserContext()
   const page = await context.newPage()
 
@@ -187,7 +183,7 @@ export async function search(params: {
     const message = formatSearchResults(results, source, config)
     await session.send(message)
 
-    const response = await session.prompt(config.wiki.searchTimeout * 1000)
+    const response = await session.prompt(config.wiki.Timeout * 1000)
     if (!response) return '操作超时'
 
     return await processSelection({ response, results, source, config, ctx, lang })
@@ -202,7 +198,7 @@ export async function search(params: {
  * @returns {Promise<SearchResult[]>} 搜索结果列表
  * @throws {Error} 搜索失败时抛出错误
  */
-export async function searchWiki(keyword: string): Promise<SearchResult[]> {
+export async function searchWiki(keyword: string, _config?: any): Promise<SearchResult[]> {
   try {
     const searchUrl = buildUrl('api.php', 'zh', true).replace('/w/', '/')
       + `&action=opensearch&search=${encodeURIComponent(keyword)}&limit=10`;
@@ -230,7 +226,7 @@ export async function searchMod(keyword: string, config: MinecraftToolsConfig): 
   try {
     const response = await axios.get(
       `https://search.mcmod.cn/s?key=${encodeURIComponent(keyword)}`,
-      { timeout: config.wiki.searchTimeout * 1000 }
+      { timeout: config.wiki.Timeout * 1000 }
     );
     const $ = cheerio.load(response.data);
 
@@ -240,11 +236,11 @@ export async function searchMod(keyword: string, config: MinecraftToolsConfig): 
       const titleEl = $item.find('.head a').last()
       const title = titleEl.text().trim()
       const url = titleEl.attr('href') || ''
-      const desc = config.wiki.searchDescLength > 0
+      const desc = config.wiki.descLength > 0
         ? $item.find('.body').text().trim().replace(/\[.*?\]/g, '').trim()
         : ''
-      const normalizedDesc = desc && desc.length > config.wiki.searchDescLength
-        ? desc.slice(0, config.wiki.searchDescLength) + '...'
+      const normalizedDesc = desc && desc.length > config.wiki.descLength
+        ? desc.slice(0, config.wiki.descLength) + '...'
         : desc
 
       const normalizedUrl = url.startsWith('http') ? url : `https://www.mcmod.cn${url}`
@@ -278,7 +274,7 @@ function formatSearchResults(
 ): string {
   const items = results.map((r, i) => {
     const base = `${i + 1}. ${r.title}`
-    const desc = source === 'mcmod' && config.wiki.searchDescLength > 0 && r.desc
+    const desc = source === 'mcmod' && config.wiki.descLength > 0 && r.desc
       ? `\n    ${r.desc}` : ''
     return `${base}${desc}`
   })

@@ -7,14 +7,13 @@ import {
   checkServerStatus,
   getVersionInfo,
   checkUpdate,
-  formatErrorMessage,
-  TypeMap,
+  formatErrorMessage
 } from './utils'
 import { fetchModContent, formatContent } from './modwiki'
 import { processWikiRequest } from './mcwiki'
 import { searchMod, search, capture } from './subwiki'
 import { getPlayerProfile, renderPlayerSkin } from './utils'
-import { searchModrinth, getModrinthDetails, formatFullModrinthResult } from './mod'
+import { searchMods, getModDetails, formatSearchResults } from './mod'
 
 /**
  * Minecraft 工具箱插件
@@ -29,64 +28,61 @@ export const usage = '使用 Docker 部署的用户请安装 chromium-swiftshade
  */
 export const Config: Schema<MinecraftToolsConfig> = Schema.object({
   wiki: Schema.object({
-    defaultLanguage: Schema.union(Object.keys(MINECRAFT_LANGUAGES) as LangCode[])
+    totalLength: Schema.number()
+      .default(400)
+      .description('总预览字数'),
+    descLength: Schema.number()
+      .default(20)
+      .description('搜索项目描述字数'),
+    Timeout: Schema.number()
+      .default(15)
+      .description('搜索超时时间（秒）')
+  }).description('通用设置'),
+
+  search: Schema.object({
+    Language: Schema.union(Object.keys(MINECRAFT_LANGUAGES) as LangCode[])
       .default('zh')
       .description('Wiki 显示语言'),
-    sectionPreviewLength: Schema.number()
+    sectionLength: Schema.number()
       .default(50)
-      .description('Wiki 段落预览字数'),
-    totalPreviewLength: Schema.number()
-      .default(500)
-      .description('总预览字数'),
-    showVersions: Schema.boolean()
-      .default(true)
-      .description('显示支持版本'),
-    showLinks: Schema.boolean()
-      .default(true)
-      .description('显示相关链接'),
-    showDescription: Schema.boolean()
-      .default(true)
-      .description('显示简介'),
-    imageEnabled: Schema.boolean()
-      .default(true)
-      .description('显示图片'),
-    searchTimeout: Schema.number()
-      .default(15)
-      .description('搜索选择时间（秒）'),
-    searchDescLength: Schema.number()
-      .default(20)
-      .description('搜索结果描述字数(设置为0关闭描述)'),
-  }).description('Wiki & MCMOD 设置'),
+      .description('Wiki 每段预览字数'),
+    linkCount: Schema.number()
+      .default(4)
+      .description('相关链接最大显示数'),
+    cfApi: Schema.string()
+      .role('secret')
+      .description('CurseForge API Key')
+  }).description('查询设置'),
 
-  versionCheck: Schema.object({
-    enabled: Schema.boolean()
-      .default(false)
-      .description('启用版本更新检查'),
-    groups: Schema.array(Schema.string())
-      .default([])
-      .description('接收版本更新通知 ID'),
-    interval: Schema.number()
-      .default(60)
-      .description('版本检查间隔时间（分钟）'),
-    notifyOnRelease: Schema.boolean()
-      .default(true)
-      .description('正式版本更新通知'),
-    notifyOnSnapshot: Schema.boolean()
-      .default(true)
-      .description('快照版本更新通知')
-  }).description('Version 设置'),
-
-  server: Schema.object({
-    address: Schema.string()
-      .description('默认服务器地址:端口')
+  info: Schema.object({
+    default: Schema.string()
+      .description('INFO 默认服务器')
       .default('localhost:25565'),
     showIcon: Schema.boolean()
       .default(true)
       .description('显示服务器图标'),
     showPlayers: Schema.boolean()
       .default(true)
-      .description('显示在线玩家')
-  }).description('Info 设置')
+      .description('显示在线玩家列表')
+  }).description('服务器设置'),
+
+  ver: Schema.object({
+    enabled: Schema.boolean()
+      .default(false)
+      .description('启用版本更新检查'),
+    release: Schema.boolean()
+      .default(true)
+      .description('通知正式版本'),
+    snapshot: Schema.boolean()
+      .default(true)
+      .description('通知快照版本'),
+    interval: Schema.number()
+      .default(60)
+      .description('检查间隔时间（分钟）'),
+    groups: Schema.array(Schema.string())
+      .default([])
+      .description('接收更新通知 ID')
+  }).description('更新检测设置')
 })
 
 /**
@@ -111,7 +107,6 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
 
   const modWikiCommand = ctx.command('modwiki <keyword:text>', 'MCMOD 查询')
     .usage(`modwiki <关键词> - 直接查询内容\nmodwiki.search <关键词> - 搜索并选择条目\nmodwiki.shot <关键词> - 获取页面截图`)
-
     .action(async ({ }, keyword) => {
       if (!keyword) return '请输入要查询的关键词'
 
@@ -121,7 +116,9 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
 
         const result = results[0]
         const content = await fetchModContent(result.url, pluginConfig.wiki)
-        return formatContent(content, result.url)
+        return formatContent(content, result.url, {
+          showLinks: pluginConfig.search.linkCount
+        })
       } catch (error) {
         return error.message
       }
@@ -135,7 +132,7 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
         session,
         config: pluginConfig,
         ctx,
-        lang: userLanguageSettings.get(session.userId) || pluginConfig.wiki.defaultLanguage
+        lang: userLanguageSettings.get(session.userId) || pluginConfig.search.Language
       })
     })
 
@@ -165,7 +162,7 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
           ctx,
           {
             type: 'wiki',
-            lang: userLanguageSettings.get(session.userId) || pluginConfig.wiki.defaultLanguage
+            lang: userLanguageSettings.get(session.userId) || pluginConfig.search.Language
           }
         )
         return result.image
@@ -202,9 +199,9 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
       return result.success ? result.data : result.error
     })
 
-  if (pluginConfig.versionCheck.enabled && pluginConfig.versionCheck.groups.length) {
+  if (pluginConfig.ver.enabled && pluginConfig.ver.groups.length) {
     checkUpdate(minecraftVersions, ctx, pluginConfig)
-    setInterval(() => checkUpdate(minecraftVersions, ctx, pluginConfig), pluginConfig.versionCheck.interval * 60 * 1000)
+    setInterval(() => checkUpdate(minecraftVersions, ctx, pluginConfig), pluginConfig.ver.interval * 60 * 1000)
   }
 
   ctx.command('mcinfo [server]', '查询 MC 服务器状态')
@@ -233,59 +230,48 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
         if (profile.skin) {
           const skinImage = await renderPlayerSkin(ctx, profile.skin.url, profile.cape?.url);
           parts.push(h.image(`data:image/png;base64,${skinImage}`).toString());
-          parts.push(`获取 ${profile.name} 的头:`);
-          parts.push(`(≤1.12)/give @p minecraft:skull 1 3 {SkullOwner:"${profile.name}"}`);
-          parts.push(`(≥1.13)/give @p minecraft:player_head{SkullOwner:"${profile.name}"}`);
+          parts.push(`获取 ${profile.name} 的头(≤1.12 或 ≥1.13):`);
+          parts.push(`/give @p minecraft:skull 1 3 {SkullOwner:"${profile.name}"}`);
+          parts.push(`/give @p minecraft:player_head{SkullOwner:"${profile.name}"}`);
         } else {
           parts.push('未设置皮肤');
         }
         return parts.join('\n');
       } catch (error) {
-        return error.message;
+        return error.message
       }
     })
 
-  const modrCommand = ctx.command('modmr <keyword>', 'Modrinth 项目搜索')
-    .usage('modmr <关键词> - 获取项目的详细信息\nmodmr.search [type] <keyword> - 搜索指定类型的项目')
-    .example('modmr fabric api - 搜索 Fabric API')
-    .action(async ({ }, keyword) => {
+  const modrCommand = ctx.command('modmr <keyword> [type]', 'Modrinth 项目搜索')
+    .usage('modmr <关键词> [type] - 获取项目的详细信息\ntype: mod, resourcepack, datapack, shader, modpack, plugin')
+    .example('modmr fabric - 搜索所有类型的 Fabric 相关项目')
+    .example('modmr fabric mod - 只搜索 Fabric 相关模组')
+    .action(async ({ }, keyword, type) => {
       if (!keyword) return '请输入要搜索的关键词'
 
       try {
-        const results = await searchModrinth(keyword)
+        const results = await searchMods(keyword, 'modrinth', undefined, type)
         if (!results.length) return '未找到相关项目'
-
-        const details = await getModrinthDetails(results[0].slug)
-        return formatFullModrinthResult(details)
+        return await getModDetails(results[0], pluginConfig.search.cfApi, pluginConfig.wiki.totalLength)
       } catch (error) {
-        return `搜索失败: ${error.message}`
+        return error.message
       }
     })
 
-  modrCommand.subcommand('.search [type] <keyword>', '按类型搜索 Modrinth 项目')
-    .usage('type 可选值: mod, resourcepack, datapack, shader, modpack, plugin')
-    .example('modmr.search mod fabric - 搜索 Fabric 相关模组')
-    .action(async ({ session }, type, keyword) => {
-      if (!keyword) {
-        keyword = type
-        type = undefined
-      }
+  modrCommand.subcommand('.search <keyword> [type]', '搜索 Modrinth 项目')
+    .usage('modmr.search <关键词> [type] - 搜索并列出多个结果\ntype 可选值: mod, resourcepack, datapack, shader, modpack, plugin')
+    .example('modmr.search fabric - 搜索所有类型的 Fabric 相关项目')
+    .example('modmr.search fabric mod - 只搜索 Fabric 相关模组')
+    .action(async ({ session }, keyword, type) => {
       if (!keyword) return '请输入要搜索的关键词'
 
       try {
-        const facets = type ? TypeMap.facets[type] : undefined
-        const results = await searchModrinth(keyword, facets)
+        const results = await searchMods(keyword, 'modrinth', undefined, type)
         if (!results.length) return '未找到相关项目'
 
-        await session.send('Modrinth 搜索结果：\n' + results.map((r, i) =>
-          `${i + 1}. ${[
-            `${TypeMap.projectTypes[r.project_type] || r.project_type} | ${r.title}`,
-            `分类: ${r.categories.join(', ')}`,
-            `描述: ${r.description}`,
-          ].join('\n')}`
-        ).join('\n') + '\n请回复序号查看详细内容')
+        await session.send('Modrinth 搜索结果：\n' + formatSearchResults(results, pluginConfig.wiki.descLength) + '\n请回复序号查看详细内容')
 
-        const response = await session.prompt(pluginConfig.wiki.searchTimeout * 1000)
+        const response = await session.prompt(pluginConfig.wiki.Timeout * 1000)
         if (!response) return '操作超时'
 
         const index = parseInt(response) - 1
@@ -293,10 +279,52 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
           return '请输入有效的序号'
         }
 
-        const details = await getModrinthDetails(results[index].slug)
-        return formatFullModrinthResult(details)
+        return await getModDetails(results[index], pluginConfig.search.cfApi, pluginConfig.wiki.totalLength)
       } catch (error) {
-        return `搜索失败: ${error.message}`
+        return error.message
+      }
+    })
+
+  const modcfCommand = ctx.command('modcf <keyword> [type]', 'CurseForge 项目搜索')
+    .usage('modcf <关键词> [type] - 获取项目的详细信息\ntype: mod, resourcepack, modpack, shader, datapack, world, addon, plugin')
+    .example('modcf fabric - 搜索所有类型的 Fabric 相关项目')
+    .example('modcf fabric mod - 只搜索 Fabric 相关模组')
+    .action(async ({ }, keyword, type) => {
+      if (!keyword) return '请输入要搜索的关键词'
+
+      try {
+        const results = await searchMods(keyword, 'curseforge', pluginConfig.search.cfApi, type)
+        if (!results.length) return '未找到相关项目'
+        return await getModDetails(results[0], pluginConfig.search.cfApi, pluginConfig.wiki.totalLength)
+      } catch (error) {
+        return error.message
+      }
+    })
+
+  modcfCommand.subcommand('.search <keyword> [type]', '搜索 CurseForge 项目')
+    .usage('modcf.search <关键词> [type] - 搜索并列出多个结果\n可用类型: mod, resourcepack, modpack, shader, datapack, scenario, world, addon, game, plugin, skin, tool, shader-port, script')
+    .example('modcf.search fabric - 搜索所有类型的 Fabric 相关项目')
+    .example('modcf.search fabric mod - 只搜索 Fabric 相关模组')
+    .action(async ({ session }, keyword, type) => {
+      if (!keyword) return '请输入要搜索的关键词'
+
+      try {
+        const results = await searchMods(keyword, 'curseforge', pluginConfig.search.cfApi, type)
+        if (!results.length) return '未找到相关项目'
+
+        await session.send('CurseForge 搜索结果：\n' + formatSearchResults(results, pluginConfig.wiki.descLength) + '\n请回复序号查看详细内容')
+
+        const response = await session.prompt(pluginConfig.wiki.Timeout * 1000)
+        if (!response) return '操作超时'
+
+        const index = parseInt(response) - 1
+        if (isNaN(index) || index < 0 || index >= results.length) {
+          return '请输入有效的序号'
+        }
+
+        return await getModDetails(results[index], pluginConfig.search.cfApi, pluginConfig.wiki.totalLength)
+      } catch (error) {
+        return error.message
       }
     })
 }
