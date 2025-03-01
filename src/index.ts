@@ -253,7 +253,7 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
     })
 
     const modCommand = ctx.command('mod <keyword:text>', 'MCMOD 查询')
-    .usage('使用说明：\n  mod <关键词> - 直接搜索并显示第一个匹配的 MCMOD 页面\n  mod.findmc <关键词> - 搜索并选择 MCMOD 页面\n  mod.shotmc <关键词> - 获取 MCMOD 页面截图\n  mod.mr/findmr <关键词> [类型] - 搜索 Modrinth\n  mod.cf/findcf <关键词> [类型] - 搜索 CurseForge')
+    .usage('使用说明：\n  mod <关键词> - 直接搜索并显示第一个匹配的 MCMOD 页面\n  mod.find <关键词> - 搜索并选择 MCMOD 页面\n  mod.shot <关键词> - 获取 MCMOD 页面截图\n  mod.mr/findmr <关键词> [类型] - 搜索 Modrinth\n  mod.cf/findcf <关键词> [类型] - 搜索 CurseForge')
     .example('mod 机械动力 - 直接查看机械动力页面')
     .action(async ({ }, keyword) => {
       if (!keyword) return '请输入要查询的关键词'
@@ -272,9 +272,9 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
       }
     })
 
-  modCommand.subcommand('.findmc <keyword:text>', '搜索 MCMOD 页面')
-    .usage('使用说明：\n  mod.findmc <关键词> - 搜索并列出多个 MCMOD 相关页面供选择')
-    .example('mod.findmc 科技 - 搜索科技相关模组')
+  modCommand.subcommand('.find <keyword:text>', '搜索 MCMOD 页面')
+    .usage('使用说明：\n  mod.find <关键词> - 搜索并列出多个 MCMOD 相关页面供选择')
+    .example('mod.find 科技 - 搜索科技相关模组')
     .action(async ({ session }, keyword) => {
       return await search({
         keyword,
@@ -285,9 +285,9 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
       })
     })
 
-  modCommand.subcommand('.shotmc <keyword:text>', '搜索并截图 MCMOD 条目')
-    .usage('使用说明：\n  mod.shotmc <关键词> - 搜索并截取 MCMOD 页面截图')
-    .example('mod.shotmc 植物魔法 - 获取植物魔法页面截图')
+  modCommand.subcommand('.shot <keyword:text>', '搜索并截图 MCMOD 条目')
+    .usage('使用说明：\n  mod.shot <关键词> - 搜索并截取 MCMOD 页面截图')
+    .example('mod.shot 植物魔法 - 获取植物魔法页面截图')
     .action(async ({ session }, keyword) => {
       if (!keyword) return '请输入要查询的关键词'
 

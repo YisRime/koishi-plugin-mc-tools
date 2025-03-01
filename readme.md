@@ -6,26 +6,31 @@
 
 ## 功能特性
 
-- 快速查询 Minecraft Wiki 和 MCMOD 百科
-- 支持生成 Wiki 和 MCMOD 页面截图
+- 查询 Minecraft Wiki 和 MCMOD 百科
+- 搜索 Modrinth 和 CurseForge 项目
+- 生成 Wiki 和 MCMOD 页面截图
 - Minecraft 服务器状态实时查询
 - 自动检查并推送 Minecraft 版本更新
-- 支持多语言 Wiki 切换
-- 高度可配置的功能选项
+- 多语言 Wiki 支持
+- 获取玩家信息与 3D 皮肤预览
 
 ## 命令列表
 
 ### Wiki 相关命令
 
-- `mcwiki <关键词>` - 直接查询 Wiki 内容
-- `mcwiki.search <关键词>` - 搜索并选择 Wiki 条目
+- `mcwiki <关键词>` - 直接查询 Wiki 页面
+- `mcwiki.find <关键词>` - 搜索并选择 Wiki 页面
 - `mcwiki.shot <关键词>` - 获取 Wiki 页面截图
 
-### MCMOD 相关命令
+### 模组相关命令
 
-- `modwiki <关键词>` - 直接查询 MCMOD 内容
-- `modwiki.search <关键词>` - 搜索并选择 MCMOD 条目
-- `modwiki.shot <关键词>` - 获取 MCMOD 页面截图
+- `mod <关键词>` - 直接搜索 MCMOD 页面
+- `mod.find <关键词>` - 搜索并选择 MCMOD 页面
+- `mod.shot <关键词>` - 获取 MCMOD 页面截图
+- `mod.mr <关键词> [类型]` - 获取 Modrinth 项目详情
+- `mod.findmr <关键词> [类型]` - 搜索 Modrinth 项目
+- `mod.cf <关键词> [类型]` - 获取 CurseForge 项目详情
+- `mod.findcf <关键词> [类型]` - 搜索 CurseForge 项目
 
 ### 其他功能
 
@@ -35,40 +40,43 @@
 
 ## 配置说明
 
-### Wiki 设置
+### 通用设置
 
 ```yaml
 wiki:
-  defaultLanguage: zh    # Wiki 默认显示语言
-  minSectionLength: 12   # Wiki 段落最小字数
-  sectionPreviewLength: 50    # Wiki 段落预览字数
-  totalPreviewLength: 500     # 总预览字数
-  showVersions: true     # 是否显示支持版本
-  showLinks: true       # 是否显示相关链接
-  showDescription: true # 是否显示简介
-  imageEnabled: true    # 是否显示图片
-  searchTimeout: 10     # 搜索选择时间（秒）
-  searchDescLength: 60  # 搜索结果描述字数
+  totalLength: 400      # 总预览字数
+  descLength: 20       # 搜索项目描述字数
+  Timeout: 15         # 搜索超时时间（秒）
 ```
 
-### 版本检查设置
+### 查询设置
 
 ```yaml
-versionCheck:
-  enabled: false        # 是否启用版本更新检查
-  groups: []           # 接收版本更新通知的群组 ID
+search:
+  Language: 'zh'      # Wiki 显示语言
+  sectionLength: 50   # Wiki 每段预览字数
+  linkCount: 4       # 相关链接最大显示数
+  cfApi: ''         # CurseForge API Key
+```
+
+### 服务器设置
+
+```yaml
+info:
+  default: 'localhost:25565'  # INFO 默认服务器
+  showIcon: true             # 显示服务器图标
+  showPlayers: true          # 显示在线玩家列表
+```
+
+### 更新检测设置
+
+```yaml
+ver:
+  enabled: false        # 启用版本更新检查
+  release: true        # 通知正式版本
+  snapshot: true       # 通知快照版本
   interval: 60         # 检查间隔时间（分钟）
-  notifyOnRelease: true    # 是否通知正式版更新
-  notifyOnSnapshot: true   # 是否通知快照版更新
-```
-
-### 服务器查询设置
-
-```yaml
-server:
-  address: localhost:25565    # 默认服务器地址
-  showIcon: true             # 是否显示服务器图标
-  showPlayers: true          # 是否显示在线玩家列表
+  groups: []          # 接收更新通知 ID
 ```
 
 ## 注意事项
