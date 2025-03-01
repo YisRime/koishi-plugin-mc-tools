@@ -1,6 +1,5 @@
 import { Context, h } from 'koishi'
 import axios from 'axios'
-import * as mc from 'minecraft-protocol'
 
 export type LangCode = keyof typeof MINECRAFT_LANGUAGES
 
@@ -355,6 +354,25 @@ export function formatErrorMessage(error: any): string {
 }
 
 /**
+ * 创建 Varint 编码的 Buffer
+ * @param {number} value - 要编码的数值
+ * @returns {Buffer} 编码后的 Buffer
+ * @private
+ */
+function writeVarInt(value: number): Buffer {
+  const bytes = []
+  do {
+    let temp = value & 0b01111111
+    value >>>= 7
+    if (value !== 0) {
+      temp |= 0b10000000
+    }
+    bytes.push(temp)
+  } while (value !== 0)
+  return Buffer.from(bytes)
+}
+
+/**
  * 查询Java版服务器状态
  * @param {string} host - 服务器主机地址
  * @param {number} port - 服务器端口
@@ -371,50 +389,85 @@ async function queryJavaServer(host: string, port: number): Promise<{
   ping: number
 }> {
   const startTime = Date.now()
-  const client = await mc.ping({ host, port })
-  const ping = Date.now() - startTime
 
-  const parseMOTD = (motd: any): string => {
-    if (!motd) return ''
-    if (typeof motd === 'string') return motd.replace(/§[0-9a-fk-or]/gi, '')
-    if (typeof motd !== 'object') return String(motd)
+  return new Promise((resolve, reject) => {
+    const net = require('net')
+    const socket = new net.Socket()
+    let buffer = Buffer.alloc(0)
 
-    let result = ''
-    if ('text' in motd) result += motd.text
-    if ('extra' in motd && Array.isArray(motd.extra)) {
-      result += motd.extra.map(parseMOTD).join('')
-    }
-    if (Array.isArray(motd)) {
-      result += motd.map(parseMOTD).join('')
-    }
-    return result.replace(/§[0-9a-fk-or]/gi, '')
-  }
+    socket.setTimeout(5000)
 
-  const description = 'description' in client ? client.description : client
-  const motd = parseMOTD(description)
-  const version = !client?.version ? '未知版本' : (
-    typeof client.version === 'object' ? client.version.name : String(client.version)
-  )
+    socket.on('error', (err) => {
+      socket.destroy()
+      reject(err)
+    })
 
-  const players = 'players' in client ? {
-    online: client.players?.online ?? 0,
-    max: client.players?.max ?? 0,
-    sample: client.players?.sample ?? []
-  } : { online: 0, max: 0, sample: [] }
+    socket.on('timeout', () => {
+      socket.destroy()
+      const err = new Error('请求超时')
+      err['code'] = 'ETIMEDOUT'
+      reject(err)
+    })
 
-  const playerList = players.sample
-    ?.filter(p => p && typeof p.name === 'string')
-    .map(p => p.name)
+    socket.on('data', (data) => {
+      buffer = Buffer.concat([buffer, data])
+      try {
+        const response = JSON.parse(buffer.toString('utf8').split('\x00\x00')[1])
+        socket.destroy()
 
-  return {
-    motd,
-    version,
-    online: players.online,
-    max: players.max,
-    playerList,
-    favicon: 'favicon' in client ? client.favicon : undefined,
-    ping
-  }
+        const parseMOTD = (motd: any): string => {
+          if (!motd) return ''
+          if (typeof motd === 'string') return motd.replace(/§[0-9a-fk-or]/gi, '')
+          if (typeof motd !== 'object') return String(motd)
+
+          let result = ''
+          if ('text' in motd) result += motd.text
+          if ('extra' in motd && Array.isArray(motd.extra)) {
+            result += motd.extra.map(parseMOTD).join('')
+          }
+          if (Array.isArray(motd)) {
+            result += motd.map(parseMOTD).join('')
+          }
+          return result.replace(/§[0-9a-fk-or]/gi, '')
+        }
+
+        resolve({
+          motd: parseMOTD(response.description),
+          version: response.version?.name || '未知版本',
+          online: response.players?.online ?? 0,
+          max: response.players?.max ?? 0,
+          playerList: response.players?.sample?.map(p => p.name),
+          favicon: response.favicon,
+          ping: Date.now() - startTime
+        })
+      } catch (err) {
+        // 如果解析失败，继续等待更多数据
+      }
+    })
+
+    socket.connect(port, host, () => {
+      // 发送握手包和状态请求包
+      const hostBuffer = Buffer.from(host, 'utf8')
+      const handshakePacket = Buffer.concat([
+        writeVarInt(0), // Packet ID
+        writeVarInt(47), // Protocol Version
+        writeVarInt(hostBuffer.length),
+        hostBuffer,
+        Buffer.from([port >> 8, port & 255]), // Port
+        writeVarInt(1), // Next State (1 for Status)
+      ])
+
+      const handshake = Buffer.concat([
+        writeVarInt(handshakePacket.length),
+        handshakePacket
+      ])
+
+      const statusRequest = Buffer.from([0x01, 0x00])
+
+      socket.write(handshake)
+      socket.write(statusRequest)
+    })
+  })
 }
 
 /**
