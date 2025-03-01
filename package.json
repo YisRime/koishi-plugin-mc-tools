@@ -1,7 +1,7 @@
 {
   "name": "koishi-plugin-mc-tools",
-  "description": "我的世界工具箱（Minecraft-MC-Tools）支持查阅百科，查询服务器，查询 MC 最新版本和玩家皮肤等功能",
-  "version": "1.6.3",
+  "description": "我的世界工具箱（Minecraft-MC-Tools）支持搜索百科，查询服务器，查询 MC 最新版本和玩家皮肤等功能",
+  "version": "1.6.4",
   "contributors": [
     "Yis_Rime <yis_rime@outlook.com>"
   ],
@@ -36,6 +36,10 @@
     "mcwiki",
     "mcskin",
     "modwiki",
+    "modmr",
+    "modcf",
+    "CurseForge",
+    "Modrinth",
     "PCL",
     "我的世界",
     "MC百科"
@@ -44,12 +48,12 @@
   "peerDependencies": {
     "koishi": "^4.18.7",
     "axios": "^1.4.0",
-    "cheerio": "^1.0.0-rc.12",
+    "cheerio": "^1.0.0",
     "koishi-plugin-puppeteer": "^3.5.2"
   },
   "dependencies": {
     "axios": "^1.4.0",
-    "cheerio": "^1.0.0-rc.12",
+    "cheerio": "^1.0.0",
     "koishi-plugin-puppeteer": "^3.5.2"
   }
 }

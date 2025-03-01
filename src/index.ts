@@ -33,7 +33,7 @@ const MINECRAFT_LANGUAGES = {
   'pl': 'Polski',
   'nl': 'Nederlands',
   'tr': 'Türkçe'
-} as const
+}
 
 export const TypeMap = {
   errorPatterns: {
@@ -197,8 +197,11 @@ export const Config: Schema<MinecraftToolsConfig> = Schema.object({
 export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
   const userLanguageSettings = new Map<string, LangCode>()
   const minecraftVersions = { snapshot: '', release: '' }
-  const mcwiki = ctx.command('mcwiki', 'Minecraft Wiki 查询')
-    .usage(`mcwiki <关键词> - 直接查询内容\nmcwiki.search <关键词> - 搜索并选择条目\nmcwiki.shot <关键词> - 获取页面截图`)
+  const mcwiki = ctx.command('mcwiki <keyword:text>', 'Minecraft Wiki 查询')
+    .usage('使用说明：\n  mcwiki <关键词> - 直接查询指定 Wiki 页面\n  mcwiki.find <关键词> - 搜索并选择页面\n  mcwiki.shot <关键词> - 获取页面截图')
+    .example('mcwiki 红石 - 直接查看红石页面')
+    .example('mcwiki.find 发射器 - 搜索发射器相关页面')
+    .example('mcwiki.shot 活塞 - 获取活塞页面截图')
 
   mcwiki.action(async ({ session }, keyword) => {
     try {
@@ -209,26 +212,9 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
     }
   })
 
-  const modWikiCommand = ctx.command('modwiki <keyword:text>', 'MCMOD 查询')
-    .usage(`modwiki <关键词> - 直接查询内容\nmodwiki.search <关键词> - 搜索并选择条目\nmodwiki.shot <关键词> - 获取页面截图`)
-    .action(async ({ }, keyword) => {
-      if (!keyword) return '请输入要查询的关键词'
-
-      try {
-        const results = await searchMod(keyword, pluginConfig)
-        if (!results.length) return '未找到相关内容'
-
-        const result = results[0]
-        const content = await fetchModContent(result.url, pluginConfig.wiki)
-        return formatContent(content, result.url, {
-          showLinks: pluginConfig.search.linkCount
-        })
-      } catch (error) {
-        return error.message
-      }
-    })
-
-    mcwiki.subcommand('.search <keyword:text>', '搜索 Wiki 页面（使用 -i 后缀以获取页面截图）')
+  mcwiki.subcommand('.find <keyword:text>', '搜索 Wiki 页面')
+    .usage('使用说明：\n  mcwiki.find <关键词> - 搜索并列出多个 Wiki 页面供选择')
+    .example('mcwiki.find 红石电路 - 搜索红石电路相关页面')
     .action(async ({ session }, keyword) => {
       return await search({
         keyword,
@@ -240,18 +226,9 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
       })
     })
 
-  modWikiCommand.subcommand('.search <keyword:text>', '搜索 MCMOD 页面（使用 -i 后缀以获取页面截图）')
-    .action(async ({ session }, keyword) => {
-      return await search({
-        keyword,
-        source: 'mcmod',
-        session,
-        config: pluginConfig,
-        ctx
-      })
-    })
-
   mcwiki.subcommand('.shot <keyword:text>', '获取 Wiki 页面截图')
+    .usage('使用说明：\n  mcwiki.shot <关键词> - 截取指定 Wiki 页面截图')
+    .example('mcwiki.shot 红石比较器 - 获取红石比较器页面截图')
     .action(async ({ session }, keyword) => {
       if (!keyword) return '请输入要查询的关键词'
 
@@ -275,7 +252,42 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
       }
     })
 
-  modWikiCommand.subcommand('.shot <keyword:text>', '搜索并截图MCMOD条目')
+    const modCommand = ctx.command('mod <keyword:text>', 'MCMOD 查询')
+    .usage('使用说明：\n  mod <关键词> - 直接搜索并显示第一个匹配的 MCMOD 页面\n  mod.findmc <关键词> - 搜索并选择 MCMOD 页面\n  mod.shotmc <关键词> - 获取 MCMOD 页面截图\n  mod.mr/findmr <关键词> [类型] - 搜索 Modrinth\n  mod.cf/findcf <关键词> [类型] - 搜索 CurseForge')
+    .example('mod 机械动力 - 直接查看机械动力页面')
+    .action(async ({ }, keyword) => {
+      if (!keyword) return '请输入要查询的关键词'
+
+      try {
+        const results = await searchMod(keyword, pluginConfig)
+        if (!results.length) return '未找到相关内容'
+
+        const result = results[0]
+        const content = await fetchModContent(result.url, pluginConfig.wiki)
+        return formatContent(content, result.url, {
+          showLinks: pluginConfig.search.linkCount
+        })
+      } catch (error) {
+        return error.message
+      }
+    })
+
+  modCommand.subcommand('.findmc <keyword:text>', '搜索 MCMOD 页面')
+    .usage('使用说明：\n  mod.findmc <关键词> - 搜索并列出多个 MCMOD 相关页面供选择')
+    .example('mod.findmc 科技 - 搜索科技相关模组')
+    .action(async ({ session }, keyword) => {
+      return await search({
+        keyword,
+        source: 'mcmod',
+        session,
+        config: pluginConfig,
+        ctx
+      })
+    })
+
+  modCommand.subcommand('.shotmc <keyword:text>', '搜索并截图 MCMOD 条目')
+    .usage('使用说明：\n  mod.shotmc <关键词> - 搜索并截取 MCMOD 页面截图')
+    .example('mod.shotmc 植物魔法 - 获取植物魔法页面截图')
     .action(async ({ session }, keyword) => {
       if (!keyword) return '请输入要查询的关键词'
 
@@ -297,59 +309,10 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
       }
     })
 
-  ctx.command('mcver', '获取 Minecraft 最新版本')
-    .action(async () => {
-      const result = await getVersionInfo()
-      return result.success ? result.data : result.error
-    })
-
-  if (pluginConfig.ver.enabled && pluginConfig.ver.groups.length) {
-    checkUpdate(minecraftVersions, ctx, pluginConfig)
-    setInterval(() => checkUpdate(minecraftVersions, ctx, pluginConfig), pluginConfig.ver.interval * 60 * 1000)
-  }
-
-  ctx.command('mcinfo [server]', '查询 MC 服务器状态')
-    .usage('mcinfo [地址[:端口]] - 查询服务器状态')
-    .example('mcinfo mc.example.com:25566 - 查询指定端口的服务器')
-    .action(async ({ }, server) => {
-      try {
-        return await checkServerStatus(server, pluginConfig)
-      } catch (error) {
-        return formatErrorMessage(error)
-      }
-    })
-
-  ctx.command('mcskin <username>', '查询 Minecraft 玩家信息')
-    .usage('mcskin <用户名> - 获取玩家信息和3D皮肤预览')
-    .example('mcskin Notch - 获取 Notch 的信息')
-    .action(async ({ }, username) => {
-      if (!username) return '请输入要查询的用户名';
-
-      try {
-        const profile = await getPlayerProfile(username);
-        const parts = [
-          `${profile.name}[${profile.uuidDashed}]${profile.skin ? ` (${profile.skin.model === 'slim' ? '纤细' : '经典'})` : ''}`
-        ];
-
-        if (profile.skin) {
-          const skinImage = await renderPlayerSkin(ctx, profile.skin.url, profile.cape?.url);
-          parts.push(h.image(`data:image/png;base64,${skinImage}`).toString());
-          parts.push(`获取 ${profile.name} 的头(≤1.12 或 ≥1.13):`);
-          parts.push(`/give @p minecraft:skull 1 3 {SkullOwner:"${profile.name}"}`);
-          parts.push(`/give @p minecraft:player_head{SkullOwner:"${profile.name}"}`);
-        } else {
-          parts.push('未设置皮肤');
-        }
-        return parts.join('\n');
-      } catch (error) {
-        return error.message
-      }
-    })
-
-  const modrCommand = ctx.command('modmr <keyword> [type]', 'Modrinth 项目搜索')
-    .usage('modmr <关键词> [type] - 获取项目的详细信息\ntype: mod, resourcepack, datapack, shader, modpack, plugin')
-    .example('modmr fabric - 搜索所有类型的 Fabric 相关项目')
-    .example('modmr fabric mod - 只搜索 Fabric 相关模组')
+  modCommand.subcommand('.mr <keyword> [type]', 'Modrinth 项目搜索')
+    .usage('使用说明：\n  mod.mr <关键词> [类型] - 获取Modrinth项目详情\n可用类型: mod, resourcepack, datapack, shader, modpack, plugin')
+    .example('mod.mr fabric - 搜索所有Fabric相关项目')
+    .example('mod.mr fabric mod - 只搜索Fabric相关模组')
     .action(async ({ }, keyword, type) => {
       if (!keyword) return '请输入要搜索的关键词'
 
@@ -362,10 +325,10 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
       }
     })
 
-  modrCommand.subcommand('.search <keyword> [type]', '搜索 Modrinth 项目')
-    .usage('modmr.search <关键词> [type] - 搜索并列出多个结果\ntype 可选值: mod, resourcepack, datapack, shader, modpack, plugin')
-    .example('modmr.search fabric - 搜索所有类型的 Fabric 相关项目')
-    .example('modmr.search fabric mod - 只搜索 Fabric 相关模组')
+  modCommand.subcommand('.findmr <keyword> [type]', '搜索 Modrinth 项目')
+    .usage('使用说明：\n  mod.findmr <关键词> [类型] - 搜索并列出Modrinth结果\n可用类型: mod, resourcepack, datapack, shader, modpack, plugin')
+    .example('mod.findmr fabric - 搜索所有Fabric相关项目')
+    .example('mod.findmr fabric mod - 只搜索Fabric相关模组')
     .action(async ({ session }, keyword, type) => {
       if (!keyword) return '请输入要搜索的关键词'
 
@@ -389,10 +352,10 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
       }
     })
 
-  const modcfCommand = ctx.command('modcf <keyword> [type]', 'CurseForge 项目搜索')
-    .usage('modcf <关键词> [type] - 获取项目的详细信息\ntype: mod, resourcepack, modpack, shader, datapack, world, addon, plugin')
-    .example('modcf fabric - 搜索所有类型的 Fabric 相关项目')
-    .example('modcf fabric mod - 只搜索 Fabric 相关模组')
+  modCommand.subcommand('.cf <keyword> [type]', 'CurseForge 项目搜索')
+    .usage('使用说明：\n  mod.cf <关键词> [类型] - 获取CurseForge项目详情\n可用类型: mod, resourcepack, modpack, shader, datapack, world, addon, plugin')
+    .example('mod.cf fabric - 搜索所有Fabric相关项目')
+    .example('mod.cf fabric mod - 只搜索Fabric相关模组')
     .action(async ({ }, keyword, type) => {
       if (!keyword) return '请输入要搜索的关键词'
 
@@ -405,10 +368,10 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
       }
     })
 
-  modcfCommand.subcommand('.search <keyword> [type]', '搜索 CurseForge 项目')
-    .usage('modcf.search <关键词> [type] - 搜索并列出多个结果\n可用类型: mod, resourcepack, modpack, shader, datapack, scenario, world, addon, game, plugin, skin, tool, shader-port, script')
-    .example('modcf.search fabric - 搜索所有类型的 Fabric 相关项目')
-    .example('modcf.search fabric mod - 只搜索 Fabric 相关模组')
+  modCommand.subcommand('.findcf <keyword> [type]', '搜索 CurseForge 项目')
+    .usage('使用说明：\n  mod.findcf <关键词> [类型] - 搜索并列出CurseForge结果\n可用类型: mod, resourcepack, modpack, shader, datapack, world, addon, plugin')
+    .example('mod.findcf fabric - 搜索所有Fabric相关项目')
+    .example('mod.findcf fabric mod - 只搜索Fabric相关模组')
     .action(async ({ session }, keyword, type) => {
       if (!keyword) return '请输入要搜索的关键词'
 
@@ -431,4 +394,55 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
         return error.message
       }
     })
+
+  ctx.command('mcver', '获取 Minecraft 最新版本')
+    .usage('使用说明：\n  mcver - 获取最新的Minecraft版本信息')
+    .action(async () => {
+      const result = await getVersionInfo()
+      return result.success ? result.data : result.error
+    })
+
+  if (pluginConfig.ver.enabled && pluginConfig.ver.groups.length) {
+    checkUpdate(minecraftVersions, ctx, pluginConfig)
+    setInterval(() => checkUpdate(minecraftVersions, ctx, pluginConfig), pluginConfig.ver.interval * 60 * 1000)
+  }
+
+  ctx.command('mcinfo [server]', '查询 MC 服务器状态')
+    .usage('使用说明：\n  mcinfo [地址[:端口]] - 查询指定服务器的状态')
+    .example('mcinfo mc.hypixel.net - 查询默认端口的服务器')
+    .example('mcinfo mc.example.com:25566 - 查询指定端口的服务器')
+    .action(async ({ }, server) => {
+      try {
+        return await checkServerStatus(server, pluginConfig)
+      } catch (error) {
+        return formatErrorMessage(error)
+      }
+    })
+
+  ctx.command('mcskin <username>', '查询 Minecraft 玩家信息')
+    .usage('使用说明：\n  mcskin <用户名> - 获取玩家信息与3D皮肤预览')
+    .example('mcskin Notch - 获取Notch的信息和皮肤')
+    .action(async ({ }, username) => {
+      if (!username) return '请输入要查询的用户名';
+
+      try {
+        const profile = await getPlayerProfile(username);
+        const parts = [
+          `${profile.name}[${profile.uuidDashed}]${profile.skin ? ` (${profile.skin.model === 'slim' ? '纤细' : '经典'})` : ''}`
+        ];
+
+        if (profile.skin) {
+          const skinImage = await renderPlayerSkin(ctx, profile.skin.url, profile.cape?.url);
+          parts.push(h.image(`data:image/png;base64,${skinImage}`).toString());
+          parts.push(`获取 ${profile.name} 的头(≤1.12 或 ≥1.13):`);
+          parts.push(`/give @p minecraft:skull 1 3 {SkullOwner:"${profile.name}"}`);
+          parts.push(`/give @p minecraft:player_head{SkullOwner:"${profile.name}"}`);
+        } else {
+          parts.push('未设置皮肤');
+        }
+        return parts.join('\n');
+      } catch (error) {
+        return error.message
+      }
+  })
 }
