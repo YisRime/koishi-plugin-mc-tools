@@ -102,10 +102,23 @@ export async function checkServerStatus(
           throw new Error('服务器离线')
         }
 
-        const version = data.version ?? data.version?.version ?? data.server_version
+        // 改进版本获取逻辑
+        const version = typeof data.version === 'object'
+          ? data.version?.name || data.version?.raw || '未知'
+          : data.version ?? data.server_version ?? '未知'
+
+        // 改进 MOTD 获取逻辑
+        const rawMotd = data.motd?.raw ?? data.motd?.clean ?? data.motd?.html ??
+                       data.motd?.ingame ?? data.description ?? data.motd
+
+        const motd = typeof rawMotd === 'object'
+          ? parseMOTDJson(rawMotd)
+          : typeof rawMotd === 'string'
+            ? stripColorCodes(rawMotd)
+            : undefined
+
         const playersOnline = Number(data.players_online ?? data.players?.online ?? data.online)
         const playersMax = Number(data.players_max ?? data.players?.max ?? data.max)
-        const motd = data.motd ?? data.motd?.ingame ?? data.motd?.clean ?? data.description
 
         if ((!version || version === '未知') &&
             (isNaN(playersOnline) || isNaN(playersMax)) &&
@@ -118,7 +131,7 @@ export async function checkServerStatus(
           ip: parsed.host,
           port: parsed.port,
           motd: { raw: motd },
-          version: { name: version ?? '未知' },
+          version: { name: version },
           players: {
             online: playersOnline || 0,
             max: playersMax || 0,
