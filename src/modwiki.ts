@@ -6,7 +6,7 @@
 import { h } from 'koishi'
 import axios from 'axios'
 import * as cheerio from 'cheerio'
-import { CommonConfig } from './utils'
+import { CommonConfig } from './index'
 
 /**
  * 处理结果接口

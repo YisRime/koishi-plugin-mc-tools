@@ -1,5 +1,41 @@
 import axios from 'axios';
-import { TypeMap, SearchModResult, ModrinthProject, CurseForgeProject } from './utils'
+import { TypeMap } from './index'
+
+interface SearchModResult {
+  source: 'modrinth' | 'curseforge'
+  id: string | number
+  type: string
+  title: string
+  description: string
+  categories: string[]
+}
+interface ModrinthProject {
+  slug: string
+  title: string
+  description: string
+  categories: string[]
+  client_side: string
+  server_side: string
+  project_type: string
+  body: string
+  game_versions?: string[]
+  loaders?: string[]
+}
+interface CurseForgeProject {
+  id: number
+  name: string
+  summary: string
+  description: string
+  categories: (string | { name: string })[]
+  classId: number
+  latestFiles: {
+    displayName: string
+    gameVersions: string[]
+  }[]
+  links: {
+    websiteUrl: string
+  }
+}
 
 export async function searchModrinth(keyword: string, facets?: string[]): Promise<ModrinthProject[]> {
   const response = await axios.get('https://api.modrinth.com/v2/search', {

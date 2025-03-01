@@ -1,9 +1,35 @@
 import { h } from 'koishi'
 import axios from 'axios'
 import * as cheerio from 'cheerio'
-import { MinecraftToolsConfig, LangCode, SearchResult, CLEANUP_SELECTORS } from './utils'
+import { MinecraftToolsConfig, LangCode } from './index'
 import { buildUrl, fetchContent } from './mcwiki'
 import { fetchModContent, formatContent } from './modwiki'
+
+interface SearchResult {
+  title: string
+  url: string
+  desc?: string
+  source: 'wiki' | 'mcmod'
+}
+const CLEANUP_SELECTORS = [
+  // Wiki 相关
+  '.mw-editsection', '#mw-navigation', '#footer', '.noprint', '#toc',
+  '.navbox', '#siteNotice', '#contentSub', '.mw-indicators',
+  '.sister-wiki', '.external', 'script', 'meta', '#mw-head',
+  '#mw-head-base', '#mw-page-base', '#catlinks', '.printfooter',
+  '.mw-jump-link', '.vector-toc', '.vector-menu',
+  '.mw-cite-backlink', '.reference', '.treeview',
+  '.file-display-header',
+  // MCMOD 相关
+  'header', 'footer', '.header-container', '.common-background',
+  '.common-nav', '.common-menu-page', '.common-comment-block',
+  '.comment-ad', '.ad-leftside', '.slidetips', '.item-table-tips',
+  '.common-icon-text-frame', '.common-ad-frame', '.ad-class-page',
+  '.class-rating-submit', '.common-icon-text.edit-history',
+  // MCMOD 论坛相关
+  '.ad', '.under', '#scrolltop', '.po', '#f_pst', '.psth', '.sign', '.sd',
+  '#append_parent', '.wrap-posts.total', '.rate', '.ratl','.cm', '.modact',
+]
 
 /**
  * 捕获页面截图

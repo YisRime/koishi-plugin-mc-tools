@@ -1,6 +1,6 @@
 import * as cheerio from 'cheerio'
 import axios from 'axios'
-import { MinecraftToolsConfig, LangCode } from './utils'
+import { MinecraftToolsConfig, LangCode } from './index'
 import { searchWiki } from './subwiki'
 
 /**

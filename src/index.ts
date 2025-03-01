@@ -1,19 +1,12 @@
 import { Context, Schema, h } from 'koishi'
 import {} from 'koishi-plugin-puppeteer'
-import {
-  MinecraftToolsConfig,
-  MINECRAFT_LANGUAGES,
-  LangCode,
-  checkServerStatus,
-  getVersionInfo,
-  checkUpdate,
-  formatErrorMessage
-} from './utils'
+import { getVersionInfo, checkUpdate } from './utils'
 import { fetchModContent, formatContent } from './modwiki'
 import { processWikiRequest } from './mcwiki'
 import { searchMod, search, capture } from './subwiki'
 import { getPlayerProfile, renderPlayerSkin } from './utils'
 import { searchMods, getModDetails, formatSearchResults } from './mod'
+import { checkServerStatus, formatErrorMessage } from './info'
 
 /**
  * Minecraft 工具箱插件
@@ -22,6 +15,117 @@ import { searchMods, getModDetails, formatSearchResults } from './mod'
 export const name = 'mc-tools'
 export const inject = {optional: ['puppeteer']}
 export const usage = '使用 Docker 部署的用户请安装 chromium-swiftshader 来使用 mcskin 指令获取皮肤'
+export type LangCode = keyof typeof MINECRAFT_LANGUAGES
+
+const MINECRAFT_LANGUAGES = {
+  'zh': '中文（简体）',
+  'zh-hk': '中文（繁體）',
+  'zh-tw': '中文（台灣）',
+  'en': 'English',
+  'ja': '日本語',
+  'ko': '한국어',
+  'fr': 'Français',
+  'de': 'Deutsch',
+  'es': 'Español',
+  'it': 'Italiano',
+  'pt': 'Português',
+  'ru': 'Русский',
+  'pl': 'Polski',
+  'nl': 'Nederlands',
+  'tr': 'Türkçe'
+} as const
+
+export const TypeMap = {
+  errorPatterns: {
+    'ECONNREFUSED': '服务器拒绝连接',
+    'ETIMEDOUT': '连接超时',
+    'ENOTFOUND': '无法解析服务器地址',
+    'ECONNRESET': '服务器断开了连接',
+    'EHOSTUNREACH': '无法访问目标服务器',
+    'ENETUNREACH': '网络不可达',
+    'EPROTO': '协议错误',
+    'ECONNABORTED': '连接中断',
+    'EPIPE': '连接异常断开',
+    'invalid server response': '服务器响应无效',
+    'Unexpected server response': '服务器返回意外响应',
+    'Invalid hostname': '无效的服务器地址',
+    'getaddrinfo ENOTFOUND': '找不到服务器',
+    'connect ETIMEDOUT': '连接超时',
+    'read ECONNRESET': '服务器主动断开连接',
+    'connect ECONNREFUSED': '服务器拒绝连接',
+    'Request timeout': '请求超时',
+    'network unreachable': '网络不可达',
+    'port.*out of range': '端口号必须在1-65535之间',
+    'dns lookup failed': 'DNS解析失败'
+  },
+  modrinthTypes: {
+    'mod': '模组',
+    'resourcepack': '资源包',
+    'datapack': '数据包',
+    'shader': '光影',
+    'modpack': '整合包',
+    'plugin': '插件'
+  },
+  facets: {
+    'mod': ['project_type:mod'],
+    'resourcepack': ['project_type:resourcepack'],
+    'datapack': ['project_type:datapack'],
+    'shader': ['project_type:shader'],
+    'modpack': ['project_type:modpack'],
+    'plugin': ['project_type:plugin']
+  } as const,
+  curseforgeTypes: {
+    6: 'mod',
+    12: 'resourcepack',
+    17: 'modpack',
+    4471: 'shader',
+    4546: 'datapack',
+    4944: 'world',
+    5141: 'addon',
+    5232: 'plugin',
+  },
+  curseforgeTypeNames: {
+    'mod': '模组',
+    'resourcepack': '资源包',
+    'modpack': '整合包',
+    'shader': '光影',
+    'datapack': '数据包',
+    'world': '地图',
+    'addon': '附加包',
+    'plugin': '插件'
+  },
+  isValidType: (source: 'modrinth' | 'curseforge', type?: string): boolean => {
+    if (!type) return true
+    const types = source === 'modrinth' ? Object.keys(TypeMap.modrinthTypes) : Object.values(TypeMap.curseforgeTypes)
+    return types.includes(type as any)
+  }
+}
+export interface CommonConfig {
+  Timeout: number
+  totalLength: number
+  descLength: number
+}
+export interface MinecraftToolsConfig {
+  wiki: CommonConfig
+  search: {
+    Language: LangCode
+    sectionLength: number
+    linkCount: number
+    cfApi: string
+  }
+  info: {
+    default: string
+    showPlayers: boolean
+    showIcon: boolean
+  }
+  ver: {
+    enabled: boolean
+    groups: string[]
+    interval: number
+    release: boolean
+    snapshot: boolean
+  }
+}
 
 /**
  * 插件配置模式
