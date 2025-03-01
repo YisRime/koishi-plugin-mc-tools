@@ -154,6 +154,7 @@ export const Config: Schema<MinecraftToolsConfig> = Schema.object({
       .default('localhost:25565'),
     javaApis: Schema.array(String)
       .default([
+        'https://api.mcstatus.io/v2/status/java/${host}:${port}',
         'https://api.imlazy.ink/mcapi?type=json&host=${host}:${port}',
         'https://motdbe.blackbe.work/api/java?host=${host}:${port}',
         'https://api.bluesdawn.top/minecraft/server/api?host=${host}:${port}'
@@ -161,6 +162,7 @@ export const Config: Schema<MinecraftToolsConfig> = Schema.object({
       .description('Java 查询 API'),
     bedrockApis: Schema.array(String)
       .default([
+        'https://api.mcstatus.io/v2/status/bedrock/${host}:${port}',
         'https://api.imlazy.ink/mcapi?type=json&host=${host}:${port}&be=true',
         'https://motdbe.blackbe.work/api?host=${host}:${port}',
         'https://api.bedrockinfo.com/v2/status?host=${host}&port=${port}'
