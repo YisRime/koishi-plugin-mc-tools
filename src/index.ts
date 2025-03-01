@@ -250,7 +250,7 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
       }
     })
 
-    const modCommand = ctx.command('mod <keyword:text>', 'MCMOD 查询')
+    const modCommand = ctx.command('mod <keyword:text>', 'MCMOD/Modrinth/Curseforge 查询')
     .usage('使用说明：\n  mod <关键词> - 直接搜索并显示第一个匹配的 MCMOD 页面\n  mod.find <关键词> - 搜索并选择 MCMOD 页面\n  mod.shot <关键词> - 获取 MCMOD 页面截图\n  mod.mr/findmr <关键词> [类型] - 搜索 Modrinth\n  mod.cf/findcf <关键词> [类型] - 搜索 CurseForge')
     .example('mod 机械动力 - 直接查看机械动力页面')
     .action(async ({ }, keyword) => {
@@ -393,7 +393,7 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
       }
     })
 
-  ctx.command('mcver', '获取 Minecraft 最新版本')
+  ctx.command('mcver', '查询 Minecraft 最新版本')
     .usage('使用说明：\n  mcver - 获取最新的Minecraft版本信息')
     .action(async () => {
       const result = await getVersionInfo()
@@ -405,7 +405,7 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
     setInterval(() => checkUpdate(minecraftVersions, ctx, pluginConfig), pluginConfig.ver.interval * 60 * 1000)
   }
 
-  ctx.command('mcinfo [server]', '查询 MC 服务器状态')
+  ctx.command('mcinfo [server]', '查询 Minecraft 服务器')
     .usage('使用说明：\n  mcinfo [地址[:端口]] - 查询Java版服务器状态\n  mcinfo.be [地址[:端口]] - 查询基岩版服务器状态')
     .example('mcinfo mc.hypixel.net - 查询Java版服务器')
     .example('mcinfo.be play.lbsg.net - 查询基岩版服务器')
@@ -417,7 +417,7 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
         return error.message
       }
     })
-    .subcommand('.be [server]', '查询基岩版服务器状态')
+    .subcommand('.be [server]', '查询基岩版服务器')
     .example('mcinfo.be mc.example.com:19133')
     .action(async ({ }, server) => {
       try {
