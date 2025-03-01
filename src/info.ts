@@ -1,315 +1,256 @@
 import { h } from 'koishi'
-import { MinecraftToolsConfig, TypeMap } from './index'
+import { MinecraftToolsConfig } from './index'
+import axios from 'axios'
+
+export interface ServerStatus {
+  online: boolean
+  ip: string
+  port: number
+  motd?: { raw?: string }
+  version: { name: string }
+  players: {
+    online: number
+    max: number
+    sample?: { name: string }[]
+  }
+  favicon?: string
+  ping?: number
+  error?: string
+  description?: string
+  modInfo?: {
+    type?: string
+    modList?: { name: string; version?: string }[]
+  }
+  software?: string
+  gameType?: string
+  platform?: string
+  serverId?: string
+  map?: string
+  plugins?: string[]
+  hostip?: string
+}
 
 interface ParsedServer {
   host: string
-  port: number
-}
-interface BedrockServerInfo {
-  edition: string
-  motd: string
-  protocol: string
-  version: string
-  online: number
-  max: number
+  port?: number
+  type: 'java' | 'bedrock'
 }
 
-/**
- * 解析 Minecraft 服务器地址和端口
- * @param {string | undefined} serverAddress - 服务器地址字符串，格式为 "host:port" 或 "host"
- * @param {MinecraftToolsConfig['info']} defaultConfig - 默认服务器配置
- * @returns {ParsedServer} 解析后的服务器信息对象
- * @throws {Error} 当地址格式无效或端口号不合法时抛出错误
- * @private
- */
-function parseServer(serverAddress: string | undefined, defaultConfig: MinecraftToolsConfig['info']): ParsedServer {
-  const address = serverAddress || defaultConfig.default
-  const [host, portStr] = address.split(':')
-  if (!host) throw new Error('请输入有效的服务器地址')
+function parseServerAddress(input?: string, defaultServer?: string): ParsedServer {
+  let server = input || defaultServer || 'localhost'
+  let type: 'java' | 'bedrock' = 'java'
+  const defaultPorts = { java: 25565, bedrock: 19132 }
 
-  let port = 25565
-  if (portStr) {
-    const parsedPort = parseInt(portStr)
-    if (isNaN(parsedPort) || parsedPort < 1 || parsedPort > 65535) {
-      throw new Error('端口号必须在1-65535之间')
-    }
-    port = parsedPort
-  }
+  let host: string
+  let port: number | undefined
 
-  return { host, port }
-}
-
-/**
- * 格式化错误消息
- * @param {any} error - 错误对象
- * @returns {string} 格式化后的错误消息
- */
-export function formatErrorMessage(error: any): string {
-  const errorMessage = error?.message || String(error)
-
-  if (error?.code && TypeMap.errorPatterns[error.code]) {
-    return TypeMap.errorPatterns[error.code]
-  }
-
-  for (const [pattern, message] of Object.entries(TypeMap.errorPatterns)) {
-    if (new RegExp(pattern, 'i').test(errorMessage)) {
-      return message
-    }
-  }
-
-  return `无法连接到服务器：${errorMessage}`
-}
-
-/**
- * 创建 Varint 编码的 Buffer
- * @param {number} value - 要编码的数值
- * @returns {Buffer} 编码后的 Buffer
- * @private
- */
-function writeVarInt(value: number): Buffer {
-  const bytes = []
-  do {
-    let temp = value & 0b01111111
-    value >>>= 7
-    if (value !== 0) {
-      temp |= 0b10000000
-    }
-    bytes.push(temp)
-  } while (value !== 0)
-  return Buffer.from(bytes)
-}
-
-/**
- * 查询Java版服务器状态
- * @param {string} host - 服务器主机地址
- * @param {number} port - 服务器端口
- * @returns {Promise<Object>} 服务器状态信息
- * @private
- */
-async function queryJavaServer(host: string, port: number): Promise<{
-  motd: string
-  version: string
-  online: number
-  max: number
-  playerList?: string[]
-  favicon?: string
-  ping: number
-}> {
-  const startTime = Date.now()
-
-  return new Promise((resolve, reject) => {
-    const net = require('net')
-    const socket = new net.Socket()
-    let buffer = Buffer.alloc(0)
-
-    socket.setTimeout(5000)
-
-    socket.on('error', (err) => {
-      socket.destroy()
-      reject(err)
-    })
-
-    socket.on('timeout', () => {
-      socket.destroy()
-      const err = new Error('请求超时')
-      err['code'] = 'ETIMEDOUT'
-      reject(err)
-    })
-
-    socket.on('data', (data) => {
-      buffer = Buffer.concat([buffer, data])
-      try {
-        const response = JSON.parse(buffer.toString('utf8').split('\x00\x00')[1])
-        socket.destroy()
-
-        const parseMOTD = (motd: any): string => {
-          if (!motd) return ''
-          if (typeof motd === 'string') return motd.replace(/§[0-9a-fk-or]/gi, '')
-          if (typeof motd !== 'object') return String(motd)
-
-          let result = ''
-          if ('text' in motd) result += motd.text
-          if ('extra' in motd && Array.isArray(motd.extra)) {
-            result += motd.extra.map(parseMOTD).join('')
-          }
-          if (Array.isArray(motd)) {
-            result += motd.map(parseMOTD).join('')
-          }
-          return result.replace(/§[0-9a-fk-or]/gi, '')
-        }
-
-        resolve({
-          motd: parseMOTD(response.description),
-          version: response.version?.name || '未知版本',
-          online: response.players?.online ?? 0,
-          max: response.players?.max ?? 0,
-          playerList: response.players?.sample?.map(p => p.name),
-          favicon: response.favicon,
-          ping: Date.now() - startTime
-        })
-      } catch (err) {
-        // 如果解析失败，继续等待更多数据
-      }
-    })
-
-    socket.connect(port, host, () => {
-      // 发送握手包和状态请求包
-      const hostBuffer = Buffer.from(host, 'utf8')
-      const handshakePacket = Buffer.concat([
-        writeVarInt(0), // Packet ID
-        writeVarInt(47), // Protocol Version
-        writeVarInt(hostBuffer.length),
-        hostBuffer,
-        Buffer.from([port >> 8, port & 255]), // Port
-        writeVarInt(1), // Next State (1 for Status)
-      ])
-
-      const handshake = Buffer.concat([
-        writeVarInt(handshakePacket.length),
-        handshakePacket
-      ])
-
-      const statusRequest = Buffer.from([0x01, 0x00])
-
-      socket.write(handshake)
-      socket.write(statusRequest)
-    })
-  })
-}
-
-/**
- * 查询基岩版服务器状态
- * @param {string} host - 服务器主机地址
- * @param {number} port - 服务器端口
- * @returns {Promise<Object>} 服务器状态信息
- * @private
- */
-async function queryBedrockServer(host: string, port: number): Promise<{
-  motd: string
-  version: string
-  online: number
-  max: number
-  ping: number
-}> {
-  const startTime = Date.now()
-  const result = await new Promise<BedrockServerInfo>((resolve, reject) => {
-    const dgram = require('dgram')
-    const client = dgram.createSocket('udp4')
-
-    const timeout = setTimeout(() => {
-      client.close()
-      const error = new Error('请求超时')
-      error['code'] = 'ETIMEDOUT'
-      reject(error)
-    }, 5000)
-
-    const query = Buffer.from([
-      0x01,
-      0x00,
-      ...Buffer.from([Math.floor(Date.now() / 1000)].map(n => [
-        (n >> 24) & 0xFF, (n >> 16) & 0xFF, (n >> 8) & 0xFF, n & 0xFF
-      ]).flat()),
-      0x00, 0x00, 0x00, 0x00,
-      0x00, 0x00, 0x00, 0x00
-    ])
-
-    client.on('message', (msg) => {
-      clearTimeout(timeout)
-      client.close()
-
-      try {
-        const data = msg.toString('utf8', 35).split(';')
-        if (data.length < 6) {
-          const error = new Error('无效的服务器响应')
-          error['code'] = 'invalid server response'
-          throw error
-        }
-
-        resolve({
-          edition: data[0],
-          motd: data[1],
-          protocol: data[2],
-          version: data[3],
-          online: parseInt(data[4]),
-          max: parseInt(data[5])
-        })
-      } catch (error) {
-        reject(error)
-      }
-    })
-
-    client.on('error', (err: any) => {
-      clearTimeout(timeout)
-      client.close()
-      reject(err)
-    })
-
-    client.send(query, port, host)
-  })
-
-  return {
-    motd: result.motd,
-    version: `${result.version}`,
-    online: result.online,
-    max: result.max,
-    ping: Date.now() - startTime
-  }
-}
-
-/**
- * 检查服务器状态
- */
-export async function checkServerStatus(server: string | undefined, config: MinecraftToolsConfig) {
-  const { host, port } = parseServer(server, config.info)
-
-  const isDefaultJava = port === 25565
-  const isDefaultBedrock = port === 19132
-
-  try {
-    let result
-    if (isDefaultBedrock) {
-      result = await queryBedrockServer(host, port)
-    } else if (isDefaultJava) {
-      result = await queryJavaServer(host, port)
+  if (server.includes('[')) {
+    const ipv6Match = server.match(/\[(.*?)\](?::(\d+))?/)
+    if (ipv6Match) {
+      host = ipv6Match[1]
+      port = ipv6Match[2] ? parseInt(ipv6Match[2]) : undefined
     } else {
-      const results = await Promise.race([
-        queryJavaServer(host, port).catch(e => ({ error: e, type: 'java' })),
-        queryBedrockServer(host, port).catch(e => ({ error: e, type: 'bedrock' }))
-      ])
-
-      if ('error' in results) {
-        throw results.error
-      }
-      result = results
+      throw new Error('无效的 IPv6 地址格式')
     }
-
-    const lines: string[] = []
-
-    if (config.info.showIcon && 'favicon' in result && result.favicon?.startsWith('data:image/png;base64,')) {
-      lines.push(h.image(result.favicon).toString())
-    }
-
-    if (result.motd) lines.push(result.motd)
-
-    const statusParts = [
-      result.version,
-      `${result.online}/${result.max}`,
-      `${result.ping}ms`
-    ]
-    lines.push(statusParts.join(' | '))
-
-    if (config.info.showPlayers && result.playerList?.length > 0) {
-      const playerInfo = ['当前在线：' + result.playerList.join(', ')]
-      if (result.playerList.length < result.online) {
-        playerInfo.push(`（仅显示 ${result.playerList.length}/${result.online} 名玩家）`)
-      }
-      lines.push(playerInfo.join(''))
-    }
-
-    const data = lines.join('\n')
-    return server ? data : `${host}:${port}\n${data}`
-
-  } catch (error) {
-    throw new Error(formatErrorMessage(error))
+  } else {
+    const parts = server.split(':')
+    host = parts[0]
+    port = parts[1] ? parseInt(parts[1]) : undefined
   }
+
+  if (port !== undefined && (isNaN(port) || port < 1 || port > 65535)) {
+    throw new Error('无效的端口号（应为1-65535）')
+  }
+
+  return { host, port: port || defaultPorts[type], type }
+}
+
+export async function checkServerStatus(
+  server?: string,
+  forceType?: 'java' | 'bedrock',
+  config?: MinecraftToolsConfig
+): Promise<ServerStatus> {
+  try {
+    const parsed = parseServerAddress(server, config?.info.default)
+    const type = forceType || parsed.type
+
+    const apis = type === 'java' ? config?.info.javaApis : config?.info.bedrockApis
+    if (!apis?.length) {
+      throw new Error(`未配置 ${type === 'java' ? 'Java' : 'Bedrock'} 查询 API`)
+    }
+
+    let lastError: Error
+    for (const apiTemplate of apis) {
+      try {
+        const url = apiTemplate
+          .replace(/\${host}/g, parsed.host)
+          .replace(/\${port}/g, String(parsed.port))
+
+        const response = await axios.get(url, {
+          timeout: 10000,
+          validateStatus: null
+        })
+
+        if (!response.data || response.status !== 200) {
+          throw new Error(response.data?.error || `${response.status}`)
+        }
+
+        const data = response.data
+
+        if (data.status === 'offline' || data.status === false ||
+            data.status === 'Offline' || data.status?.toLowerCase() === 'offline') {
+          throw new Error('服务器离线')
+        }
+
+        const version = data.version ?? data.version?.version ?? data.server_version
+        const playersOnline = Number(data.players_online ?? data.players?.online ?? data.online)
+        const playersMax = Number(data.players_max ?? data.players?.max ?? data.max)
+        const motd = data.motd ?? data.motd?.ingame ?? data.motd?.clean ?? data.description
+
+        if ((!version || version === '未知') &&
+            (isNaN(playersOnline) || isNaN(playersMax)) &&
+            !motd) {
+          throw new Error('获取到的数据无效')
+        }
+
+        return {
+          online: true,
+          ip: parsed.host,
+          port: parsed.port,
+          motd: { raw: motd },
+          version: { name: version ?? '未知' },
+          players: {
+            online: playersOnline || 0,
+            max: playersMax || 0,
+            sample: data.players ?? data.players?.list ?? data.sample ?? []
+          },
+          favicon: data.favicon ?? data.icon,
+          ping: data.ping ?? (data.queryinfo?.processed ? parseInt(data.queryinfo.processed) : undefined),
+          modInfo: data.modInfo ? {
+            type: data.modInfo.type,
+            modList: data.modInfo.modList
+          } : undefined,
+          software: data.software,
+          gameType: data.gametype,
+          platform: data.platform,
+          serverId: data.serverId,
+          map: data.map,
+          plugins: data.plugins,
+          hostip: data.hostip
+        }
+      } catch (error) {
+        lastError = error
+        continue
+      }
+    }
+
+    throw lastError || new Error('所有 API 均查询失败')
+  } catch (error) {
+    return {
+      online: false,
+      ip: error['host'] || '未知',
+      port: error['port'],
+      version: { name: '未知' },
+      players: { online: 0, max: 0 },
+      error: error.message || '查询失败'
+    }
+  }
+}
+
+function stripColorCodes(text: string): string {
+  return text.replace(/§[0-9a-fk-or]/gi, '')
+}
+
+function parseMOTDJson(obj: any): string {
+  if (typeof obj === 'string') return stripColorCodes(obj)
+  if (!obj) return ''
+
+  let result = ''
+
+  if (obj.text) result += stripColorCodes(obj.text)
+  if (Array.isArray(obj.extra)) {
+    result += obj.extra.map(item => parseMOTDJson(item)).join('')
+  } else if (typeof obj.extra === 'object') {
+    result += parseMOTDJson(obj.extra)
+  }
+
+  return result
+}
+
+export function formatServerStatus(status: ServerStatus, config: MinecraftToolsConfig['info']) {
+  const lines: string[] = []
+
+  if (!status.online) {
+    return `离线 - ${status.error || '无法连接到服务器'}`
+  }
+
+  if (config.showIcon && status.favicon?.startsWith('data:image/png;base64,')) {
+    lines.push(h.image(status.favicon).toString())
+  }
+
+  if (status.motd?.raw) {
+    let motdText: string
+    try {
+      const motdJson = typeof status.motd.raw === 'string' ?
+        JSON.parse(status.motd.raw) : status.motd.raw
+      motdText = parseMOTDJson(motdJson)
+    } catch (e) {
+      motdText = stripColorCodes(String(status.motd.raw))
+    }
+    if (motdText.trim()) lines.push(motdText)
+  } else if (status.description) {
+    lines.push(stripColorCodes(status.description))
+  }
+
+  const statusParts = [
+    status.version?.name || '未知',
+    `${status.players?.online || 0}/${status.players?.max || 0}`,
+  ]
+  if (status.ping) statusParts.push(`${status.ping}ms`)
+  lines.push(statusParts.join(' | '))
+
+  if (config.maxPlayerDisplay > 0 && status.players?.sample?.length) {
+    const displayCount = Math.min(config.maxPlayerDisplay, status.players.sample.length)
+    const playerNames = status.players.sample
+      .slice(0, displayCount)
+      .map(p => p.name)
+      .join(', ')
+
+    const playerInfo = ['当前在线：' + playerNames]
+    if (status.players.online > displayCount) {
+      playerInfo.push(`（等共 ${status.players.online} 名）`)
+    }
+    lines.push(playerInfo.join(''))
+  }
+
+  if (status.modInfo?.modList?.length) {
+    lines.push('\n模组信息：')
+    lines.push(`类型：${status.modInfo.type || '未知'}`)
+    lines.push(`已安装：${status.modInfo.modList.length} 个模组`)
+    if (config.maxModDisplay > 0) {
+      const displayCount = Math.min(config.maxModDisplay, status.modInfo.modList.length)
+      const modList = status.modInfo.modList
+        .slice(0, displayCount)
+        .map(mod => mod.version ? `${mod.name} (${mod.version})` : mod.name)
+        .join(', ')
+      lines.push(`模组列表：${modList}`)
+      if (status.modInfo.modList.length > displayCount) {
+        lines.push(`（等共 ${status.modInfo.modList.length} 个模组）`)
+      }
+    }
+  }
+
+  const additionalInfo = []
+  if (status.software && !status.software.includes('超时')) additionalInfo.push(`服务端：${status.software}`)
+  if (status.map && !status.map.includes('超时')) additionalInfo.push(`地图：${status.map}`)
+  if (status.plugins?.length && Array.isArray(status.plugins)) additionalInfo.push(`插件数：${status.plugins.length}`)
+  if (status.gameType && !status.gameType.includes('超时')) additionalInfo.push(`游戏类型：${status.gameType}`)
+  if (status.platform && !status.platform.includes('超时')) additionalInfo.push(`平台：${status.platform}`)
+
+  if (additionalInfo.length > 0) {
+    lines.push('\n服务器信息：')
+    lines.push(additionalInfo.join(' | '))
+  }
+
+  return lines.join('\n')
 }

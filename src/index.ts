@@ -6,7 +6,7 @@ import { processWikiRequest } from './mcwiki'
 import { searchMod, search, capture } from './subwiki'
 import { getPlayerProfile, renderPlayerSkin } from './utils'
 import { searchMods, getModDetails, formatSearchResults } from './mod'
-import { checkServerStatus, formatErrorMessage } from './info'
+import { checkServerStatus, formatServerStatus } from './info'
 
 /**
  * Minecraft 工具箱插件
@@ -36,28 +36,6 @@ const MINECRAFT_LANGUAGES = {
 }
 
 export const TypeMap = {
-  errorPatterns: {
-    'ECONNREFUSED': '服务器拒绝连接',
-    'ETIMEDOUT': '连接超时',
-    'ENOTFOUND': '无法解析服务器地址',
-    'ECONNRESET': '服务器断开了连接',
-    'EHOSTUNREACH': '无法访问目标服务器',
-    'ENETUNREACH': '网络不可达',
-    'EPROTO': '协议错误',
-    'ECONNABORTED': '连接中断',
-    'EPIPE': '连接异常断开',
-    'invalid server response': '服务器响应无效',
-    'Unexpected server response': '服务器返回意外响应',
-    'Invalid hostname': '无效的服务器地址',
-    'getaddrinfo ENOTFOUND': '找不到服务器',
-    'connect ETIMEDOUT': '连接超时',
-    'read ECONNRESET': '服务器主动断开连接',
-    'connect ECONNREFUSED': '服务器拒绝连接',
-    'Request timeout': '请求超时',
-    'network unreachable': '网络不可达',
-    'port.*out of range': '端口号必须在1-65535之间',
-    'dns lookup failed': 'DNS解析失败'
-  },
   modrinthTypes: {
     'mod': '模组',
     'resourcepack': '资源包',
@@ -115,8 +93,11 @@ export interface MinecraftToolsConfig {
   }
   info: {
     default: string
-    showPlayers: boolean
     showIcon: boolean
+    maxPlayerDisplay: number
+    maxModDisplay: number
+    javaApis: string[]
+    bedrockApis: string[]
   }
   ver: {
     enabled: boolean
@@ -159,15 +140,32 @@ export const Config: Schema<MinecraftToolsConfig> = Schema.object({
   }).description('查询设置'),
 
   info: Schema.object({
-    default: Schema.string()
-      .description('INFO 默认服务器')
-      .default('localhost:25565'),
     showIcon: Schema.boolean()
       .default(true)
       .description('显示服务器图标'),
-    showPlayers: Schema.boolean()
-      .default(true)
-      .description('显示在线玩家列表')
+    maxPlayerDisplay: Schema.number()
+      .description('最大显示玩家数')
+      .default(8),
+    maxModDisplay: Schema.number()
+      .description('最大显示 Mod 数')
+      .default(8),
+    default: Schema.string()
+      .description('默认 INFO 服务器')
+      .default('localhost:25565'),
+    javaApis: Schema.array(String)
+      .default([
+        'https://api.imlazy.ink/mcapi?type=json&host=${host}:${port}',
+        'https://motdbe.blackbe.work/api/java?host=${host}:${port}',
+        'https://api.bluesdawn.top/minecraft/server/api?host=${host}:${port}'
+      ])
+      .description('Java 查询 API'),
+    bedrockApis: Schema.array(String)
+      .default([
+        'https://api.imlazy.ink/mcapi?type=json&host=${host}:${port}&be=true',
+        'https://motdbe.blackbe.work/api?host=${host}:${port}',
+        'https://api.bedrockinfo.com/v2/status?host=${host}&port=${port}'
+      ])
+      .description('Bedrock 查询 API')
   }).description('服务器设置'),
 
   ver: Schema.object({
@@ -408,14 +406,25 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
   }
 
   ctx.command('mcinfo [server]', '查询 MC 服务器状态')
-    .usage('使用说明：\n  mcinfo [地址[:端口]] - 查询指定服务器的状态')
-    .example('mcinfo mc.hypixel.net - 查询默认端口的服务器')
-    .example('mcinfo mc.example.com:25566 - 查询指定端口的服务器')
+    .usage('使用说明：\n  mcinfo [地址[:端口]] - 查询Java版服务器状态\n  mcinfo.be [地址[:端口]] - 查询基岩版服务器状态')
+    .example('mcinfo mc.hypixel.net - 查询Java版服务器')
+    .example('mcinfo.be play.lbsg.net - 查询基岩版服务器')
     .action(async ({ }, server) => {
       try {
-        return await checkServerStatus(server, pluginConfig)
+        const status = await checkServerStatus(server || pluginConfig.info.default, 'java', pluginConfig)
+        return formatServerStatus(status, pluginConfig.info)
       } catch (error) {
-        return formatErrorMessage(error)
+        return error.message
+      }
+    })
+    .subcommand('.be [server]', '查询基岩版服务器状态')
+    .example('mcinfo.be mc.example.com:19133')
+    .action(async ({ }, server) => {
+      try {
+        const status = await checkServerStatus(server || pluginConfig.info.default, 'bedrock', pluginConfig)
+        return formatServerStatus(status, pluginConfig.info)
+      } catch (error) {
+        return error.message
       }
     })
 
