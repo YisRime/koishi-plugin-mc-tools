@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { TypeMap } from './index'
+import { CommonConfig, MinecraftToolsConfig } from './index'
 
 interface SearchModResult {
   source: 'modrinth' | 'curseforge'
@@ -37,7 +38,7 @@ interface CurseForgeProject {
   }
 }
 
-export async function searchModrinth(keyword: string, facets?: string[]): Promise<ModrinthProject[]> {
+export async function searchModrinth(keyword: string, config: CommonConfig, facets?: string[]): Promise<ModrinthProject[]> {
   const response = await axios.get('https://api.modrinth.com/v2/search', {
     params: {
       query: keyword,
@@ -45,7 +46,8 @@ export async function searchModrinth(keyword: string, facets?: string[]): Promis
       facets: facets ? [facets] : undefined,
       offset: 0,
       index: 'relevance'
-    }
+    },
+    timeout: config.Timeout * 1000
   });
 
   return response.data.hits.map(hit => ({
@@ -119,7 +121,7 @@ export async function getModrinthDetails(slug: string): Promise<ModrinthProject>
   };
 }
 
-export function formatFullModrinthResult(project: ModrinthProject, maxLength: number): string {
+export function formatFullModrinthResult(project: ModrinthProject, config: CommonConfig): string {
   const clientSide = project.client_side === 'required' ? '必需' : project.client_side === 'optional' ? '可选' : '无需';
   const serverSide = project.server_side === 'required' ? '必需' : project.server_side === 'optional' ? '可选' : '无需';
   const requirements = [];
@@ -127,8 +129,8 @@ export function formatFullModrinthResult(project: ModrinthProject, maxLength: nu
   requirements.push(`客户端: ${clientSide}`, `服务端: ${serverSide}`);
 
   let body = project.body.replace(/\n\n+/g, '\n');
-  if (body.length > maxLength) {
-    body = body.slice(0, maxLength) + '...';
+  if (body.length > config.totalLength) {
+    body = body.slice(0, config.totalLength) + '...';
   }
 
   const parts = [
@@ -141,7 +143,7 @@ export function formatFullModrinthResult(project: ModrinthProject, maxLength: nu
   return parts.filter(Boolean).join('\n');
 }
 
-export async function searchCurseforge(keyword: string, cfApiKey: string, classId?: number): Promise<CurseForgeProject[]> {
+export async function searchCurseforge(keyword: string, cfApiKey: string, config: CommonConfig, classId?: number): Promise<CurseForgeProject[]> {
   const response = await axios.get('https://api.curseforge.com/v1/mods/search', {
     headers: {
       'x-api-key': cfApiKey
@@ -153,7 +155,8 @@ export async function searchCurseforge(keyword: string, cfApiKey: string, classI
       pageSize: 10,
       sortField: 2,
       sortOrder: 'desc'
-    }
+    },
+    timeout: config.Timeout * 1000
   });
 
   return response.data.data;
@@ -180,15 +183,15 @@ export async function getCurseforgeDetails(modId: number, cfApiKey: string): Pro
   };
 }
 
-export function formatFullCurseforgeResult(project: CurseForgeProject, maxLength: number): string {
+export function formatFullCurseforgeResult(project: CurseForgeProject, config: CommonConfig): string {
   const typeInChinese = TypeMap.curseforgeTypeNames[TypeMap.curseforgeTypes[project.classId]] || '未知'
 
   let description = project.description || project.summary;
   // 移除HTML标签和多余的空白行
   description = description.replace(/<[^>]*>/g, '');
   description = description.replace(/\n\s*\n/g, '\n');
-  if (description.length > maxLength) {
-    description = description.slice(0, maxLength) + '...';
+  if (description.length > config.totalLength) {
+    description = description.slice(0, config.totalLength) + '...';
   }
 
   const allGameVersions = new Set<string>();
@@ -241,6 +244,7 @@ function getModrinthFacets(type: string): string[] | undefined {
 export async function searchMods(
   keyword: string,
   source: 'modrinth' | 'curseforge',
+  config: CommonConfig,
   cfApiKey?: string,
   type?: string
 ): Promise<SearchModResult[]> {
@@ -250,7 +254,7 @@ export async function searchMods(
 
   if (source === 'modrinth') {
     const facets = type ? getModrinthFacets(type) : undefined
-    const results = await searchModrinth(keyword, facets)
+    const results = await searchModrinth(keyword, config, facets)
     return results.map(r => ({
       source: 'modrinth' as const,
       id: r.slug,
@@ -261,7 +265,7 @@ export async function searchMods(
     }))
   } else {
     const classId = type ? getCurseForgeClassId(type) : undefined
-    const results = await searchCurseforge(keyword, cfApiKey, classId)
+    const results = await searchCurseforge(keyword, cfApiKey, config, classId)
     return results.map(r => ({
       source: 'curseforge' as const,
       id: r.id,
@@ -276,24 +280,28 @@ export async function searchMods(
 /**
  * 统一获取项目详情
  */
-export async function getModDetails(result: SearchModResult, cfApiKey?: string, maxLength: number = 400) {
+export async function getModDetails(
+  result: SearchModResult,
+  config: CommonConfig,
+  cfApiKey?: string
+) {
   if (result.source === 'modrinth') {
     const details = await getModrinthDetails(result.id as string)
-    return formatFullModrinthResult(details, maxLength)
+    return formatFullModrinthResult(details, config)
   } else {
     const details = await getCurseforgeDetails(result.id as number, cfApiKey)
-    return formatFullCurseforgeResult(details, maxLength)
+    return formatFullCurseforgeResult(details, config)
   }
 }
 
 /**
  * 格式化搜索结果列表
  */
-export function formatSearchResults(results: SearchModResult[], descLength: number = 20): string {
+export function formatSearchResults(results: SearchModResult[], config: CommonConfig): string {
   return results.map((r, i) => {
     let description = r.description;
-    if (description.length > descLength) {
-      description = description.slice(0, descLength) + '...';
+    if (description.length > config.descLength) {
+      description = description.slice(0, config.descLength) + '...';
     }
     return `${i + 1}. ${[
       `${r.type} | ${r.title}`,

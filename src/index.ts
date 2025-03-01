@@ -317,9 +317,9 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
       if (!keyword) return '请输入要搜索的关键词'
 
       try {
-        const results = await searchMods(keyword, 'modrinth', undefined, type)
+        const results = await searchMods(keyword, 'modrinth', pluginConfig.wiki, undefined, type)
         if (!results.length) return '未找到相关项目'
-        return await getModDetails(results[0], pluginConfig.search.cfApi, pluginConfig.wiki.totalLength)
+        return await getModDetails(results[0], pluginConfig.wiki, pluginConfig.search.cfApi)
       } catch (error) {
         return error.message
       }
@@ -333,10 +333,10 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
       if (!keyword) return '请输入要搜索的关键词'
 
       try {
-        const results = await searchMods(keyword, 'modrinth', undefined, type)
+        const results = await searchMods(keyword, 'modrinth', pluginConfig.wiki, undefined, type)
         if (!results.length) return '未找到相关项目'
 
-        await session.send('Modrinth 搜索结果：\n' + formatSearchResults(results, pluginConfig.wiki.descLength) + '\n请回复序号查看详细内容')
+        await session.send('Modrinth 搜索结果：\n' + formatSearchResults(results, pluginConfig.wiki) + '\n请回复序号查看详细内容')
 
         const response = await session.prompt(pluginConfig.wiki.Timeout * 1000)
         if (!response) return '操作超时'
@@ -346,7 +346,7 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
           return '请输入有效的序号'
         }
 
-        return await getModDetails(results[index], pluginConfig.search.cfApi, pluginConfig.wiki.totalLength)
+        return await getModDetails(results[index], pluginConfig.wiki, pluginConfig.search.cfApi)
       } catch (error) {
         return error.message
       }
@@ -360,9 +360,9 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
       if (!keyword) return '请输入要搜索的关键词'
 
       try {
-        const results = await searchMods(keyword, 'curseforge', pluginConfig.search.cfApi, type)
+        const results = await searchMods(keyword, 'curseforge', pluginConfig.wiki, pluginConfig.search.cfApi, type)
         if (!results.length) return '未找到相关项目'
-        return await getModDetails(results[0], pluginConfig.search.cfApi, pluginConfig.wiki.totalLength)
+        return await getModDetails(results[0], pluginConfig.wiki, pluginConfig.search.cfApi)
       } catch (error) {
         return error.message
       }
@@ -376,10 +376,10 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
       if (!keyword) return '请输入要搜索的关键词'
 
       try {
-        const results = await searchMods(keyword, 'curseforge', pluginConfig.search.cfApi, type)
+        const results = await searchMods(keyword, 'curseforge', pluginConfig.wiki, pluginConfig.search.cfApi, type)
         if (!results.length) return '未找到相关项目'
 
-        await session.send('CurseForge 搜索结果：\n' + formatSearchResults(results, pluginConfig.wiki.descLength) + '\n请回复序号查看详细内容')
+        await session.send('CurseForge 搜索结果：\n' + formatSearchResults(results, pluginConfig.wiki) + '\n请回复序号查看详细内容')
 
         const response = await session.prompt(pluginConfig.wiki.Timeout * 1000)
         if (!response) return '操作超时'
@@ -389,7 +389,7 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
           return '请输入有效的序号'
         }
 
-        return await getModDetails(results[index], pluginConfig.search.cfApi, pluginConfig.wiki.totalLength)
+        return await getModDetails(results[index], pluginConfig.wiki, pluginConfig.search.cfApi)
       } catch (error) {
         return error.message
       }
