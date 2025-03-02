@@ -35,7 +35,7 @@ export function buildUrl(articleTitle: string, languageCode: LangCode | string, 
  * @returns {string} 格式化后的标题
  */
 export function formatTitle(data: any): string {
-  if (!data) return '未知条目'
+  if (!data) return '条目不存在'
 
   const parts = []
 
@@ -107,7 +107,7 @@ export async function fetchContent(articleUrl: string, languageCode: LangCode, c
 
   if (!sections.length) {
     const cleanUrl = articleUrl.split('?')[0]
-    return { title, content: `${title}：本页面目前没有内容。`, url: cleanUrl }
+    return { title, content: `${title}：本页面没有内容。`, url: cleanUrl }
   }
 
   const formattedContent = sections
@@ -141,13 +141,13 @@ export async function fetchContent(articleUrl: string, languageCode: LangCode, c
  * @returns {Promise<string | {results: SearchResult[], domain: string, lang: string} | {url: string, pageUrl: string}>}
  */
 export async function processWikiRequest(keyword: string, userId: string, config: MinecraftToolsConfig, userLangs: Map<string, LangCode>, mode: 'text' | 'image' | 'search' = 'text') {
-  if (!keyword) return '请输入要查询的内容关键词'
+  if (!keyword) return '请输入需要查询的关键词'
 
   try {
     const lang = userLangs.get(userId) || config.search.Language
     const results = await searchWiki(keyword)
 
-    if (!results.length) return `${keyword}：本页面目前没有内容。`
+    if (!results.length) return `${keyword}：本页面没有内容。`
 
     if (mode === 'search') {
       return {

@@ -84,11 +84,7 @@ function parseText($: cheerio.CheerioAPI, $elem: cheerio.Cheerio<any>): string |
 
     // 判断是否为标题
     const isTitle = (text: string): boolean => {
-
-      // 检查长度
       if (text.length > 12) return false
-
-      // 检查HTML结构
       const $parent = $elem.parent()
       if ($parent.find('strong').length ||
           $parent.find('span.common-text-title').length) {
@@ -110,7 +106,6 @@ function parseText($: cheerio.CheerioAPI, $elem: cheerio.Cheerio<any>): string |
 
     if (href && text) {
       let processedHref = href
-      // 处理相对路径和协议相对路径
       if (href.startsWith('//')) {
         processedHref = `https:${href}`
       } else if (href.startsWith('/')) {
@@ -123,12 +118,10 @@ function parseText($: cheerio.CheerioAPI, $elem: cheerio.Cheerio<any>): string |
         let prevNode = link.previousSibling
         while (prevNode && prevNode.type === 'text') {
           prefix = prevNode.data.trim() + ' ' + prefix
-          // 删除前缀文本节点避免重复
           prevNode.data = ''
           prevNode = prevNode.previousSibling
         }
         prefix = prefix.trim()
-        // 判断链接文本是否为URL格式
         const isUrl = text.match(/^https?:\/\//)
         const markdownLink = isUrl ? processedHref : `[${text}](${processedHref})`
         const linkText = prefix ? `${prefix} ${markdownLink}` : markdownLink
@@ -176,21 +169,18 @@ function parseContent($: cheerio.CheerioAPI, pageType: 'mod' | 'modpack' | 'post
   // 顺序处理每个元素
   $content.children().each((_, element) => {
     const $elem = $(element)
-
     // 解析图片
     const image = parseImage($, $elem)
     if (image) {
       sections.push(image)
       return
     }
-
     // 解析链接
     const link = parseLink($, $elem)
     if (link) {
       sections.push(link)
       return
     }
-
     // 解析文本
     const text = parseText($, $elem)
     if (text && totalLength < maxLength) {
@@ -201,10 +191,8 @@ function parseContent($: cheerio.CheerioAPI, pageType: 'mod' | 'modpack' | 'post
     }
   })
 
-  // 获取相关链接
   relatedLinks.push(...parseRelatedLinks($))
 
-  // 过滤重复内容
   return {
     sections: sections.filter((s, i, arr) => s.trim() && arr.indexOf(s) === i),
     links: relatedLinks
@@ -249,19 +237,15 @@ function parseBasicInfo($: cheerio.CheerioAPI): string[] {
  */
 function parseHeader($: cheerio.CheerioAPI): string[] {
   const sections: string[] = [];
-
-  // 处理标题
   const shortName = $('.short-name').first().text().trim();
   const title = $('.class-title h3').first().text().trim();
   const enTitle = $('.class-title h4').first().text().trim();
-
   const modStatusLabels = $(`.class-official-group .class-status`).map((_, el) => $(el).text().trim()).get()
     .concat($(`.class-official-group .class-source`).map((_, el) => $(el).text().trim()).get());
 
   sections.push(`${shortName} ${enTitle} | ${title}${
     modStatusLabels.length ? ` (${modStatusLabels.join(' | ')})` : ''
   }`);
-
   // 处理封面图片
   const $coverImage = $('.class-cover-image');
   if ($coverImage.length) {
@@ -301,14 +285,12 @@ function parseInfoBlock($: cheerio.CheerioAPI): string[] {
 function processVersionNumbers(versions: string[]): string[] {
   if (!versions?.length) return [];
 
-  // 按主版本号分组并排序
   const grouped = versions.reduce((groups, version) => {
     const mainVersion = version.match(/^(\d+\.\d+)/)?.[1] || version;
     groups.set(mainVersion, (groups.get(mainVersion) || []).concat(version));
     return groups;
   }, new Map<string, string[]>());
 
-  // 格式化输出
   return Array.from(grouped.entries())
     .sort(([a], [b]) => b.localeCompare(a, undefined, { numeric: true }))
     .map(([main, group]) =>
@@ -398,7 +380,7 @@ function parseRelatedLinks($: cheerio.CheerioAPI): string[] {
  */
 export function formatContent(result: ProcessResult, url: string, options: { showLinks?: number } = {}): string {
   if (!result?.sections) {
-    return `获取内容失败，请访问：${url}`;
+    return `无法获取页面内容，请访问：${url}`;
   }
 
   const sections = result.sections.filter(Boolean).map(section =>
@@ -474,7 +456,7 @@ export async function fetchModContent(url: string, config: CommonConfig): Promis
 
     const $ = cheerio.load(response.data);
     if ($('.class-404').length > 0) {
-      throw new Error('页面不存在');
+      throw new Error('该页面不存在或已被删除');
     }
 
     const pageType = url.includes('/modpack/') ? 'modpack'
@@ -493,8 +475,8 @@ export async function fetchModContent(url: string, config: CommonConfig): Promis
   } catch (error) {
     if (axios.isAxiosError(error)) {
       throw new Error(error.code === 'ECONNABORTED'
-        ? '请求超时，请稍后重试'
-        : `获取内容失败: ${error.message}`);
+        ? '请求超时，请稍后再试'
+        : `内容获取失败：${error.message}`);
     }
     throw error;
   }

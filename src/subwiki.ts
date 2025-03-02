@@ -198,19 +198,19 @@ export async function search(params: {
 }) {
   const { keyword, source, session, config, ctx, lang } = params
 
-  if (!keyword) return '请输入要查询的关键词'
+  if (!keyword) return '请输入搜索关键词'
 
   try {
     const searchFn = source === 'wiki' ? searchWiki : searchMod
     const results = await searchFn(keyword, config)
 
-    if (!results.length) return '未找到相关内容'
+    if (!results.length) return '没有找到相关内容'
 
     const message = formatSearchResults(results, source, config)
     await session.send(message)
 
     const response = await session.prompt(config.wiki.Timeout * 1000)
-    if (!response) return '操作超时'
+    if (!response) return '等待超时，已取消操作'
 
     return await processSelection({ response, results, source, config, ctx, lang })
   } catch (error) {
@@ -237,7 +237,7 @@ export async function searchWiki(keyword: string, _config?: any): Promise<Search
     if (!titles?.length) return [];
     return titles.map((title, i) => ({ title, url: urls[i], source: 'wiki' }));
   } catch (error) {
-    throw new Error(`搜索失败: ${error.message}`);
+    throw new Error(`搜索出错：${error.message}`);
   }
 }
 
@@ -306,7 +306,7 @@ function formatSearchResults(
   })
 
   return `${results[0].source === 'wiki' ? 'Wiki' : 'MCMOD'} 搜索结果：\n${items.join('\n')}
-请回复序号查看详细内容（使用 -i 后缀以获取页面截图）`
+输入序号查看详情（添加 -i 获取页面截图）`
 }
 
 /**
@@ -334,7 +334,7 @@ async function processSelection(params: {
   const index = parseInt(input) - 1
 
   if (isNaN(index) || index < 0 || index >= results.length) {
-    return '请输入有效的序号'
+    return '请输入正确的序号'
   }
 
   const result = results[index]
@@ -365,7 +365,7 @@ async function fetchImage(
   config: MinecraftToolsConfig,
   lang?: LangCode
 ) {
-  if (!ctx?.puppeteer) return '截图功能不可用'
+  if (!ctx?.puppeteer) return '截图功能未启用'
 
   const context = await ctx.puppeteer.browser.createBrowserContext()
   try {
@@ -404,5 +404,5 @@ async function fetchwikiContent(
   }
 
   const content = await fetchModContent(result.url, config.wiki)
-  return formatContent(content, result.url) || `获取内容失败，请直接访问：${result.url}`
+  return formatContent(content, result.url) || `内容获取失败，请访问：${result.url}`
 }

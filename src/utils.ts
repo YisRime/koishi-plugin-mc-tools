@@ -43,7 +43,7 @@ export async function fetchVersions(timeout = 10000) {
   const release = data.versions.find(v => v.type === 'release')
 
   if (!latest || !release) {
-    throw new Error('无效的版本数据')
+    throw new Error('版本数据解析失败')
   }
 
   return { latest, release, versions: data.versions }
@@ -60,12 +60,12 @@ export async function getVersionInfo() {
 
     return {
       success: true,
-      data: `Minecraft 最新版本：\n正式版：${release.id}（${formatDate(release.releaseTime)}）\n快照版：${latest.id}（${formatDate(latest.releaseTime)}）`
+      data: `Minecraft 最新版本：\n正式版: ${release.id}(${formatDate(release.releaseTime)})\n快照版: ${latest.id}(${formatDate(latest.releaseTime)})`
     }
   } catch (error) {
     return {
       success: false,
-      error: `获取版本信息失败：${error.message || String(error)}`
+      error: `版本信息获取失败：${error.message || String(error)}`
     }
   }
 }
@@ -83,7 +83,7 @@ async function notifyVersionUpdate(ctx: any, targetGroups: string[], updateMessa
       try {
         await bot.sendMessage(gid, updateMessage)
       } catch (e) {
-        ctx.logger('mc-tools').warn(`发送更新通知失败 (群:${gid}):`, e)
+        ctx.logger('mc-tools').warn(`通知发送失败（群组：${gid}）:`, e)
       }
     }
   }
@@ -105,7 +105,7 @@ export async function checkUpdate(versions: { snapshot: string, release: string 
 
     for (const { type, version, enabled } of updates) {
       if (versions[type] && version.id !== versions[type] && enabled) {
-        const msg = `发现MC更新：${version.id} (${type})\n发布时间：${new Date(version.releaseTime).toLocaleString('zh-CN')}`
+        const msg = `Minecraft ${type === 'release' ? '正式版' : '快照版'}更新：${version.id}\n发布时间: ${new Date(version.releaseTime).toLocaleString('zh-CN')}`
         await notifyVersionUpdate(ctx, config.ver.groups, msg)
       }
       versions[type] = version.id
@@ -125,7 +125,7 @@ export async function getPlayerProfile(username: string): Promise<PlayerProfile>
   try {
     // 1. 获取基础信息
     const { data: basicData } = await axios.get(`https://api.mojang.com/users/profiles/minecraft/${username}`);
-    if (!basicData) throw new Error('玩家不存在');
+    if (!basicData) throw new Error('未找到该玩家信息');
 
     // 2. 获取档案数据
     const { data: profileData } = await axios.get(`https://sessionserver.mojang.com/session/minecraft/profile/${basicData.id}`);
@@ -172,18 +172,18 @@ export async function getPlayerProfile(username: string): Promise<PlayerProfile>
 
   } catch (error) {
     if (error.response?.status === 404) {
-      throw new Error('找不到该玩家');
+      throw new Error('玩家信息不存在');
     }
     if (error.response?.status === 400) {
-      throw new Error('无效的UUID格式');
+      throw new Error('UUID 格式不正确');
     }
     if (error.response?.status === 204) {
-      throw new Error('该UUID未关联任何玩家');
+      throw new Error('UUID 未关联玩家信息');
     }
     if (error.response?.status === 429) {
-      throw new Error('请求过于频繁');
+      throw new Error('请求频率超出限制');
     }
-    throw new Error(`无法获取玩家信息: ${error.response?.data?.error || error.message}`);
+    throw new Error(`玩家信息获取失败: ${error.response?.data?.error || error.message}`);
   }
 }
 
