@@ -6,37 +6,39 @@
 
 ## 功能特性
 
-- 查询 Minecraft Wiki 和 MCMOD 百科
-- 搜索 Modrinth 和 CurseForge 项目
-- 生成 Wiki 和 MCMOD 页面截图
-- Minecraft 服务器状态实时查询
-- 自动检查并推送 Minecraft 版本更新
-- 多语言 Wiki 支持
-- 获取玩家信息与 3D 皮肤预览
+- 多语言 Minecraft Wiki 查询和搜索功能
+- MCMod/Modrinth/CurseForge 模组平台搜索
+- Wiki 和 MCMod 页面截图生成
+- Java/Bedrock 服务器状态查询
+- Minecraft 版本更新检测与推送
+- 玩家信息查询与 3D 皮肤预览
+- RCON 远程命令执行支持
 
 ## 命令列表
 
 ### Wiki 相关命令
 
-- `mcwiki <关键词>` - 直接查询 Wiki 页面
-- `mcwiki.find <关键词>` - 搜索并选择 Wiki 页面
-- `mcwiki.shot <关键词>` - 获取 Wiki 页面截图
+- `mcwiki <关键词>` - 查询 Minecraft Wiki
+- `mcwiki.find <关键词>` - 搜索 Wiki 页面
+- `mcwiki.shot <关键词>` - 截图 Wiki 页面
 
 ### 模组相关命令
 
-- `mod <关键词>` - 直接搜索 MCMOD 页面
-- `mod.find <关键词>` - 搜索并选择 MCMOD 页面
-- `mod.shot <关键词>` - 获取 MCMOD 页面截图
-- `mod.mr <关键词> [类型]` - 获取 Modrinth 项目详情
-- `mod.findmr <关键词> [类型]` - 搜索 Modrinth 项目
-- `mod.cf <关键词> [类型]` - 获取 CurseForge 项目详情
-- `mod.findcf <关键词> [类型]` - 搜索 CurseForge 项目
+- `mcmod <关键词>` - 查询 MCMod
+- `mcmod.find <关键词>` - 搜索 MCMod
+- `mcmod.shot <关键词>` - 截图 MCMod 页面
+- `mcmod.mr <关键词> [类型]` - 查询 Modrinth
+- `mcmod.findmr <关键词> [类型]` - 搜索 Modrinth
+- `mcmod.cf <关键词> [类型]` - 查询 CurseForge
+- `mcmod.findcf <关键词> [类型]` - 搜索 CurseForge
 
 ### 其他功能
 
-- `mcver` - 获取 Minecraft 最新版本信息
-- `mcinfo [服务器地址:端口]` - 查询 MC 服务器状态
-- `mcskin <用户名>` - 获取玩家信息和3D皮肤预览
+- `mcver` - 查询 Minecraft 版本信息
+- `mcinfo [服务器]` - 查询 Java 版服务器信息
+- `mcinfo.be [服务器]` - 查询 Bedrock 版服务器信息
+- `mcskin <用户名>` - 查询玩家信息与皮肤
+- `mcrcon <命令>` - 执行远程 RCON 命令
 
 ## 配置说明
 
@@ -45,7 +47,7 @@
 ```yaml
 wiki:
   totalLength: 400      # 总预览字数
-  descLength: 20       # 搜索项目描述字数
+  descLength: 20       # 搜索内容描述字数
   Timeout: 15         # 搜索超时时间（秒）
 ```
 
@@ -53,7 +55,7 @@ wiki:
 
 ```yaml
 search:
-  Language: 'zh'      # Wiki 显示语言
+  Language: 'zh'      # Wiki 显示语言，支持多语言切换
   sectionLength: 50   # Wiki 每段预览字数
   linkCount: 4       # 相关链接最大显示数
   cfApi: ''         # CurseForge API Key
@@ -63,20 +65,24 @@ search:
 
 ```yaml
 info:
-  default: 'localhost:25565'  # INFO 默认服务器
-  showIcon: true             # 显示服务器图标
-  showPlayers: true          # 显示在线玩家列表
+  default: 'hypixel.net'   # 默认服务器地址
+  showIP: false            # 是否显示服务器地址
+  showIcon: true          # 是否显示服务器图标
+  maxNumberDisplay: 8     # 列表最大显示数
+  showSkull: true        # 是否显示头颅获取命令
+  rconPort: 25575       # RCON 端口
+  rconPassword: ''     # RCON 密码
 ```
 
 ### 更新检测设置
 
 ```yaml
 ver:
-  enabled: false        # 启用版本更新检查
-  release: true        # 通知正式版本
-  snapshot: true       # 通知快照版本
-  interval: 60         # 检查间隔时间（分钟）
-  groups: []          # 接收更新通知 ID
+  enabled: false       # 启用版本更新检查
+  release: true       # 通知正式版本
+  snapshot: true      # 通知快照版本
+  interval: 60        # 检查间隔时间（分钟）
+  groups: []          # 接收更新通知群组
 ```
 
 ## 注意事项

@@ -448,7 +448,7 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
       }
   })
 
-  ctx.command('mcrcon <command:text>', '执行 Minecraft RCON 命令')
+  ctx.command('mcrcon <command:text>', '执行 Minecraft 命令')
     .usage('mcrcon <命令> - 通过 RCON 在 MC 服务器中执行命令')
     .action(async ({ }, command) => {
       if (!command) return '请输入要执行的命令'
