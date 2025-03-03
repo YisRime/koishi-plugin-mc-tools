@@ -192,7 +192,7 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
   const userLanguageSettings = new Map<string, LangCode>()
   const minecraftVersions = { snapshot: '', release: '' }
   const mcwiki = ctx.command('mcwiki <keyword:text>', '查询 Minecraft Wiki')
-    .usage('mcwiki <关键词> - 搜索 Wiki 内容\nmcwiki.find <关键词> - 搜索并选择 Wiki 页面\nmcwiki.shot <关键词> - 搜索并获取指定页面截图')
+    .usage('mcwiki <关键词> - 查询 MC Wiki\nmcwiki.find <关键词> - 搜索 MC Wiki\nmcwiki.shot <关键词> - Wiki 截图')
   mcwiki.action(async ({ session }, keyword) => {
     try {
       const result = await processWikiRequest(keyword, session.userId, pluginConfig, userLanguageSettings)
@@ -202,8 +202,8 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
     }
   })
 
-  mcwiki.subcommand('.find <keyword:text>', '搜索 Wiki 内容')
-    .usage('mcwiki.find <关键词> - 搜索并选择 Wiki 页面')
+  mcwiki.subcommand('.find <keyword:text>', '搜索 Wiki 页面')
+    .usage('mcwiki.find <关键词> - 搜索 Wiki 页面')
     .action(async ({ session }, keyword) => {
       return await search({
         keyword,
@@ -215,7 +215,7 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
       })
     })
 
-  mcwiki.subcommand('.shot <keyword:text>', '页面截图')
+  mcwiki.subcommand('.shot <keyword:text>', 'Wiki 截图')
     .usage('mcwiki.shot <关键词> - 搜索并获取指定页面截图')
     .action(async ({ session }, keyword) => {
       if (!keyword) return '请输入要查询的关键词'
@@ -241,7 +241,7 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
     })
 
     const mcmod = ctx.command('mcmod <keyword:text>', '搜索 MCMod/Modrinth/Curseforge')
-    .usage('mcmod <关键词> - 搜索 MCMOD 内容\nmcmod.find <关键词> - 搜索 MCMOD 页面\nmcmod.shot <关键词> - MCMOD 页面截图\nmcmod.(find)mr <关键词> [类型] - 搜索 Modrinth 内容\nmcmod.(find)cf <关键词> [类型] - 搜索 CurseForge 内容')
+    .usage('mcmod <关键词> - 查询 MCMOD\nmcmod.find <关键词> - 搜索 MCMOD\nmcmod.shot <关键词> - MCMOD 截图\nmcmod.(find)mr <关键词> [类型] - 搜索 Modrinth\nmcmod.(find)cf <关键词> [类型] - 搜索 CurseForge')
     .action(async ({ }, keyword) => {
       if (!keyword) return '请输入要查询的关键词'
 
@@ -271,7 +271,7 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
       })
     })
 
-  mcmod.subcommand('.shot <keyword:text>', '搜索并截图 MCMOD 页面')
+  mcmod.subcommand('.shot <keyword:text>', 'MCMOD 截图')
     .usage('mcmod.shot <关键词> - 搜索并获取指定页面截图')
     .action(async ({ session }, keyword) => {
       if (!keyword) return '请输入要查询的关键词'
@@ -294,8 +294,8 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
       }
     })
 
-  mcmod.subcommand('.mr <keyword> [type]', '搜索 Modrinth 内容')
-    .usage('mcmod.mr <关键词> [类型] - 搜索 Modrinth 内容\n可用类型：mod(模组), resourcepack(资源包), datapack(数据包), shader(光影), modpack(整合包), plugin(插件)')
+  mcmod.subcommand('.mr <keyword> [type]', '查询 Modrinth')
+    .usage('mcmod.mr <关键词> [类型] - 查询 Modrinth 内容\n可用类型：mod(模组), resourcepack(资源包), datapack(数据包), shader(光影), modpack(整合包), plugin(插件)')
     .action(async ({ }, keyword, type) => {
       if (!keyword) return '请输入要搜索的关键词'
 
@@ -308,7 +308,7 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
       }
     })
 
-  mcmod.subcommand('.findmr <keyword> [type]', '搜索 Modrinth 项目')
+  mcmod.subcommand('.findmr <keyword> [type]', '搜索 Modrinth')
     .usage('mcmod.findmr <关键词> [类型] - 搜索 Modrinth 项目\n可用类型：mod(模组), resourcepack(资源包), datapack(数据包), shader(光影), modpack(整合包), plugin(插件)')
     .action(async ({ session }, keyword, type) => {
       if (!keyword) return '请输入要搜索的关键词'
@@ -333,8 +333,8 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
       }
     })
 
-  mcmod.subcommand('.cf <keyword> [type]', '搜索 CurseForge 内容')
-    .usage('mcmod.cf <关键词> [类型] - 搜索 CurseForge 内容\n可用类型：mod(模组), resourcepack(资源包), modpack(整合包), shader(光影), datapack(数据包), world(地图), addon(附加包), plugin(插件)')
+  mcmod.subcommand('.cf <keyword> [type]', '查询 CurseForge')
+    .usage('mcmod.cf <关键词> [类型] - 查询 CurseForge 内容\n可用类型：mod(模组), resourcepack(资源包), modpack(整合包), shader(光影), datapack(数据包), world(地图), addon(附加包), plugin(插件)')
     .action(async ({ }, keyword, type) => {
       if (!keyword) return '请输入要搜索的关键词'
 
@@ -347,7 +347,7 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
       }
     })
 
-  mcmod.subcommand('.findcf <keyword> [type]', '搜索 CurseForge 项目')
+  mcmod.subcommand('.findcf <keyword> [type]', '搜索 CurseForge')
     .usage('mcmod.findcf <关键词> [类型] - 搜索 CurseForge 项目\n可用类型：mod(模组), resourcepack(资源包), modpack(整合包), shader(光影), datapack(数据包), world(地图), addon(附加包), plugin(插件)')
     .action(async ({ session }, keyword, type) => {
       if (!keyword) return '请输入要搜索的关键词'
@@ -384,7 +384,7 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
     setInterval(() => checkUpdate(minecraftVersions, ctx, pluginConfig), pluginConfig.ver.interval * 60 * 1000)
   }
 
-  ctx.command('mcinfo [server]', '查询 Minecraft 服务器状态')
+  ctx.command('mcinfo [server]', '查询 Minecraft 服务器')
     .usage(`mcinfo [地址[:端口]] - 查询 Java 版服务器\nmcinfo.be [地址[:端口]] - 查询 Bedrock 版服务器`)
     .action(async ({ }, server) => {
       try {
@@ -405,22 +405,22 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
     })
 
   ctx.command('mcskin <username>', '查询 Minecraft 玩家信息')
-    .usage('mcskin <用户名> - 获取玩家信息与皮肤预览')
+    .usage('mcskin <用户名> - 获取玩家信息并生成皮肤及披风预览')
     .action(async ({ }, username) => {
       if (!username) return '请输入玩家用户名'
 
       try {
         const profile = await getPlayerProfile(username);
         const parts = [
-          `玩家：${profile.name}[${profile.uuidDashed}]${profile.skin ? ` (${profile.skin.model === 'slim' ? '纤细' : '经典'}型)` : ''}`
+          `玩家: ${profile.name}${profile.skin ? ` (${profile.skin.model === 'slim' ? '纤细' : '经典'}模型)` : ''}\n[${profile.uuidDashed}]`
         ];
 
         if (profile.skin) {
           const skinImage = await renderPlayerSkin(ctx, profile.skin.url, profile.cape?.url);
           parts.push(h.image(`data:image/png;base64,${skinImage}`).toString());
-          parts.push(`获取 ${profile.name} 的头(≤1.12 或 ≥1.13):`);
-          parts.push(`/give @p minecraft:skull 1 3 {SkullOwner:"${profile.name}"}`);
-          parts.push(`/give @p minecraft:player_head{SkullOwner:"${profile.name}"}`);
+          parts.push(`获取 ${profile.name} 的头(≤1.12 或 ≥1.13):(/give @p)`);
+          parts.push(`minecraft:skull 1 3 {SkullOwner:"${profile.name}"}`);
+          parts.push(`minecraft:player_head{SkullOwner:"${profile.name}"}`);
         } else {
           parts.push('该玩家未设置皮肤');
         }
