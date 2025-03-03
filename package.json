@@ -17,7 +17,6 @@
     "dist"
   ],
   "license": "GPL-3.0",
-  "scripts": {},
   "keywords": [
     "chatbot",
     "koishi",
@@ -41,11 +40,10 @@
     "我的世界",
     "MC百科"
   ],
-  "devDependencies": {},
   "peerDependencies": {
-    "koishi": "^4.18.7",
     "axios": "^1.4.0",
     "cheerio": "^1.0.0",
+    "koishi": "^4.18.7",
     "koishi-plugin-puppeteer": "^3.5.2",
     "rcon-client": "^4.2.3"
   },
