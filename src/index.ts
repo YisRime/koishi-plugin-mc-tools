@@ -154,12 +154,14 @@ export const Config: Schema<MinecraftToolsConfig> = Schema.object({
       .default('hypixel.net'),
     javaApis: Schema.array(String)
       .default([
-        'https://api.mcstatus.io/v2/status/java/${address}'
+        'https://api.mcstatus.io/v2/status/java/${address}',
+        'https://api.mcsrvstat.us/3/${address}'
       ])
       .description('Java 查询 API'),
     bedrockApis: Schema.array(String)
       .default([
-        'https://api.mcstatus.io/v2/status/bedrock/${address}'
+        'https://api.mcstatus.io/v2/status/bedrock/${address}',
+        'https://api.mcsrvstat.us/bedrock/3/${address}'
       ])
       .description('Bedrock 查询 API')
   }).description('服务器设置'),

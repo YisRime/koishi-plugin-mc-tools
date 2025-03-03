@@ -90,26 +90,28 @@ export async function checkServerStatus(
     }
 
     const errors: string[] = []
-    for (const apiTemplate of apis) {
-      const url = apiTemplate.replace('${address}', parsed.address)
+    for (const apiUrl of apis) {
       try {
-        const response = await axios.get(url, {
-          params: {
-            timeout: 10000,
-            ...(type === 'java' ? { query: true } : {})
+        const response = await axios.get(apiUrl.replace('${address}', parsed.address), {
+          headers: {
+            'User-Agent': 'koishi-plugin-mc-tools/1.0'
           },
           timeout: 10000,
           validateStatus: null
         })
 
         if (!response.data || response.status !== 200) {
-          errors.push(`${url} 请求失败: ${response.data?.error || response.status}`)
+          errors.push(`${apiUrl} 请求失败: ${response.data?.error || response.status}`)
           continue
+        }
+
+        if (apiUrl.includes('mcsrvstat.us')) {
+          return await transformMcsrvstatResponse(response.data)
         }
 
         const data = response.data
         if (!data.online) {
-          errors.push(`${url} 返回服务器离线`)
+          errors.push(`${apiUrl} 返回服务器离线`)
           continue
         }
 
@@ -140,7 +142,7 @@ export async function checkServerStatus(
           edition: data.edition
         }
       } catch (error) {
-        errors.push(`${url} 连接错误: ${error.message}`)
+        errors.push(`${apiUrl} 连接错误: ${error.message}`)
       }
     }
 
@@ -159,6 +161,42 @@ export async function checkServerStatus(
       players: { online: null, max: null },
       error: error.message || '服务器地址解析失败'
     }
+  }
+}
+
+async function transformMcsrvstatResponse(data: any): Promise<ServerStatus> {
+  if (!data.online) {
+    return {
+      online: false,
+      host: data.hostname || data.ip || 'unknown',
+      port: data.port || 0,
+      players: { online: null, max: null }
+    }
+  }
+
+  return {
+    online: true,
+    host: data.hostname || data.ip,
+    port: data.port,
+    ip_address: data.ip,
+    retrieved_at: data.debug?.cachetime * 1000,
+    version: {
+      name_clean: data.version,
+      name: data.protocol?.name
+    },
+    players: {
+      online: data.players?.online || 0,
+      max: data.players?.max || 0,
+      list: data.players?.list?.map(p => p.name)
+    },
+    motd: data.motd?.clean?.[0] || data.motd?.raw?.[0],
+    icon: data.icon,
+    mods: data.mods,
+    software: data.software,
+    plugins: data.plugins,
+    gamemode: data.gamemode,
+    server_id: data.serverid,
+    eula_blocked: data.eula_blocked
   }
 }
 
