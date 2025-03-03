@@ -118,7 +118,7 @@ export const Config: Schema<MinecraftToolsConfig> = Schema.object({
       .description('总预览字数'),
     descLength: Schema.number()
       .default(20)
-      .description('搜索项目描述字数'),
+      .description('搜索内容描述字数'),
     Timeout: Schema.number()
       .default(15)
       .description('搜索超时时间（秒）')
@@ -191,12 +191,8 @@ export const Config: Schema<MinecraftToolsConfig> = Schema.object({
 export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
   const userLanguageSettings = new Map<string, LangCode>()
   const minecraftVersions = { snapshot: '', release: '' }
-  const mcwiki = ctx.command('mcwiki <keyword:text>', 'Minecraft Wiki 查询')
-    .usage('使用说明：\n  mcwiki <关键词> - 直接查询指定 Wiki 页面\n  mcwiki.find <关键词> - 搜索并选择页面\n  mcwiki.shot <关键词> - 获取页面截图')
-    .example('mcwiki 红石 - 直接查看红石页面')
-    .example('mcwiki.find 发射器 - 搜索发射器相关页面')
-    .example('mcwiki.shot 活塞 - 获取活塞页面截图')
-
+  const mcwiki = ctx.command('mcwiki <keyword:text>', '查询 Minecraft Wiki')
+    .usage('mcwiki <关键词> - 搜索 Wiki 内容\nmcwiki.find <关键词> - 搜索并选择 Wiki 页面\nmcwiki.shot <关键词> - 搜索并获取指定页面截图')
   mcwiki.action(async ({ session }, keyword) => {
     try {
       const result = await processWikiRequest(keyword, session.userId, pluginConfig, userLanguageSettings)
@@ -206,9 +202,8 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
     }
   })
 
-  mcwiki.subcommand('.find <keyword:text>', '搜索 Wiki')
-    .usage('用法：mcwiki.find <关键词> - 搜索并选择 Wiki 页面')
-    .example('mcwiki.find 红石 - 搜索红石相关内容')
+  mcwiki.subcommand('.find <keyword:text>', '搜索 Wiki 内容')
+    .usage('mcwiki.find <关键词> - 搜索并选择 Wiki 页面')
     .action(async ({ session }, keyword) => {
       return await search({
         keyword,
@@ -221,8 +216,7 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
     })
 
   mcwiki.subcommand('.shot <keyword:text>', '页面截图')
-    .usage('用法：mcwiki.shot <关键词> - 获取指定页面截图')
-    .example('mcwiki.shot 活塞 - 截取活塞页面图片')
+    .usage('mcwiki.shot <关键词> - 搜索并获取指定页面截图')
     .action(async ({ session }, keyword) => {
       if (!keyword) return '请输入要查询的关键词'
 
@@ -246,14 +240,8 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
       }
     })
 
-    const modCommand = ctx.command('mod <keyword:text>', '模组与资源搜索')
-    .usage(`用法：
-- mod <关键词> - 搜索 MCMOD 页面
-- mod.find <关键词> - MCMOD 多结果搜索
-- mod.shot <关键词> - MCMOD 页面截图
-- mod.(find)mr <关键词> [类型] - Modrinth 搜索
-- mod.(find)cf <关键词> [类型] - CurseForge 搜索`)
-    .example('mod 机械动力 - 直接查看机械动力页面')
+    const mcmod = ctx.command('mcmod <keyword:text>', '搜索 MCMod/Modrinth/Curseforge')
+    .usage('mcmod <关键词> - 搜索 MCMOD 内容\nmcmod.find <关键词> - 搜索 MCMOD 页面\nmcmod.shot <关键词> - MCMOD 页面截图\nmcmod.(find)mr <关键词> [类型] - 搜索 Modrinth 内容\nmcmod.(find)cf <关键词> [类型] - 搜索 CurseForge 内容')
     .action(async ({ }, keyword) => {
       if (!keyword) return '请输入要查询的关键词'
 
@@ -271,9 +259,8 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
       }
     })
 
-  modCommand.subcommand('.find <keyword:text>', '搜索 MCMOD 页面')
-    .usage('用法：mod.find <关键词> - 搜索并列出多个 MCMOD 相关页面供选择')
-    .example('mod.find 科技 - 搜索科技相关模组')
+  mcmod.subcommand('.find <keyword:text>', '搜索 MCMOD 页面')
+    .usage('mcmod.find <关键词> - 搜索 MCMOD 页面')
     .action(async ({ session }, keyword) => {
       return await search({
         keyword,
@@ -284,9 +271,8 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
       })
     })
 
-  modCommand.subcommand('.shot <keyword:text>', '搜索并截图 MCMOD 条目')
-    .usage('用法：mod.shot <关键词> - 搜索并截取 MCMOD 页面截图')
-    .example('mod.shot 植物魔法 - 获取植物魔法页面截图')
+  mcmod.subcommand('.shot <keyword:text>', '搜索并截图 MCMOD 页面')
+    .usage('mcmod.shot <关键词> - 搜索并获取指定页面截图')
     .action(async ({ session }, keyword) => {
       if (!keyword) return '请输入要查询的关键词'
 
@@ -308,24 +294,22 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
       }
     })
 
-  modCommand.subcommand('.mr <keyword> [type]', 'Modrinth 项目搜索')
-    .usage('用法：mod.mr <关键词> [类型] - 搜索并显示首个匹配的 Modrinth 项目\n可用类型：mod(模组), resourcepack(资源包), datapack(数据包), shader(光影), modpack(整合包), plugin(插件)')
-    .example('mod.mr fabric - 搜索所有Fabric相关项目')
+  mcmod.subcommand('.mr <keyword> [type]', '搜索 Modrinth 内容')
+    .usage('mcmod.mr <关键词> [类型] - 搜索 Modrinth 内容\n可用类型：mod(模组), resourcepack(资源包), datapack(数据包), shader(光影), modpack(整合包), plugin(插件)')
     .action(async ({ }, keyword, type) => {
       if (!keyword) return '请输入要搜索的关键词'
 
       try {
         const results = await searchMods(keyword, 'modrinth', pluginConfig.wiki, undefined, type)
-        if (!results.length) return '未找到相关项目'
+        if (!results.length) return '未找到相关内容'
         return await getModDetails(results[0], pluginConfig.wiki, pluginConfig.search.cfApi)
       } catch (error) {
         return error.message
       }
     })
 
-  modCommand.subcommand('.findmr <keyword> [type]', '搜索 Modrinth 项目')
-    .usage('用法：mod.findmr <关键词> [类型] - 搜索并列出Modrinth结果\n可用类型: mod, resourcepack, datapack, shader, modpack, plugin')
-    .example('mod.findmr fabric - 搜索所有Fabric相关项目')
+  mcmod.subcommand('.findmr <keyword> [type]', '搜索 Modrinth 项目')
+    .usage('mcmod.findmr <关键词> [类型] - 搜索 Modrinth 项目\n可用类型：mod(模组), resourcepack(资源包), datapack(数据包), shader(光影), modpack(整合包), plugin(插件)')
     .action(async ({ session }, keyword, type) => {
       if (!keyword) return '请输入要搜索的关键词'
 
@@ -349,24 +333,22 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
       }
     })
 
-  modCommand.subcommand('.cf <keyword> [type]', 'CurseForge 项目搜索')
-    .usage('用法：mod.cf <关键词> [类型] - 搜索并显示首个匹配的 CurseForge 项目\n可用类型：mod(模组), resourcepack(资源包), modpack(整合包), shader(光影), datapack(数据包), world(地图), addon(附加包), plugin(插件)')
-    .example('mod.cf fabric - 搜索所有Fabric相关项目')
+  mcmod.subcommand('.cf <keyword> [type]', '搜索 CurseForge 内容')
+    .usage('mcmod.cf <关键词> [类型] - 搜索 CurseForge 内容\n可用类型：mod(模组), resourcepack(资源包), modpack(整合包), shader(光影), datapack(数据包), world(地图), addon(附加包), plugin(插件)')
     .action(async ({ }, keyword, type) => {
       if (!keyword) return '请输入要搜索的关键词'
 
       try {
         const results = await searchMods(keyword, 'curseforge', pluginConfig.wiki, pluginConfig.search.cfApi, type)
-        if (!results.length) return '未找到相关项目'
+        if (!results.length) return '未找到相关内容'
         return await getModDetails(results[0], pluginConfig.wiki, pluginConfig.search.cfApi)
       } catch (error) {
         return error.message
       }
     })
 
-  modCommand.subcommand('.findcf <keyword> [type]', '搜索 CurseForge 项目')
-    .usage('用法：mod.findcf <关键词> [类型] - 搜索并列出CurseForge结果\n可用类型: mod, resourcepack, modpack, shader, datapack, world, addon, plugin')
-    .example('mod.findcf fabric - 搜索所有Fabric相关项目')
+  mcmod.subcommand('.findcf <keyword> [type]', '搜索 CurseForge 项目')
+    .usage('mcmod.findcf <关键词> [类型] - 搜索 CurseForge 项目\n可用类型：mod(模组), resourcepack(资源包), modpack(整合包), shader(光影), datapack(数据包), world(地图), addon(附加包), plugin(插件)')
     .action(async ({ session }, keyword, type) => {
       if (!keyword) return '请输入要搜索的关键词'
 
@@ -390,8 +372,8 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
       }
     })
 
-  ctx.command('mcver', '版本信息')
-    .usage('用法：mcver - 获取最新版本信息')
+  ctx.command('mcver', '查询 Minecraft 最新版本')
+    .usage('mcver - 查询 Minecraft 最新版本')
     .action(async () => {
       const result = await getVersionInfo()
       return result.success ? result.data : result.error
@@ -402,11 +384,8 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
     setInterval(() => checkUpdate(minecraftVersions, ctx, pluginConfig), pluginConfig.ver.interval * 60 * 1000)
   }
 
-  ctx.command('mcinfo [server]', '服务器状态')
-    .usage(`用法：
-- mcinfo [地址[:端口]] - 查询 Java 版服务器
-- mcinfo.be [地址[:端口]] - 查询基岩版服务器`)
-    .example('mcinfo mc.hypixel.net')
+  ctx.command('mcinfo [server]', '查询 Minecraft 服务器状态')
+    .usage(`mcinfo [地址[:端口]] - 查询 Java 版服务器\nmcinfo.be [地址[:端口]] - 查询 Bedrock 版服务器`)
     .action(async ({ }, server) => {
       try {
         const status = await checkServerStatus(server || pluginConfig.info.default, 'java', pluginConfig)
@@ -415,8 +394,7 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
         return error.message
       }
     })
-    .subcommand('.be [server]', '查询基岩版服务器')
-    .example('mcinfo.be mc.example.com:19133')
+    .subcommand('.be [server]', '查询 Bedrock 版服务器')
     .action(async ({ }, server) => {
       try {
         const status = await checkServerStatus(server || pluginConfig.info.default, 'bedrock', pluginConfig)
@@ -426,9 +404,8 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
       }
     })
 
-  ctx.command('mcskin <username>', '玩家信息')
-    .usage('用法：mcskin <用户名> - 获取玩家信息与皮肤预览')
-    .example('mcskin Notch')
+  ctx.command('mcskin <username>', '查询 Minecraft 玩家信息')
+    .usage('mcskin <用户名> - 获取玩家信息与皮肤预览')
     .action(async ({ }, username) => {
       if (!username) return '请输入玩家用户名'
 
