@@ -98,6 +98,7 @@ export interface MinecraftToolsConfig {
     maxNumberDisplay: number
     javaApis: string[]
     bedrockApis: string[]
+    showSkull: boolean
   }
   ver: {
     enabled: boolean
@@ -140,18 +141,21 @@ export const Config: Schema<MinecraftToolsConfig> = Schema.object({
   }).description('查询设置'),
 
   info: Schema.object({
-    showIP: Schema.boolean()
+    showSkull: Schema.boolean()
       .default(true)
+      .description('显示头颅获取命令'),
+    showIP: Schema.boolean()
+      .default(false)
       .description('显示服务器地址'),
     showIcon: Schema.boolean()
       .default(true)
       .description('显示服务器图标'),
     maxNumberDisplay: Schema.number()
-      .description('列表最大显示数')
-      .default(8),
+      .default(8)
+      .description('列表最大显示数'),
     default: Schema.string()
-      .description('默认 INFO 服务器')
-      .default('hypixel.net'),
+      .default('hypixel.net')
+      .description('默认 INFO 服务器'),
     javaApis: Schema.array(String)
       .default([
         'https://api.mcstatus.io/v2/status/java/${address}',
@@ -194,7 +198,7 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
   const userLanguageSettings = new Map<string, LangCode>()
   const minecraftVersions = { snapshot: '', release: '' }
   const mcwiki = ctx.command('mcwiki <keyword:text>', '查询 Minecraft Wiki')
-    .usage('mcwiki <关键词> - 查询 MC Wiki\nmcwiki.find <关键词> - 搜索 MC Wiki\nmcwiki.shot <关键词> - Wiki 截图')
+    .usage('mcwiki <关键词> - 查询 Wiki\nmcwiki.find <关键词> - 搜索 Wiki\nmcwiki.shot <关键词> - 截图 Wiki 页面')
   mcwiki.action(async ({ session }, keyword) => {
     try {
       const result = await processWikiRequest(keyword, session.userId, pluginConfig, userLanguageSettings)
@@ -204,7 +208,7 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
     }
   })
 
-  mcwiki.subcommand('.find <keyword:text>', '搜索 Wiki 页面')
+  mcwiki.subcommand('.find <keyword:text>', '搜索 Wiki')
     .usage('mcwiki.find <关键词> - 搜索 Wiki 页面')
     .action(async ({ session }, keyword) => {
       return await search({
@@ -217,7 +221,7 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
       })
     })
 
-  mcwiki.subcommand('.shot <keyword:text>', 'Wiki 截图')
+  mcwiki.subcommand('.shot <keyword:text>', '截图 Wiki 页面')
     .usage('mcwiki.shot <关键词> - 搜索并获取指定页面截图')
     .action(async ({ session }, keyword) => {
       if (!keyword) return '请输入要查询的关键词'
@@ -242,8 +246,8 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
       }
     })
 
-    const mcmod = ctx.command('mcmod <keyword:text>', '搜索 MCMod/Modrinth/Curseforge')
-    .usage('mcmod <关键词> - 查询 MCMOD\nmcmod.find <关键词> - 搜索 MCMOD\nmcmod.shot <关键词> - MCMOD 截图\nmcmod.(find)mr <关键词> [类型] - 搜索 Modrinth\nmcmod.(find)cf <关键词> [类型] - 搜索 CurseForge')
+    const mcmod = ctx.command('mcmod <keyword:text>', '查询 MCMod/Modrinth/Curseforge')
+    .usage('mcmod <关键词> - 查询 MCMod\nmcmod.find <关键词> - 搜索 MCMod\nmcmod.shot <关键词> - 截图 MCMod 页面\nmcmod.(find)mr <关键词> [类型] - 搜索 Modrinth\nmcmod.(find)cf <关键词> [类型] - 搜索 CurseForge')
     .action(async ({ }, keyword) => {
       if (!keyword) return '请输入要查询的关键词'
 
@@ -261,7 +265,7 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
       }
     })
 
-  mcmod.subcommand('.find <keyword:text>', '搜索 MCMOD 页面')
+  mcmod.subcommand('.find <keyword:text>', '搜索 MCMod')
     .usage('mcmod.find <关键词> - 搜索 MCMOD 页面')
     .action(async ({ session }, keyword) => {
       return await search({
@@ -273,7 +277,7 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
       })
     })
 
-  mcmod.subcommand('.shot <keyword:text>', 'MCMOD 截图')
+  mcmod.subcommand('.shot <keyword:text>', '截图 MCMod 页面')
     .usage('mcmod.shot <关键词> - 搜索并获取指定页面截图')
     .action(async ({ session }, keyword) => {
       if (!keyword) return '请输入要查询的关键词'
@@ -374,8 +378,8 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
       }
     })
 
-  ctx.command('mcver', '查询 Minecraft 最新版本')
-    .usage('mcver - 查询 Minecraft 最新版本')
+  ctx.command('mcver', '查询 Minecraft 版本信息')
+    .usage('mcver - 获取 Minecraft 最新版本信息')
     .action(async () => {
       const result = await getVersionInfo()
       return result.success ? result.data : result.error
@@ -386,7 +390,7 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
     setInterval(() => checkUpdate(minecraftVersions, ctx, pluginConfig), pluginConfig.ver.interval * 60 * 1000)
   }
 
-  ctx.command('mcinfo [server]', '查询 Minecraft 服务器')
+  ctx.command('mcinfo [server]', '查询 Minecraft 服务器信息')
     .usage(`mcinfo [地址[:端口]] - 查询 Java 版服务器\nmcinfo.be [地址[:端口]] - 查询 Bedrock 版服务器`)
     .action(async ({ }, server) => {
       try {
@@ -414,15 +418,18 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
       try {
         const profile = await getPlayerProfile(username);
         const parts = [
-          `玩家: ${profile.name}${profile.skin ? ` (${profile.skin.model === 'slim' ? '纤细' : '经典'}模型)` : ''}\n[${profile.uuidDashed}]`
+          `${profile.name}[${profile.uuidDashed}]`
         ];
 
         if (profile.skin) {
           const skinImage = await renderPlayerSkin(ctx, profile.skin.url, profile.cape?.url);
           parts.push(h.image(`data:image/png;base64,${skinImage}`).toString());
-          parts.push(`获取 ${profile.name} 的头(≤1.12 或 ≥1.13):(/give @p)`);
-          parts.push(`minecraft:skull 1 3 {SkullOwner:"${profile.name}"}`);
-          parts.push(`minecraft:player_head{SkullOwner:"${profile.name}"}`);
+
+          if (pluginConfig.info.showSkull) {
+            parts.push(`使用 /give 获取 ${profile.name} ${profile.skin ? `(${profile.skin.model === 'slim' ? '纤细' : '经典'}) ` : ''}的头：(≤1.12 & ≥1.13)`);
+            parts.push(`minecraft:skull 1 3 {SkullOwner:"${profile.name}"}`);
+            parts.push(`minecraft:player_head{SkullOwner:"${profile.name}"}`);
+          }
         } else {
           parts.push('该玩家未设置皮肤');
         }
