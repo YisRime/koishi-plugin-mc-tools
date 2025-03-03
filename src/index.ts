@@ -1,5 +1,6 @@
 import { Context, Schema, h } from 'koishi'
 import {} from 'koishi-plugin-puppeteer'
+import { Rcon } from 'rcon-client'
 import { getVersionInfo, checkUpdate } from './utils'
 import { fetchModContent, formatContent } from './modwiki'
 import { processWikiRequest } from './mcwiki'
@@ -99,6 +100,8 @@ export interface MinecraftToolsConfig {
     javaApis: string[]
     bedrockApis: string[]
     showSkull: boolean
+    rconPort: number
+    rconPassword: string
   }
   ver: {
     enabled: boolean
@@ -156,6 +159,12 @@ export const Config: Schema<MinecraftToolsConfig> = Schema.object({
     default: Schema.string()
       .default('hypixel.net')
       .description('默认 INFO 服务器'),
+      rconPort: Schema.number()
+      .default(25575)
+      .description('RCON 端口'),
+    rconPassword: Schema.string()
+      .role('secret')
+      .description('RCON 密码'),
     javaApis: Schema.array(String)
       .default([
         'https://api.mcstatus.io/v2/status/java/${address}',
@@ -438,4 +447,26 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
         return error.message
       }
   })
+
+  ctx.command('mcrcon <command:text>', '执行 Minecraft RCON 命令')
+    .usage('mcrcon <命令> - 通过 RCON 在 MC 服务器中执行命令')
+    .action(async ({ }, command) => {
+      if (!command) return '请输入要执行的命令'
+      if (!pluginConfig.info.rconPassword) return '请先设置 RCON 密码'
+
+      const rcon = await Rcon.connect({
+        host: pluginConfig.info.default,
+        port: pluginConfig.info.rconPort,
+        password: pluginConfig.info.rconPassword
+      })
+
+      try {
+        const response = await rcon.send(command)
+        return response || '命令已执行，服务器无返回信息'
+      } catch (error) {
+        return `RCON 执行失败: ${error.message}`
+      } finally {
+        await rcon.end()
+      }
+    })
 }
