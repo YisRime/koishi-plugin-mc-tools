@@ -402,8 +402,8 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
     setInterval(() => checkUpdate(minecraftVersions, ctx, pluginConfig), pluginConfig.ver.interval * 60 * 1000)
   }
 
-  ctx.command('mcinfo [server]', '查询 Minecraft 服务器信息')
-    .usage(`mcinfo [地址[:端口]] - 查询 Java 版服务器\nmcinfo.be [地址[:端口]] - 查询 Bedrock 版服务器\nmcinfo.rcon <命令> - 通过 RCON 执行服务器命令`)  // 修改 usage 说明
+  const mcinfo = ctx.command('mcinfo [server]', '查询 Minecraft 服务器信息')
+    .usage(`mcinfo [地址[:端口]] - 查询 Java 版服务器\nmcinfo.be [地址[:端口]] - 查询 Bedrock 版服务器\nmcinfo.run <命令> - 通过 RCON 执行服务器命令`)
     .action(async ({ }, server) => {
       try {
         const status = await checkServerStatus(server || pluginConfig.info.default, 'java', pluginConfig)
@@ -412,7 +412,9 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
         return error.message
       }
     })
-    .subcommand('.be [server]', '查询 Bedrock 版服务器')
+
+    mcinfo.subcommand('.be [server]', '查询 Bedrock 版服务器')
+    .usage('mcinfo.be [地址[:端口]] - 查询 Bedrock 版服务器状态')
     .action(async ({ }, server) => {
       try {
         const status = await checkServerStatus(server || pluginConfig.info.default, 'bedrock', pluginConfig)
@@ -421,8 +423,9 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
         return error.message
       }
     })
-    .subcommand('.run <command:text>', '执行 RCON 命令')
-    .usage('mcinfo.rcon <命令> - 通过 RCON 在服务器中执行命令')
+
+    mcinfo.subcommand('.run <command:text>', '执行 RCON 命令')
+    .usage('mcinfo.run <命令> - 通过 RCON 在服务器执行指定命令')
     .action(async ({ }, command) => {
       if (!command) return '请输入要执行的命令'
       if (!pluginConfig.info.rconPassword) return '请先设置 RCON 密码'
