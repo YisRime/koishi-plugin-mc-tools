@@ -71,19 +71,51 @@ export async function getVersionInfo() {
 }
 
 /**
- * 向目标群组发送版本更新通知
+ * 解析通知目标配置
+ * @param target 格式: "platform:type:id"
+ */
+interface ParsedTarget {
+  platform: string
+  type: 'private' | 'group'
+  id: string
+}
+
+function parseTarget(target: string): ParsedTarget | null {
+  const parts = target.split(':')
+  if (parts.length !== 3) return null
+
+  const [platform, type, id] = parts
+  if (!['private', 'group'].includes(type)) return null
+
+  return { platform, type: type as 'private' | 'group', id }
+}
+
+/**
+ * 向目标发送版本更新通知
  * @param {Context} ctx - Koishi 上下文
- * @param {string[]} targetGroups - 目标群组ID列表
+ * @param {string[]} targets - 目标配置列表 (格式: platform:type:id)
  * @param {string} updateMessage - 更新消息内容
  * @private
  */
-async function notifyVersionUpdate(ctx: any, targetGroups: string[], updateMessage: string) {
-  for (const gid of targetGroups) {
+async function notifyVersionUpdate(ctx: any, targets: string[], updateMessage: string) {
+  for (const target of targets) {
+    const parsed = parseTarget(target)
+    if (!parsed) {
+      ctx.logger('mc-tools').warn(`无效的通知目标配置: ${target}`)
+      continue
+    }
+
     for (const bot of ctx.bots) {
+      if (bot.platform !== parsed.platform) continue
+
       try {
-        await bot.sendMessage(gid, updateMessage)
+        if (parsed.type === 'private') {
+          await bot.sendPrivateMessage(parsed.id, updateMessage)
+        } else {
+          await bot.sendMessage(parsed.id, updateMessage)
+        }
       } catch (e) {
-        ctx.logger('mc-tools').warn(`通知发送失败（群组：${gid}）:`, e)
+        ctx.logger('mc-tools').warn(`通知发送失败（${parsed.type} ${parsed.id}）:`, e)
       }
     }
   }

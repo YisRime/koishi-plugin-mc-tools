@@ -37,8 +37,8 @@
 - `mcver` - 查询 Minecraft 版本信息
 - `mcinfo [服务器]` - 查询 Java 版服务器信息
 - `mcinfo.be [服务器]` - 查询 Bedrock 版服务器信息
+- `mcinfo.run <命令>` - 执行远程 RCON 命令
 - `mcskin <用户名>` - 查询玩家信息与皮肤
-- `mcrcon <命令>` - 执行远程 RCON 命令
 
 ## 配置说明
 

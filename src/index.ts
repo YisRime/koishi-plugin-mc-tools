@@ -105,7 +105,7 @@ export interface MinecraftToolsConfig {
   }
   ver: {
     enabled: boolean
-    groups: string[]
+    groups: string[]  // 格式: "platform:type:id", 例如 "onebot:private:1234567" 或 "onebot:group:7654321"
     interval: number
     release: boolean
     snapshot: boolean
@@ -158,7 +158,7 @@ export const Config: Schema<MinecraftToolsConfig> = Schema.object({
       .description('列表最大显示数'),
     default: Schema.string()
       .default('hypixel.net')
-      .description('默认 INFO 服务器'),
+      .description('默认 INFO&RCON 服务器'),
       rconPort: Schema.number()
       .default(25575)
       .description('RCON 端口'),
@@ -192,9 +192,12 @@ export const Config: Schema<MinecraftToolsConfig> = Schema.object({
     interval: Schema.number()
       .default(60)
       .description('检查间隔时间（分钟）'),
-    groups: Schema.array(Schema.string())
-      .default([])
-      .description('接收更新通知 ID')
+    groups: Schema.array(String)
+      .default([
+        'onebot:private:123456789',
+        'discord:group:987654321'
+      ])
+      .description('接收更新通知的目标(platform:type:id)')
   }).description('更新检测设置')
 })
 
@@ -400,7 +403,7 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
   }
 
   ctx.command('mcinfo [server]', '查询 Minecraft 服务器信息')
-    .usage(`mcinfo [地址[:端口]] - 查询 Java 版服务器\nmcinfo.be [地址[:端口]] - 查询 Bedrock 版服务器`)
+    .usage(`mcinfo [地址[:端口]] - 查询 Java 版服务器\nmcinfo.be [地址[:端口]] - 查询 Bedrock 版服务器\nmcinfo.rcon <命令> - 通过 RCON 执行服务器命令`)  // 修改 usage 说明
     .action(async ({ }, server) => {
       try {
         const status = await checkServerStatus(server || pluginConfig.info.default, 'java', pluginConfig)
@@ -416,6 +419,27 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
         return formatServerStatus(status, pluginConfig.info)
       } catch (error) {
         return error.message
+      }
+    })
+    .subcommand('.run <command:text>', '执行 RCON 命令')
+    .usage('mcinfo.rcon <命令> - 通过 RCON 在服务器中执行命令')
+    .action(async ({ }, command) => {
+      if (!command) return '请输入要执行的命令'
+      if (!pluginConfig.info.rconPassword) return '请先设置 RCON 密码'
+
+      const rcon = await Rcon.connect({
+        host: pluginConfig.info.default,
+        port: pluginConfig.info.rconPort,
+        password: pluginConfig.info.rconPassword
+      })
+
+      try {
+        const response = await rcon.send(command)
+        return response || '命令已执行，无返回信息'
+      } catch (error) {
+        return `RCON 执行失败: ${error.message}`
+      } finally {
+        await rcon.end()
       }
     })
 
@@ -447,26 +471,4 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
         return error.message
       }
   })
-
-  ctx.command('mcrcon <command:text>', '执行 Minecraft 命令')
-    .usage('mcrcon <命令> - 通过 RCON 在 MC 服务器中执行命令')
-    .action(async ({ }, command) => {
-      if (!command) return '请输入要执行的命令'
-      if (!pluginConfig.info.rconPassword) return '请先设置 RCON 密码'
-
-      const rcon = await Rcon.connect({
-        host: pluginConfig.info.default,
-        port: pluginConfig.info.rconPort,
-        password: pluginConfig.info.rconPassword
-      })
-
-      try {
-        const response = await rcon.send(command)
-        return response || '命令已执行，服务器无返回信息'
-      } catch (error) {
-        return `RCON 执行失败: ${error.message}`
-      } finally {
-        await rcon.end()
-      }
-    })
 }
