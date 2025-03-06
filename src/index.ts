@@ -8,7 +8,6 @@ import { searchMod, search, capture } from './subwiki'
 import { getPlayerProfile, renderPlayerSkin } from './utils'
 import { searchMods, getModDetails, formatSearchResults } from './mod'
 import { checkServerStatus, formatServerStatus } from './info'
-import { config } from 'process'
 
 /**
  * Minecraft 工具箱插件
@@ -16,7 +15,6 @@ import { config } from 'process'
  */
 export const name = 'mc-tools'
 export const inject = {optional: ['puppeteer']}
-export const usage = '注意：若使用 Docker 部署，需安装 chromium-swiftshader 以支持 mcskin 指令'
 export type LangCode = keyof typeof MINECRAFT_LANGUAGES
 
 const MINECRAFT_LANGUAGES = {
@@ -107,7 +105,7 @@ export interface MinecraftToolsConfig {
   }
   ver: {
     enabled: boolean
-    groups: string[]  // 格式: "platform:type:id", 例如 "onebot:private:1234567" 或 "onebot:group:7654321"
+    groups: string[]
     interval: number
     release: boolean
     snapshot: boolean
