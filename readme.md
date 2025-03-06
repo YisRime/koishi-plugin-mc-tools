@@ -49,6 +49,9 @@ wiki:
   totalLength: 400      # 总预览字数
   descLength: 20       # 搜索内容描述字数
   Timeout: 15         # 搜索超时时间（秒）
+  captureTimeout: 3   # 截图超时时间（秒）
+  maxHeight: 4096    # 截图最大高度（像素），0表示无限制
+  waitUntil: 'domcontentloaded'  # 截图等待条件
 ```
 
 ### 查询设置
@@ -72,6 +75,12 @@ info:
   showSkull: true        # 是否显示头颅获取命令
   rconPort: 25575       # RCON 端口
   rconPassword: ''     # RCON 密码
+  javaApis:           # Java 版查询 API
+    - 'https://api.mcstatus.io/v2/status/java/${address}'
+    - 'https://api.mcsrvstat.us/3/${address}'
+  bedrockApis:       # Bedrock 版查询 API
+    - 'https://api.mcstatus.io/v2/status/bedrock/${address}'
+    - 'https://api.mcsrvstat.us/bedrock/3/${address}'
 ```
 
 ### 更新检测设置
@@ -82,7 +91,9 @@ ver:
   release: true       # 通知正式版本
   snapshot: true      # 通知快照版本
   interval: 60        # 检查间隔时间（分钟）
-  groups: []          # 接收更新通知群组
+  groups:             # 接收更新通知的目标
+    - 'onebot:private:123456789'
+    - 'discord:group:987654321'
 ```
 
 ## 注意事项

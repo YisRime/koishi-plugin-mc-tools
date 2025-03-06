@@ -88,6 +88,7 @@ export interface MinecraftToolsConfig {
   wiki: CommonConfig & {
     maxHeight: number  // 截图最大高度, 0表示无限制(默认4096)
     waitUntil: 'load' | 'domcontentloaded' | 'networkidle0' | 'networkidle2'
+    captureTimeout: number  // 新增配置项
   }
   search: {
     Language: LangCode
@@ -129,16 +130,19 @@ export const Config: Schema<MinecraftToolsConfig> = Schema.object({
     Timeout: Schema.number()
       .default(15)
       .description('搜索超时时间（秒）'),
+    captureTimeout: Schema.number()
+      .default(3)
+      .description('截图超时时间（秒）'),
     maxHeight: Schema.number()
-      .description('截图最大高度')
       .default(4096)
-      .min(0),
+      .min(0)
+      .description('截图最大高度（像素）'),
     waitUntil: Schema.union([
-        'load',
-        'domcontentloaded',
-        'networkidle0',
-        'networkidle2'
-      ])
+      'load',
+      'domcontentloaded',
+      'networkidle0',
+      'networkidle2'
+    ])
       .default('domcontentloaded')
       .description('截图等待条件')
   }).description('通用设置'),

@@ -89,7 +89,7 @@ export async function capture(
       try {
         await page.goto(url, {
           waitUntil: config.wiki.waitUntil,
-          timeout: 4000
+          timeout: config.wiki.captureTimeout * 1000
         })
         break
       } catch (err) {
@@ -118,7 +118,6 @@ export async function capture(
       })
     }, CLEANUP_SELECTORS)
 
-    // 获取截图区域
     const clipData = await page.evaluate((data) => {
       const { type, url, maxHeight } = data
       let selector
@@ -126,7 +125,6 @@ export async function capture(
       if (type === 'wiki') {
         selector = '#content'
       } else {
-        // 判断页面类型
         if (url.includes('bbs.mcmod.cn')) {
           selector = '#postlist'
         } else if (url.includes('/item/')) {
