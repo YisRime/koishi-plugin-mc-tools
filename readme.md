@@ -88,10 +88,14 @@ ver:
 ## 注意事项
 
 截图与渲染皮肤依赖 Puppeteer 服务，请先安装带有 Puppeteer 服务的插件。
+以下问题见于 Docker 部署 Koishi:
 若渲染皮肤出错或渲染出的图片仅有背景，请使用 chromium-swiftshader。
-因为 koishijs/koishi 镜像中的 Chromium 并不支持 WebGL。
+因为 koishijs/koishi 镜像中的 Chromium 不支持 WebGL。
+同时可能会产生截图文字丢失问题，请参考以下解决方案。
 
 ### 解决方案
+
+首先进行如下操作来安装 chromium-swiftshader 以替换原有 Chromium。
 
 ```bash
 # 删除原有 Chromium （如果使用 latest-lite 镜像请忽略）
@@ -103,4 +107,6 @@ docker exec -it <容器ID> apk update
 docker exec -it <容器ID> apk add chromium-swiftshader
 ```
 
-之后重启 Puppeteer 插件即可
+之后重启 Puppeteer 插件即可，此时无需添加 `--disable-gpu` 参数。
+如果出现问题，可尝试添加 `--use-gl=swiftshader` 和 `--enable-webgl` 参数。
+如果出现截图时文字渲染问题，可尝试添加 `--disable-font-subpixel-positioning` 和 `--enable-font-antialiasing` 参数。

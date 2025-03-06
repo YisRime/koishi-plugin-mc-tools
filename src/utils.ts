@@ -2,28 +2,6 @@ import { Context } from 'koishi'
 import axios from 'axios'
 import { MinecraftToolsConfig } from './index'
 
-declare global {
-  interface Window {
-    skinview3d: {
-      SkinViewer: new (options: {
-        canvas: HTMLCanvasElement
-        width: number
-        height: number
-        preserveDrawingBuffer: boolean
-        fov: number
-        zoom: number
-      }) => {
-        renderer: { setClearColor: (color: number, alpha: number) => void }
-        playerObject: { rotation: { y: number } }
-        animation: any
-        loadSkin: (url: string) => Promise<void>
-        loadCape: (url: string) => Promise<void>
-        render: () => void
-      }
-    }
-  }
-}
-
 interface TexturesData {
   textures: {
     SKIN?: {
@@ -250,62 +228,75 @@ export async function getPlayerProfile(username: string): Promise<PlayerProfile>
  */
 export async function renderPlayerSkin(ctx: Context, skinUrl: string, capeUrl?: string): Promise<string> {
   const page = await ctx.puppeteer.page()
+  await page.setViewport({ width: 400, height: 400 })
 
-  const base64Image = await page.evaluate(async ([skinUrl, capeUrl]) => {
-    const container = document.createElement('div')
-    container.style.cssText = 'display:flex;width:400px;height:400px;'
+  const html = `
+    <html>
+      <head>
+        <script src="https://unpkg.com/skinview3d@3.1.0/bundles/skinview3d.bundle.js"></script>
+        <style>
+          body { margin: 0; background: transparent; display: flex; justify-content: center; align-items: center; }
+          .container { display: flex; width: 400px; height: 400px; }
+          .view { width: 200px; height: 400px; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <canvas id="view1" class="view"></canvas>
+          <canvas id="view2" class="view"></canvas>
+        </div>
+        <script>
+          const createView = (id, rotationAngle) => {
+            const viewer = new skinview3d.SkinViewer({
+              canvas: document.getElementById(id),
+              width: 200,
+              height: 400,
+              preserveDrawingBuffer: true,
+              fov: 30,
+              zoom: 0.95
+            });
 
-    const view1 = document.createElement('canvas')
-    const view2 = document.createElement('canvas')
-    view1.width = view2.width = 200
-    view1.height = view2.height = 400
-    container.appendChild(view1)
-    container.appendChild(view2)
-    document.body.appendChild(container)
+            viewer.renderer.setClearColor(0x000000, 0);  // 设置透明背景
+            viewer.playerObject.rotation.y = rotationAngle;
+            viewer.animation = null;  // 完全禁用动画
 
-    await new Promise((resolve) => {
-      const script = document.createElement('script')
-      script.src = 'https://unpkg.com/skinview3d@3.1.0/bundles/skinview3d.bundle.js'
-      script.onload = resolve
-      document.head.appendChild(script)
-    })
+            return viewer;
+          };
 
-    const createView = (canvas: HTMLCanvasElement, rotationAngle: number) => {
-      const viewer = new window.skinview3d.SkinViewer({
-        canvas,
-        width: 200,
-        height: 400,
-        preserveDrawingBuffer: true,
-        fov: 30,
-        zoom: 0.48
-      })
+          (async () => {
+            // 创建左右两个视图，分别旋转 -36° 和 144° (-36° + 180°)
+            const view1 = createView('view1', -Math.PI / 5);
+            const view2 = createView('view2', Math.PI * 4 / 5);
+            // 为每个视图加载皮肤和披风（如果有）
+            for (const view of [view1, view2]) {
+              await view.loadSkin("${skinUrl}");
+              ${capeUrl ? `await view.loadCape("${capeUrl}");` : ''}
+              view.render();
+            }
+          })();
+        </script>
+      </body>
+    </html>
+  `
 
-      viewer.renderer.setClearColor(0x000000, 0)
-      viewer.playerObject.rotation.y = rotationAngle
-      viewer.animation = null
+  await page.setContent(html)
+  await page.waitForFunction(() => {
+    const v1 = document.getElementById('view1')
+    const v2 = document.getElementById('view2')
+    return v1 && v2 &&
+           (v1 as HTMLCanvasElement).toDataURL() !== 'data:,' &&
+           (v2 as HTMLCanvasElement).toDataURL() !== 'data:,'
+  }, { timeout: 5000 })
 
-      return viewer
-    }
+  await new Promise(resolve => setTimeout(resolve, 100))
 
-    const viewer1 = createView(view1, -Math.PI / 5)
-    const viewer2 = createView(view2, Math.PI * 4 / 5)
-
-    for (const viewer of [viewer1, viewer2]) {
-      await viewer.loadSkin(skinUrl)
-      if (capeUrl) await viewer.loadCape(capeUrl)
-      viewer.render()
-    }
-
-    const finalCanvas = document.createElement('canvas')
-    finalCanvas.width = 400
-    finalCanvas.height = 400
-    const ctx = finalCanvas.getContext('2d')
-    ctx.drawImage(view1, -100, -195)
-    ctx.drawImage(view2, 100, -195)
-
-    return finalCanvas.toDataURL('image/png')
-  }, [skinUrl, capeUrl])
+  // 截取渲染结果
+  const element = await page.$('.container')
+  const screenshot = await element.screenshot({
+    encoding: 'base64',
+    omitBackground: true
+  }) as string
 
   await page.close()
-  return base64Image.split(',')[1]
+  return screenshot
 }

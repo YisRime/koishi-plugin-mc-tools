@@ -15,6 +15,7 @@ import { checkServerStatus, formatServerStatus } from './info'
  */
 export const name = 'mc-tools'
 export const inject = {optional: ['puppeteer']}
+export const usage = '注意：使用 Docker 部署产生的问题请前往插件主页查看解决方案'
 export type LangCode = keyof typeof MINECRAFT_LANGUAGES
 
 const MINECRAFT_LANGUAGES = {
