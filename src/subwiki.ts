@@ -32,15 +32,15 @@ const CLEANUP_SELECTORS = [
 ]
 
 /**
- * 捕获页面截图
- * @param {string} url - 要截图的页面URL
- * @param {MinecraftToolsConfig} config - Minecraft工具配置
- * @param {any} ctx - Koishi上下文对象
- * @param {Object} options - 截图选项
- * @param {('wiki'|'mcmod')} options.type - 页面类型
- * @param {LangCode} [options.lang] - 语言代码
- * @returns {Promise<{url: string, image: h.Fragment}>} 返回截图结果
- * @throws {Error} 当截图功能禁用或截图失败时抛出错误
+ * 捕获网页页面截图
+ * @param {string} url - 需要截图的目标页面URL
+ * @param {any} ctx - Koishi上下文对象,需包含puppeteer实例
+ * @param {Object} options - 截图配置选项
+ * @param {('wiki'|'mcmod')} options.type - 页面类型,支持wiki或mcmod
+ * @param {LangCode} [options.lang] - 可选的语言代码,仅wiki类型需要
+ * @param {MinecraftToolsConfig} config - Minecraft工具配置对象,包含截图相关设置
+ * @returns {Promise<{url: string, image: h.Fragment}>} 返回包含截图URL和图片数据的对象
+ * @throws {Error} 当截图功能未启用、网络错误或截图失败时抛出错误
  */
 export async function capture(
   url: string,
@@ -55,13 +55,22 @@ export async function capture(
     await Promise.all([
       page.setRequestInterception(true),
       page.setCacheEnabled(true),
-      page.setJavaScriptEnabled(true)
+      page.setJavaScriptEnabled(false)
     ])
 
     page.on('request', request => {
       const resourceType = request.resourceType()
-      const blockTypes = ['media', 'font']
-      if (blockTypes.includes(resourceType)) {
+      const url = request.url().toLowerCase()
+
+      // 允许的资源类型
+      const allowedTypes = ['stylesheet', 'image', 'fetch', 'xhr', 'document']
+      const allowedKeywords = ['.svg', 'canvas', 'swiper', '.css', '.png', '.jpg', '.jpeg']
+      const shouldAllow =
+        allowedTypes.includes(resourceType) ||
+        allowedKeywords.some(keyword => url.includes(keyword)) ||
+        url.includes('static') || url.includes('assets')
+
+      if (!shouldAllow && ['media', 'font', 'manifest', 'script'].includes(resourceType)) {
         request.abort()
       } else {
         request.continue()
@@ -80,44 +89,32 @@ export async function capture(
       try {
         await page.goto(url, {
           waitUntil: config.search.waitUntil,
-          timeout: 10000
+          timeout: 5000
         })
-
-        // 等待主要内容加载完成
-        await page.waitForFunction(() => {
-          const wiki = document.querySelector('#mw-content-text')
-          const mcmod = document.querySelector('.col-lg-12') || document.querySelector('#postlist')
-          return wiki || mcmod
-        }, { timeout: 5000 })
-
         break
       } catch (err) {
         retries--
         if (retries === 0) throw err
-        await new Promise(resolve => setTimeout(resolve, 500))
+        await new Promise(resolve => setTimeout(resolve, 50))
       }
     }
 
     if (options.type === 'wiki') {
       await page.evaluate(() => {
-        const content = document.querySelector('#mw-content-text')
+        const content = document.querySelector('#mw-content-text .mw-parser-output')
+        const newBody = document.createElement('div')
+        newBody.id = 'content'
         if (content) {
-          // 移除不需要的元素并展开所有折叠内容
-          content.querySelectorAll('script, style').forEach(el => el.remove())
-          content.querySelectorAll('.mw-collapsible').forEach(el => el.classList.add('mw-collapsed'))
+          newBody.appendChild(content.cloneNode(true))
         }
+        document.body.innerHTML = ''
+        document.body.appendChild(newBody)
       })
     }
 
     await page.evaluate((selectors) => {
       selectors.forEach(selector => {
         document.querySelectorAll(selector).forEach(el => el.remove())
-      })
-      // 确保所有链接不可点击
-      document.querySelectorAll('a').forEach(a => {
-        a.style.pointerEvents = 'none'
-        a.style.color = 'inherit'
-        a.style.textDecoration = 'none'
       })
     }, CLEANUP_SELECTORS)
 
@@ -158,8 +155,7 @@ export async function capture(
       isMobile: false
     })
 
-    // 等待字体加载和渲染
-    await new Promise(resolve => setTimeout(resolve, 200))
+    await new Promise(resolve => setTimeout(resolve, 50))
 
     const screenshot = await page.screenshot({
       type: 'jpeg',
