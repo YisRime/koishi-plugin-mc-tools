@@ -2,21 +2,25 @@ import { Context } from 'koishi'
 import axios from 'axios'
 import { MinecraftToolsConfig } from './index'
 
-declare const skinview3d: {
-  SkinViewer: new (options: {
-    canvas: HTMLCanvasElement
-    width: number
-    height: number
-    preserveDrawingBuffer: boolean
-    fov: number
-    zoom: number
-  }) => {
-    renderer: { setClearColor: (color: number, alpha: number) => void }
-    playerObject: { rotation: { y: number } }
-    animation: any
-    loadSkin: (url: string) => Promise<void>
-    loadCape: (url: string) => Promise<void>
-    render: () => void
+declare global {
+  interface Window {
+    skinview3d: {
+      SkinViewer: new (options: {
+        canvas: HTMLCanvasElement
+        width: number
+        height: number
+        preserveDrawingBuffer: boolean
+        fov: number
+        zoom: number
+      }) => {
+        renderer: { setClearColor: (color: number, alpha: number) => void }
+        playerObject: { rotation: { y: number } }
+        animation: any
+        loadSkin: (url: string) => Promise<void>
+        loadCape: (url: string) => Promise<void>
+        render: () => void
+      }
+    }
   }
 }
 
@@ -267,13 +271,13 @@ export async function renderPlayerSkin(ctx: Context, skinUrl: string, capeUrl?: 
     })
 
     const createView = (canvas: HTMLCanvasElement, rotationAngle: number) => {
-      const viewer = new skinview3d.SkinViewer({
+      const viewer = new window.skinview3d.SkinViewer({
         canvas,
         width: 200,
         height: 400,
         preserveDrawingBuffer: true,
         fov: 30,
-        zoom: 0.95
+        zoom: 0.48
       })
 
       viewer.renderer.setClearColor(0x000000, 0)
@@ -296,8 +300,8 @@ export async function renderPlayerSkin(ctx: Context, skinUrl: string, capeUrl?: 
     finalCanvas.width = 400
     finalCanvas.height = 400
     const ctx = finalCanvas.getContext('2d')
-    ctx.drawImage(view1, 0, 0)
-    ctx.drawImage(view2, 200, 0)
+    ctx.drawImage(view1, -100, -195)
+    ctx.drawImage(view2, 100, -195)
 
     return finalCanvas.toDataURL('image/png')
   }, [skinUrl, capeUrl])
