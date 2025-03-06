@@ -8,6 +8,7 @@ import { searchMod, search, capture } from './subwiki'
 import { getPlayerProfile, renderPlayerSkin } from './utils'
 import { searchMods, getModDetails, formatSearchResults } from './mod'
 import { checkServerStatus, formatServerStatus } from './info'
+import { config } from 'process'
 
 /**
  * Minecraft 工具箱插件
@@ -91,6 +92,7 @@ export interface MinecraftToolsConfig {
     sectionLength: number
     linkCount: number
     cfApi: string
+    waitUntil: 'load' | 'domcontentloaded' | 'networkidle0' | 'networkidle2'
   }
   info: {
     default: string
@@ -132,6 +134,14 @@ export const Config: Schema<MinecraftToolsConfig> = Schema.object({
     Language: Schema.union(Object.keys(MINECRAFT_LANGUAGES) as LangCode[])
       .default('zh')
       .description('Wiki 显示语言'),
+    waitUntil: Schema.union([
+        'load',
+        'domcontentloaded',
+        'networkidle0',
+        'networkidle2'
+      ])
+        .default('networkidle0')
+        .description('截图等待条件'),
     sectionLength: Schema.number()
       .default(50)
       .description('Wiki 每段预览字数'),
@@ -245,12 +255,12 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
         await session.send(`正在获取页面...\n完整内容：${wikiResult.url}`)
         const result = await capture(
           wikiResult.pageUrl,
-          pluginConfig,
           ctx,
           {
             type: 'wiki',
             lang: userLanguageSettings.get(session.userId) || pluginConfig.search.Language
-          }
+          },
+          pluginConfig
         )
         return result.image
       } catch (error) {
@@ -302,9 +312,9 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
         await session.send(`正在获取页面...\n完整内容：${targetUrl}`)
         const result = await capture(
           targetUrl,
-          pluginConfig,
           ctx,
-          { type: 'mcmod' }
+          { type: 'mcmod' },
+          pluginConfig
         )
         return result.image
       } catch (error) {

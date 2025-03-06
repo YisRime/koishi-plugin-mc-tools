@@ -44,9 +44,9 @@ const CLEANUP_SELECTORS = [
  */
 export async function capture(
   url: string,
-  config: MinecraftToolsConfig,
   ctx: any,
-  options: { type: 'wiki' | 'mcmod', lang?: LangCode }
+  options: { type: 'wiki' | 'mcmod', lang?: LangCode },
+  config: MinecraftToolsConfig
 ) {
   const context = await ctx.puppeteer.browser.createBrowserContext()
   const page = await context.newPage()
@@ -88,14 +88,14 @@ export async function capture(
     while (retries > 0) {
       try {
         await page.goto(url, {
-          waitUntil: 'domcontentloaded',
-          timeout: 5000
+          waitUntil: config.search.waitUntil,
+          timeout: 10000
         })
         break
       } catch (err) {
         retries--
         if (retries === 0) throw err
-        await new Promise(resolve => setTimeout(resolve, 50))
+        await new Promise(resolve => setTimeout(resolve, 500))
       }
     }
 
@@ -155,7 +155,7 @@ export async function capture(
       isMobile: false
     })
 
-    await new Promise(resolve => setTimeout(resolve, 50))
+    await new Promise(resolve => setTimeout(resolve, 100))
 
     const screenshot = await page.screenshot({
       type: 'jpeg',
@@ -367,18 +367,17 @@ async function fetchImage(
 ) {
   if (!ctx?.puppeteer) return '截图功能未启用'
 
-  const context = await ctx.puppeteer.browser.createBrowserContext()
   try {
-    const { handleWikiScreenshot, handleModScreenshot } = require('./shot')
-
     if (source === 'wiki') {
       const pageUrl = buildUrl(result.title, lang, true)
-      return await handleWikiScreenshot('', pageUrl, lang, config, ctx)
+      const { image } = await capture(pageUrl, ctx, { type: 'wiki', lang }, config)
+      return image
     } else {
-      return await handleModScreenshot(result.title, config, ctx)
+      const { image } = await capture(result.url, ctx, { type: 'mcmod' }, config)
+      return image
     }
-  } finally {
-    await context.close()
+  } catch (error) {
+    return `截图失败: ${error.message}`
   }
 }
 
