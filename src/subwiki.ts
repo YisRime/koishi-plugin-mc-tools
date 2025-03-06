@@ -55,22 +55,13 @@ export async function capture(
     await Promise.all([
       page.setRequestInterception(true),
       page.setCacheEnabled(true),
-      page.setJavaScriptEnabled(false)
+      page.setJavaScriptEnabled(true)
     ])
 
     page.on('request', request => {
       const resourceType = request.resourceType()
-      const url = request.url().toLowerCase()
-
-      // 允许的资源类型
-      const allowedTypes = ['stylesheet', 'image', 'fetch', 'xhr', 'document']
-      const allowedKeywords = ['.svg', 'canvas', 'swiper', '.css', '.png', '.jpg', '.jpeg']
-      const shouldAllow =
-        allowedTypes.includes(resourceType) ||
-        allowedKeywords.some(keyword => url.includes(keyword)) ||
-        url.includes('static') || url.includes('assets')
-
-      if (!shouldAllow && ['media', 'font', 'manifest', 'script'].includes(resourceType)) {
+      const blockTypes = ['media', 'font']
+      if (blockTypes.includes(resourceType)) {
         request.abort()
       } else {
         request.continue()
@@ -91,6 +82,14 @@ export async function capture(
           waitUntil: config.search.waitUntil,
           timeout: 10000
         })
+
+        // 等待主要内容加载完成
+        await page.waitForFunction(() => {
+          const wiki = document.querySelector('#mw-content-text')
+          const mcmod = document.querySelector('.col-lg-12') || document.querySelector('#postlist')
+          return wiki || mcmod
+        }, { timeout: 5000 })
+
         break
       } catch (err) {
         retries--
@@ -101,20 +100,24 @@ export async function capture(
 
     if (options.type === 'wiki') {
       await page.evaluate(() => {
-        const content = document.querySelector('#mw-content-text .mw-parser-output')
-        const newBody = document.createElement('div')
-        newBody.id = 'content'
+        const content = document.querySelector('#mw-content-text')
         if (content) {
-          newBody.appendChild(content.cloneNode(true))
+          // 移除不需要的元素并展开所有折叠内容
+          content.querySelectorAll('script, style').forEach(el => el.remove())
+          content.querySelectorAll('.mw-collapsible').forEach(el => el.classList.add('mw-collapsed'))
         }
-        document.body.innerHTML = ''
-        document.body.appendChild(newBody)
       })
     }
 
     await page.evaluate((selectors) => {
       selectors.forEach(selector => {
         document.querySelectorAll(selector).forEach(el => el.remove())
+      })
+      // 确保所有链接不可点击
+      document.querySelectorAll('a').forEach(a => {
+        a.style.pointerEvents = 'none'
+        a.style.color = 'inherit'
+        a.style.textDecoration = 'none'
       })
     }, CLEANUP_SELECTORS)
 
@@ -155,7 +158,8 @@ export async function capture(
       isMobile: false
     })
 
-    await new Promise(resolve => setTimeout(resolve, 100))
+    // 等待字体加载和渲染
+    await new Promise(resolve => setTimeout(resolve, 200))
 
     const screenshot = await page.screenshot({
       type: 'jpeg',

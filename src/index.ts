@@ -140,7 +140,7 @@ export const Config: Schema<MinecraftToolsConfig> = Schema.object({
         'networkidle0',
         'networkidle2'
       ])
-        .default('networkidle0')
+        .default('domcontentloaded')
         .description('截图等待条件'),
     sectionLength: Schema.number()
       .default(50)
