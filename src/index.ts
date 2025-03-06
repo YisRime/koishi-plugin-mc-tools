@@ -277,7 +277,7 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
       }
     })
 
-    const mcmod = ctx.command('mcmod <keyword:text>', '查询 MCMod/Modrinth/Curseforge')
+    const mcmod = ctx.command('mcmod <keyword:text>', '查询 Minecraft 相关资源')
     .usage('mcmod <关键词> - 查询 MCMod\nmcmod.find <关键词> - 搜索 MCMod\nmcmod.shot <关键词> - 截图 MCMod 页面\nmcmod.(find)mr <关键词> [类型] - 搜索 Modrinth\nmcmod.(find)cf <关键词> [类型] - 搜索 CurseForge')
     .action(async ({ }, keyword) => {
       if (!keyword) return '请输入要查询的关键词'
