@@ -88,8 +88,8 @@ export async function capture(
     while (retries > 0) {
       try {
         await page.goto(url, {
-          waitUntil: config.search.waitUntil,
-          timeout: 5000
+          waitUntil: config.wiki.waitUntil,
+          timeout: 4000
         })
         break
       } catch (err) {
@@ -120,7 +120,7 @@ export async function capture(
 
     // 获取截图区域
     const clipData = await page.evaluate((data) => {
-      const { type, url } = data
+      const { type, url, maxHeight } = data
       let selector
 
       if (type === 'wiki') {
@@ -144,9 +144,9 @@ export async function capture(
         x: 0,
         y: Math.max(0, Math.floor(rect.top)),
         width: 1080,
-        height: Math.min(4096, Math.ceil(rect.height))
+        height: maxHeight === 0 ? Math.ceil(rect.height) : Math.min(maxHeight, Math.ceil(rect.height))
       }
-    }, { type: options.type, url })
+    }, { type: options.type, url, maxHeight: config.wiki.maxHeight })
 
     await page.setViewport({
       width: clipData.width,

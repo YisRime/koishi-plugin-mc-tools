@@ -85,13 +85,15 @@ export interface CommonConfig {
   descLength: number
 }
 export interface MinecraftToolsConfig {
-  wiki: CommonConfig
+  wiki: CommonConfig & {
+    maxHeight: number  // 截图最大高度, 0表示无限制(默认4096)
+    waitUntil: 'load' | 'domcontentloaded' | 'networkidle0' | 'networkidle2'
+  }
   search: {
     Language: LangCode
     sectionLength: number
     linkCount: number
     cfApi: string
-    waitUntil: 'load' | 'domcontentloaded' | 'networkidle0' | 'networkidle2'
   }
   info: {
     default: string
@@ -126,21 +128,25 @@ export const Config: Schema<MinecraftToolsConfig> = Schema.object({
       .description('搜索内容描述字数'),
     Timeout: Schema.number()
       .default(15)
-      .description('搜索超时时间（秒）')
-  }).description('通用设置'),
-
-  search: Schema.object({
-    Language: Schema.union(Object.keys(MINECRAFT_LANGUAGES) as LangCode[])
-      .default('zh')
-      .description('Wiki 显示语言'),
+      .description('搜索超时时间（秒）'),
+    maxHeight: Schema.number()
+      .description('截图最大高度')
+      .default(4096)
+      .min(0),
     waitUntil: Schema.union([
         'load',
         'domcontentloaded',
         'networkidle0',
         'networkidle2'
       ])
-        .default('domcontentloaded')
-        .description('截图等待条件'),
+      .default('domcontentloaded')
+      .description('截图等待条件')
+  }).description('通用设置'),
+
+  search: Schema.object({
+    Language: Schema.union(Object.keys(MINECRAFT_LANGUAGES) as LangCode[])
+      .default('zh')
+      .description('Wiki 显示语言'),
     sectionLength: Schema.number()
       .default(50)
       .description('Wiki 每段预览字数'),
@@ -155,7 +161,7 @@ export const Config: Schema<MinecraftToolsConfig> = Schema.object({
   info: Schema.object({
     showSkull: Schema.boolean()
       .default(true)
-      .description('显示头颅获取命令'),
+      .description('显示玩家头颅获取'),
     showIP: Schema.boolean()
       .default(false)
       .description('显示服务器地址'),

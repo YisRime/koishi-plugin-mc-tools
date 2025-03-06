@@ -87,26 +87,39 @@ ver:
 
 ## 注意事项
 
-截图与渲染皮肤依赖 Puppeteer 服务，请先安装带有 Puppeteer 服务的插件。
-以下问题见于 Docker 部署 Koishi:
-若渲染皮肤出错或渲染出的图片仅有背景，请使用 chromium-swiftshader。
-因为 koishijs/koishi 镜像中的 Chromium 不支持 WebGL。
-同时可能会产生截图文字丢失问题，请参考以下解决方案。
+本插件的截图与皮肤渲染功能依赖 Puppeteer 服务。
+以下问题仅出现在 Docker 部署环境：
+
+1. **渲染问题**
+   - 症状：皮肤渲染失败或仅显示背景
+   - 原因：koishijs/koishi 镜像中的 Chromium 不支持 WebGL
+   - 解决：需要替换为 chromium-swiftshader
+
+2. **字体问题**
+   - 症状：截图中文字显示不全或变成方块
+   - 原因：容器缺少所需字体
+   - 解决：需要安装必要的字体包
 
 ### 解决方案
 
-首先进行如下操作来安装 chromium-swiftshader 以替换原有 Chromium。
-
 ```bash
-# 删除原有 Chromium （如果使用 latest-lite 镜像请忽略）
+# 删除原有 Chromium（latest-lite 镜像用户跳过此步）
 docker exec -it <容器ID> apk del chromium
-# 更换镜像源（如果可以访问 Docker Hub 请忽略）
+
+# 配置国内镜像源（可选）
 docker exec -it <容器ID> sed -i 's/dl-cdn.alpinelinux.org/mirrors.ustc.edu.cn/g' /etc/apk/repositories
+
 # 安装 chromium-swiftshader
 docker exec -it <容器ID> apk update
 docker exec -it <容器ID> apk add chromium-swiftshader
+
+# 安装基础字体
+docker exec -it <容器ID> apk add ttf-dejavu fontconfig
+
+# 安装中文字体
+docker exec -it <容器ID> wget https://noto-website-2.storage.googleapis.com/pkgs/NotoSansCJKsc-hinted.zip -P /tmp
+docker exec -it <容器ID> unzip /tmp/NotoSansCJKsc-hinted.zip -d /usr/share/fonts/NotoSansCJK
+docker exec -it <容器ID> fc-cache -fv
 ```
 
-之后重启 Puppeteer 插件即可，此时无需添加 `--disable-gpu` 参数。
-如果出现问题，可尝试添加 `--use-gl=swiftshader` 和 `--enable-webgl` 参数。
-如果出现截图时文字渲染问题，可尝试添加 `--disable-font-subpixel-positioning` 和 `--enable-font-antialiasing` 参数。
+完成上述步骤后重启 Puppeteer 插件即可正常使用，无需添加 `--disable-gpu` 参数
