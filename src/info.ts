@@ -44,28 +44,171 @@ export interface ServerStatus {
 }
 
 /**
- * 解析 Minecraft 服务器地址
+ * 解析并验证 Minecraft 服务器地址
  * @param {string} [input] - 输入的服务器地址
  * @param {string} [defaultServer] - 默认服务器地址
  * @returns {{ address: string, type: 'java' | 'bedrock' }} 解析后的服务器信息
- * @throws {Error} 当输入的地址格式无效时抛出错误
+ * @throws {Error} 当输入的地址格式无效或安全检查失败时抛出错误
  */
-function parseServerAddress(input?: string, defaultServer?: string): { address: string, type: 'java' | 'bedrock' } {
+function parseServerAddress(
+  input?: string,
+  defaultServer?: string
+): { address: string, type: 'java' | 'bedrock' } {
   const address = input || defaultServer || 'localhost'
-
-  if (address.includes('[')) {
-    if (!address.match(/^\[.*\](?::\d+)?$/)) {
-      throw new Error('地址格式错误：IPv6 地址格式不正确')
+  if (address.toLowerCase() === 'localhost') {
+    throw new Error('安全限制：不允许连接到 localhost')
+  }
+  try {
+    let host: string, port: number | undefined
+    if (address.includes('[')) {
+      const match = address.match(/^\[([\da-fA-F:]+)\](?::(\d+))?$/)
+      if (!match) throw new Error('IPv6 地址格式不正确')
+      host = match[1]
+      port = match[2] ? parseInt(match[2], 10) : undefined
+      validateIPAddress(host, 'IPv6')
     }
-  } else if (address.includes(':')) {
-    const port = parseInt(address.split(':')[1])
-    if (isNaN(port) || port < 1 || port > 65535) {
-      throw new Error('地址格式错误：端口号必须在 1-65535 之间')
+    else if (address.includes(':')) {
+      const parts = address.split(':')
+      host = parts[0]
+      port = parseInt(parts[1], 10)
+      if (isNaN(port) || port < 1 || port > 65535) {
+        throw new Error('端口号必须在 1-65535 之间')
+      }
+      validateHost(host)
+    }
+    else {
+      host = address
+      validateHost(host)
+    }
+    const type = address.includes(':19132') ? 'bedrock' : 'java'
+    return { address, type }
+  }
+  catch (error) {
+    throw new Error(`地址格式错误：${error.message}`)
+  }
+}
+
+/**
+ * 验证主机名或IP地址
+ * @param {string} host - 要验证的主机
+ * @throws {Error} 当主机格式不正确或为私有地址时抛出错误
+ */
+function validateHost(host: string): void {
+  if (/^(\d{1,3}\.){3}\d{1,3}$/.test(host)) {
+    validateIPAddress(host, 'IPv4')
+  }
+  else if (!isValidDomain(host)) {
+    throw new Error('无效的域名格式')
+  }
+}
+
+/**
+ * 统一验证 IP 地址格式并检查是否为私有地址
+ * @param {string} ip - IP 地址
+ * @param {'IPv4' | 'IPv6'} type - IP 地址类型
+ * @throws {Error} 当 IP 格式不正确或为私有地址时抛出错误
+ */
+function validateIPAddress(ip: string, type: 'IPv4' | 'IPv6'): void {
+  if (type === 'IPv4') {
+    const parts = ip.split('.').map(Number)
+    // 检查每个部分是否为有效的 0-255 范围
+    if (!parts.every(part => Number.isInteger(part) && part >= 0 && part <= 255)) {
+      throw new Error('无效的 IPv4 地址')
+    }
+    // 检查是否为私有 IPv4 地址
+    if (isPrivateIPv4(parts)) {
+      throw new Error('安全限制：不允许连接到私有 IPv4 地址')
     }
   }
+  else {
+    // IPv6 格式验证
+    if (!isValidIPv6Format(ip)) {
+      throw new Error('无效的 IPv6 地址格式')
+    }
+    // 检查是否为私有 IPv6 地址
+    if (isPrivateIPv6(ip)) {
+      throw new Error('安全限制：不允许连接到私有 IPv6 地址')
+    }
+  }
+}
 
-  const type = address.includes(':19132') ? 'bedrock' : 'java'
-  return { address, type }
+/**
+ * 检查 IPv4 地址是否为私有地址
+ * @param {number[]} parts - IPv4 地址的四个部分
+ * @returns {boolean} 是否为私有地址
+ */
+function isPrivateIPv4(parts: number[]): boolean {
+  return (
+    parts[0] === 127 || // 本地回环地址: 127.0.0.0/8
+    parts[0] === 10 || // 私有网络: 10.0.0.0/8
+    (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) || // 私有网络: 172.16.0.0/12
+    (parts[0] === 192 && parts[1] === 168) || // 私有网络: 192.168.0.0/16
+    (parts[0] === 169 && parts[1] === 254) || // 链路本地地址: 169.254.0.0/16
+    parts[0] >= 224 || // 组播地址和保留地址: 224.0.0.0/3
+    parts[0] === 0 // 0.0.0.0/8
+  )
+}
+
+/**
+ * 检查 IPv6 格式是否有效
+ * @param {string} ip - IPv6 地址
+ * @returns {boolean} 格式是否有效
+ */
+function isValidIPv6Format(ip: string): boolean {
+  try {
+    if (!/^[0-9a-fA-F:]+$/.test(ip)) return false
+    const segments = ip.split(':')
+    // 检查缩写格式 (::)
+    const doubleColonIndex = ip.indexOf('::')
+    if (doubleColonIndex !== -1) {
+      if (ip.indexOf('::', doubleColonIndex + 1) !== -1) {
+        return false
+      }
+      // 计算省略的零段数量
+      const actualSegments = segments.filter(Boolean).length
+      if (actualSegments > 7) return false
+    }
+    else if (segments.length !== 8) {
+      return false
+    }
+    // 检查每个段的值
+    return segments.every(segment => {
+      return segment === '' || /^[0-9a-fA-F]{1,4}$/.test(segment)
+    })
+  } catch (error) {
+    return false
+  }
+}
+
+/**
+ * 检查 IPv6 地址是否为私有地址
+ * @param {string} ip - IPv6 地址
+ * @returns {boolean} 是否为私有地址
+ */
+function isPrivateIPv6(ip: string): boolean {
+  const lowerIP = ip.toLowerCase()
+  return (
+    lowerIP === '::1' ||
+    lowerIP === '0:0:0:0:0:0:0:1' ||
+    /^::1\/\d+$/.test(lowerIP) ||
+    /^f[cd][0-9a-f]{2}:/i.test(lowerIP) || // ULA 地址 fc00::/7
+    /^fe[89ab][0-9a-f]:/i.test(lowerIP) || // 链路本地地址 fe80::/10
+    lowerIP.startsWith('ff') // 组播地址 ff00::/8
+  )
+}
+
+/**
+ * 验证域名格式是否正确
+ * @param {string} domain - 域名
+ * @returns {boolean} 是否为有效域名
+ */
+function isValidDomain(domain: string): boolean {
+  return (
+    domain.length > 0 &&
+    domain.length <= 253 &&
+    !/^\d+\.\d+\.\d+\.\d+$/.test(domain) &&
+    /^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$/.test(domain)
+  )
 }
 
 /**
@@ -91,8 +234,9 @@ export async function checkServerStatus(
 
     const errors: string[] = []
     for (const apiUrl of apis) {
+      const actualUrl = apiUrl.replace('${address}', parsed.address)
       try {
-        const response = await axios.get(apiUrl.replace('${address}', parsed.address), {
+        const response = await axios.get(actualUrl, {
           headers: {
             'User-Agent': 'koishi-plugin-mc-tools/1.0'
           },
@@ -101,17 +245,17 @@ export async function checkServerStatus(
         })
 
         if (!response.data || response.status !== 200) {
-          errors.push(`${apiUrl} 请求失败: ${response.data?.error || response.status}`)
+          errors.push(`${actualUrl} 请求失败: ${response.data?.error || response.status}`)
           continue
         }
 
-        if (apiUrl.includes('mcsrvstat.us')) {
+        if (actualUrl.includes('mcsrvstat.us')) {
           return await transformMcsrvstatResponse(response.data)
         }
 
         const data = response.data
         if (!data.online) {
-          errors.push(`${apiUrl} 返回服务器离线`)
+          errors.push(`${actualUrl} 返回服务器离线`)
           continue
         }
 
@@ -142,7 +286,7 @@ export async function checkServerStatus(
           edition: data.edition
         }
       } catch (error) {
-        errors.push(`${apiUrl} 连接错误: ${error.message}`)
+        errors.push(`${actualUrl} 连接错误: ${error.message}`)
       }
     }
 
