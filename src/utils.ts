@@ -28,25 +28,41 @@ interface PlayerProfile {
   }
 }
 
+const API_SOURCES = {
+  MOJANG: 'https://launchermeta.mojang.com/mc/game/version_manifest.json',
+  BMCLAPI: 'https://bmclapi2.bangbang93.com/mc/game/version_manifest.json',
+}
+
 /**
  * 获取 Minecraft 版本信息
  * @param {number} timeout - 请求超时时间(毫秒)
  * @returns {Promise<{latest: MinecraftVersionInfo, release: MinecraftVersionInfo, versions: MinecraftVersionInfo[]}>}
- * @throws {Error} 当版本数据无效或请求失败时抛出错误
+ * @throws {Error} 当所有 API 源都请求失败时抛出错误
  */
 export async function fetchVersions(timeout = 10000) {
-  const { data } = await axios.get('https://launchermeta.mojang.com/mc/game/version_manifest.json', {
-    timeout
-  })
+  const apiSources = Object.values(API_SOURCES)
+  let lastError = null
 
-  const latest = data.versions[0]
-  const release = data.versions.find(v => v.type === 'release')
+  for (const apiUrl of apiSources) {
+    try {
+      const { data } = await axios.get(apiUrl, { timeout })
 
-  if (!latest || !release) {
-    throw new Error('版本数据解析失败')
+      const latest = data.versions[0]
+      const release = data.versions.find(v => v.type === 'release')
+
+      if (!latest || !release) {
+        throw new Error('版本数据解析失败')
+      }
+
+      return { latest, release, versions: data.versions }
+    } catch (error) {
+      lastError = error
+      console.warn(`API 源 ${apiUrl} 请求失败:`, error.message || String(error))
+      continue
+    }
   }
 
-  return { latest, release, versions: data.versions }
+  throw new Error(`所有 API 源均请求失败: ${lastError?.message || String(lastError)}`)
 }
 
 /**
