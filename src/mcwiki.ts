@@ -92,7 +92,17 @@ export async function fetchContent(articleUrl: string, languageCode: LangCode, c
           !text.startsWith('跳转') &&
           !el.hasClass('quote') &&
           !el.hasClass('treeview')) {
-        const cleanText = text.replace(/\s+/g, ' ')
+
+        // 如果不展示链接，移除链接标签但保留文本
+        if (!config.wiki.showLinks) {
+          el.find('a').each((_, link) => {
+            const $link = $(link);
+            const text = $link.text().trim();
+            $link.replaceWith(text);
+          });
+        }
+
+        const cleanText = el.text().trim().replace(/\s+/g, ' ')
         currentSection.content.push(cleanText)
       }
     }

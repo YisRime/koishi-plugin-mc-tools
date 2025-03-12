@@ -52,6 +52,7 @@ wiki:
   captureTimeout: 3   # 截图超时时间（秒）
   maxHeight: 4096    # 截图最大高度（像素），0表示无限制
   waitUntil: 'domcontentloaded'  # 截图等待条件
+  showLinks: true    # 是否展示链接
 ```
 
 ### 查询设置

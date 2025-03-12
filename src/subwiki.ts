@@ -401,5 +401,8 @@ async function fetchwikiContent(
   }
 
   const content = await fetchModContent(result.url, config.wiki)
-  return formatContent(content, result.url) || `内容获取失败，请访问：${result.url}`
+  return formatContent(content, result.url, {
+    showLinks: config.wiki.showLinks ? config.search.linkCount : 0,
+    forceShowLinks: config.wiki.showLinks
+  }) || `内容获取失败，请访问：${result.url}`
 }

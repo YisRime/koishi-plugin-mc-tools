@@ -83,12 +83,13 @@ export interface CommonConfig {
   Timeout: number
   totalLength: number
   descLength: number
+  showLinks?: boolean  // 新增：是否展示链接
 }
 export interface MinecraftToolsConfig {
   wiki: CommonConfig & {
-    maxHeight: number  // 截图最大高度, 0表示无限制(默认4096)
+    maxHeight: number
     waitUntil: 'load' | 'domcontentloaded' | 'networkidle0' | 'networkidle2'
-    captureTimeout: number  // 新增配置项
+    captureTimeout: number
   }
   search: {
     Language: LangCode
@@ -144,7 +145,10 @@ export const Config: Schema<MinecraftToolsConfig> = Schema.object({
       'networkidle2'
     ])
       .default('domcontentloaded')
-      .description('截图等待条件')
+      .description('截图等待条件'),
+    showLinks: Schema.boolean()
+      .default(true)
+      .description('是否展示链接')
   }).description('通用设置'),
 
   search: Schema.object({
@@ -289,7 +293,8 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
         const result = results[0]
         const content = await fetchModContent(result.url, pluginConfig.wiki)
         return formatContent(content, result.url, {
-          showLinks: pluginConfig.search.linkCount
+          showLinks: pluginConfig.wiki.showLinks ? pluginConfig.search.linkCount : 0,
+          forceShowLinks: pluginConfig.wiki.showLinks
         })
       } catch (error) {
         return error.message
