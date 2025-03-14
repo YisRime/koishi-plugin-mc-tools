@@ -2,7 +2,7 @@
 
 [![npm](https://img.shields.io/npm/v/koishi-plugin-mc-tools?style=flat-square)](https://www.npmjs.com/package/koishi-plugin-mc-tools)
 
-基于 Koishi 的 Minecraft 工具箱，支持查阅百科，查询服务器，查询 MC 最新版本和玩家皮肤等功能
+我的世界（Minecraft/MC）工具。支持查询 MCWiki/MCMod/CurseForge/Modrinth 内容，可获取对应页面截图，可检测 MC 服务器状态并通过 RCON 运行命令，支持查询并自动推送 MC 最新版本，带有渲染玩家皮肤功能
 
 ## 功能特性
 

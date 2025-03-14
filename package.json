@@ -1,6 +1,6 @@
 {
   "name": "koishi-plugin-mc-tools",
-  "description": "我的世界工具箱（Minecraft-MC-Tools）支持搜索百科，查询服务器，查询 MC 最新版本和玩家皮肤等功能",
+  "description": "我的世界（Minecraft/MC）工具。支持查询 MCWiki/MCMod/CurseForge/Modrinth 内容，可获取对应页面截图，可检测 MC 服务器状态并通过 RCON 运行命令，支持查询并自动推送 MC 最新版本，带有渲染玩家皮肤功能",
   "version": "1.9.6",
   "contributors": [
     "Yis_Rime <yis_rime@outlook.com>"
@@ -27,30 +27,22 @@
     "wiki",
     "skin",
     "server",
-    "mcver",
-    "mcinfo",
-    "mcwiki",
-    "mcskin",
-    "mcmod",
+    "info",
     "rcon",
+    "mcver",
+    "mcmod",
     "CurseForge",
     "Modrinth",
     "我的世界",
     "MC百科"
   ],
-  "peerDependencies": {
-    "axios": "^1.4.0",
-    "cheerio": "^1.0.0",
-    "koishi": "^4.18.7",
-    "rcon-client": "^4.2.3"
-  },
   "devDependencies": {
     "koishi-plugin-puppeteer": "^3.5.2"
   },
-  "dependencies": {
+  "peerDependencies": {
+    "koishi": "^4.18.7",
     "axios": "^1.4.0",
     "cheerio": "^1.0.0",
-    "koishi-plugin-puppeteer": "^3.5.2",
     "rcon-client": "^4.2.3"
   }
 }
