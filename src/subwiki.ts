@@ -5,7 +5,7 @@ import { MinecraftToolsConfig, LangCode } from './index'
 import { buildUrl, fetchContent } from './mcwiki'
 import { fetchModContent, formatContent } from './modwiki'
 
-interface SearchResult {
+export interface SearchResult {
   title: string
   url: string
   desc?: string
@@ -210,7 +210,7 @@ export async function search(params: {
     const response = await session.prompt(config.wiki.Timeout * 1000)
     if (!response) return '等待超时，已取消操作'
 
-    return await processSelection({ response, results, source, config, ctx, lang })
+    return await processSelection({ response, results, source, config, ctx, lang, session })
   } catch (error) {
     return error.message
   }
@@ -316,6 +316,7 @@ function formatSearchResults(
  * @param {MinecraftToolsConfig} params.config - Minecraft工具配置
  * @param {any} [params.ctx] - Koishi上下文对象
  * @param {LangCode} [params.lang] - 语言代码
+ * @param {any} [params.session] - 会话对象，用于获取平台信息
  * @returns {Promise<string>} 处理结果或错误信息
  */
 async function processSelection(params: {
@@ -325,8 +326,9 @@ async function processSelection(params: {
   config: MinecraftToolsConfig
   ctx?: any
   lang?: LangCode
+  session?: any
 }) {
-  const { response, results, source, config, ctx, lang } = params
+  const { response, results, source, config, ctx, lang, session } = params
 
   const [input, flag] = response.split('-')
   const index = parseInt(input) - 1
@@ -341,7 +343,7 @@ async function processSelection(params: {
   try {
     return isImage
       ? await fetchImage(result, source, ctx, config, lang)
-      : await fetchwikiContent(result, source, config, lang)
+      : await fetchwikiContent(result, source, config, lang, session)
   } catch (error) {
     return `处理内容时出错 (${error?.message || String(error)})，请直接访问：${result.url}`
   }
@@ -385,13 +387,15 @@ async function fetchImage(
  * @param {('wiki'|'mcmod')} source - 内容源
  * @param {MinecraftToolsConfig} config - Minecraft工具配置
  * @param {LangCode} [lang] - 语言代码
+ * @param {any} [session] - 会话对象，用于获取平台信息
  * @returns {Promise<string>} 页面内容或错误信息
  */
 async function fetchwikiContent(
   result: SearchResult,
   source: 'wiki' | 'mcmod',
   config: MinecraftToolsConfig,
-  lang?: LangCode
+  lang?: LangCode,
+  session?: any
 ) {
   if (source === 'wiki') {
     const pageUrl = buildUrl(result.title, lang, true)
@@ -402,7 +406,8 @@ async function fetchwikiContent(
 
   const content = await fetchModContent(result.url, config.wiki)
   return formatContent(content, result.url, {
-    showLinks: config.wiki.showLinks ? config.search.linkCount : 0,
-    forceShowLinks: config.wiki.showLinks
+    linkCount: config.search.linkCount,
+    showImages: config.search.showImages,
+    platform: session?.platform
   }) || `内容获取失败，请访问：${result.url}`
 }

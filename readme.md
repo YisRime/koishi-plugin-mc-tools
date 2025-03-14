@@ -52,7 +52,6 @@ wiki:
   captureTimeout: 3   # 截图超时时间（秒）
   maxHeight: 4096    # 截图最大高度（像素），0表示无限制
   waitUntil: 'domcontentloaded'  # 截图等待条件
-  showLinks: true    # 是否展示链接
 ```
 
 ### 查询设置
@@ -61,7 +60,8 @@ wiki:
 search:
   Language: 'zh'      # Wiki 显示语言，支持多语言切换
   sectionLength: 50   # Wiki 每段预览字数
-  linkCount: 4       # 相关链接最大显示数
+  linkCount: 4       # MCMod 相关链接最大显示数
+  showImages: 'noqq'  # MCMod 简介图片展示方式: always(总是), noqq(非QQ平台), never(禁用)
   cfApi: ''         # CurseForge API Key
 ```
 
@@ -91,8 +91,8 @@ ver:
   enabled: false       # 启用版本更新检查
   release: true       # 通知正式版本
   snapshot: true      # 通知快照版本
-  interval: 60        # 检查间隔时间（分钟）
-  groups:             # 接收更新通知的目标
+  interval: 20        # 检查间隔时间（分钟）
+  groups:             # 接收更新通知的目标(格式: platform:type:id)
     - 'onebot:private:123456789'
     - 'discord:group:987654321'
 ```

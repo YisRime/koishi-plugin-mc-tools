@@ -35,12 +35,9 @@ function parseImage($: cheerio.CheerioAPI, $elem: cheerio.Cheerio<any>): string 
  * 解析链接元素
  * @param {cheerio.CheerioAPI} $ Cheerio实例
  * @param {cheerio.Cheerio} $elem 包含链接的元素
- * @param {boolean} showLinks 是否展示链接
  * @returns {string|null} 处理后的链接文本或null
  */
-function parseLink($: cheerio.CheerioAPI, $elem: cheerio.Cheerio<any>, showLinks: boolean = true): string | null {
-  if (!showLinks) return null;
-
+function parseLink($: cheerio.CheerioAPI, $elem: cheerio.Cheerio<any>): string | null {
   const links: string[] = []
 
   $elem.find('[id^="link_"]').each((_, elem) => {
@@ -76,10 +73,9 @@ function parseLink($: cheerio.CheerioAPI, $elem: cheerio.Cheerio<any>, showLinks
  * 解析文本元素
  * @param {cheerio.CheerioAPI} $ Cheerio实例
  * @param {cheerio.Cheerio} $elem 包含文本的元素
- * @param {boolean} showLinks 是否展示链接
  * @returns {string|null} 处理后的文本或null
  */
-function parseText($: cheerio.CheerioAPI, $elem: cheerio.Cheerio<any>, showLinks: boolean = true): string | null {
+function parseText($: cheerio.CheerioAPI, $elem: cheerio.Cheerio<any>): string | null {
   const cleanText = (text: string): string => {
     const clearedText = text
       .replace(/[\u0000-\u001F\u007F-\u009F\u200B-\u200D\uFEFF]|\[(\w+)\]|本帖最后由.+编辑|复制代码/g, '')
@@ -103,45 +99,36 @@ function parseText($: cheerio.CheerioAPI, $elem: cheerio.Cheerio<any>, showLinks
   cleanedElem.find('script, i.pstatus, .fastcopy').remove()
 
   // 处理链接
-  if (showLinks) {
-    cleanedElem.find('a').each((_, link) => {
-      const $link = $(link)
-      const href = $link.attr('href')
-      const text = $link.text().trim()
+  cleanedElem.find('a').each((_, link) => {
+    const $link = $(link)
+    const href = $link.attr('href')
+    const text = $link.text().trim()
 
-      if (href && text) {
-        let processedHref = href
-        if (href.startsWith('//')) {
-          processedHref = `https:${href}`
-        } else if (href.startsWith('/')) {
-          processedHref = `https://www.mcmod.cn${href}`
-        }
-
-        // 忽略 javascript 和锚点链接
-        if (!href.includes('javascript:') && !href.startsWith('#')) {
-          let prefix = ''
-          let prevNode = link.previousSibling
-          while (prevNode && prevNode.type === 'text') {
-            prefix = prevNode.data.trim() + ' ' + prefix
-            prevNode.data = ''
-            prevNode = prevNode.previousSibling
-          }
-          prefix = prefix.trim()
-          const isUrl = text.match(/^https?:\/\//)
-          const markdownLink = isUrl ? processedHref : `[${text}](${processedHref})`
-          const linkText = prefix ? `${prefix} ${markdownLink}` : markdownLink
-          $link.replaceWith(linkText)
-        }
+    if (href && text) {
+      let processedHref = href
+      if (href.startsWith('//')) {
+        processedHref = `https:${href}`
+      } else if (href.startsWith('/')) {
+        processedHref = `https://www.mcmod.cn${href}`
       }
-    })
-  } else {
-    // 不处理链接，只保留文本
-    cleanedElem.find('a').each((_, link) => {
-      const $link = $(link);
-      const text = $link.text().trim();
-      $link.replaceWith(text);
-    });
-  }
+
+      // 忽略 javascript 和锚点链接
+      if (!href.includes('javascript:') && !href.startsWith('#')) {
+        let prefix = ''
+        let prevNode = link.previousSibling
+        while (prevNode && prevNode.type === 'text') {
+          prefix = prevNode.data.trim() + ' ' + prefix
+          prevNode.data = ''
+          prevNode = prevNode.previousSibling
+        }
+        prefix = prefix.trim()
+        const isUrl = text.match(/^https?:\/\//)
+        const markdownLink = isUrl ? processedHref : `[${text}](${processedHref})`
+        const linkText = prefix ? `${prefix} ${markdownLink}` : markdownLink
+        $link.replaceWith(linkText)
+      }
+    }
+  })
 
   const text = cleanText(cleanedElem.text())
   return text && !text.includes('此链接会跳转到') && !text.includes('不要再提示我') ? text : null
@@ -152,10 +139,9 @@ function parseText($: cheerio.CheerioAPI, $elem: cheerio.Cheerio<any>, showLinks
  * @param {cheerio.CheerioAPI} $ Cheerio实例
  * @param {'mod'|'modpack'|'post'|'item'|'bbs'} pageType 页面类型
  * @param {number} maxLength 最大内容长度
- * @param {boolean} showLinks 是否展示链接
  * @returns {ProcessResult} 处理结果
  */
-function parseContent($: cheerio.CheerioAPI, pageType: 'mod' | 'modpack' | 'post' | 'item' | 'bbs', maxLength: number, showLinks: boolean = true): ProcessResult {
+function parseContent($: cheerio.CheerioAPI, pageType: 'mod' | 'modpack' | 'post' | 'item' | 'bbs', maxLength: number): ProcessResult {
   const sections: string[] = []
   const relatedLinks: string[] = []
   let totalLength = 0
@@ -190,15 +176,13 @@ function parseContent($: cheerio.CheerioAPI, pageType: 'mod' | 'modpack' | 'post
       return
     }
     // 解析链接
-    if (showLinks) {
-      const link = parseLink($, $elem, showLinks)
-      if (link) {
-        sections.push(link)
-        return
-      }
+    const link = parseLink($, $elem)
+    if (link) {
+      sections.push(link)
+      return
     }
     // 解析文本
-    const text = parseText($, $elem, showLinks)
+    const text = parseText($, $elem)
     if (text && totalLength < maxLength) {
       sections.push(text)
       if (!text.startsWith('http')) {
@@ -207,13 +191,11 @@ function parseContent($: cheerio.CheerioAPI, pageType: 'mod' | 'modpack' | 'post
     }
   })
 
-  if (showLinks) {
-    relatedLinks.push(...parseRelatedLinks($))
-  }
+  relatedLinks.push(...parseRelatedLinks($))
 
   return {
     sections: sections.filter((s, i, arr) => s.trim() && arr.indexOf(s) === i),
-    links: showLinks ? relatedLinks : []
+    links: relatedLinks
   }
 }
 
@@ -396,7 +378,11 @@ function parseRelatedLinks($: cheerio.CheerioAPI): string[] {
  * @param {object} options 显示选项
  * @returns {string} 格式化后的内容
  */
-export function formatContent(result: ProcessResult, url: string, options: { showLinks?: number, forceShowLinks?: boolean } = {}): string {
+export function formatContent(result: ProcessResult, url: string, options: {
+  linkCount?: number,
+  showImages?: 'always' | 'noqq' | 'never',
+  platform?: string
+} = {}): string {
   if (!result?.sections) {
     return `无法获取页面内容，请访问：${url}`;
   }
@@ -434,9 +420,14 @@ export function formatContent(result: ProcessResult, url: string, options: { sho
     )
   };
 
-  const links = (options.forceShowLinks || options.showLinks) && result.links?.length
-    ? ['相关链接:', ...result.links.slice(0, options.showLinks)]
+  const links = result.links?.length
+    ? ['相关链接:', ...result.links.slice(0, options.linkCount)]
     : [];
+
+  // 判断是否显示图片
+  const shouldShowImages =
+    options.showImages === 'always' ||
+    (options.showImages === 'noqq' && options.platform !== 'qq');
 
   const output = [
     categorizedSections.title,
@@ -446,7 +437,7 @@ export function formatContent(result: ProcessResult, url: string, options: { sho
     ...(links.length ? links : []),
     '简介:',
     ...categorizedSections.content,
-    ...categorizedSections.images,
+    ...(shouldShowImages ? categorizedSections.images : []),
     `详细内容: ${url}`
   ];
 
@@ -482,7 +473,7 @@ export async function fetchModContent(url: string, config: CommonConfig): Promis
                    : url.includes('/item/') ? 'item'
                    : url.includes('bbs.mcmod.cn') ? 'bbs'
                    : 'mod';
-    const content = parseContent($, pageType, config.totalLength, config.showLinks !== false);
+    const content = parseContent($, pageType, config.totalLength);
     const sections = content.sections;
 
     return {

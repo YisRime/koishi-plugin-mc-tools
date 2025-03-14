@@ -83,7 +83,6 @@ export interface CommonConfig {
   Timeout: number
   totalLength: number
   descLength: number
-  showLinks?: boolean  // 新增：是否展示链接
 }
 export interface MinecraftToolsConfig {
   wiki: CommonConfig & {
@@ -96,6 +95,7 @@ export interface MinecraftToolsConfig {
     sectionLength: number
     linkCount: number
     cfApi: string
+    showImages: 'always' | 'noqq' | 'never'
   }
   info: {
     default: string
@@ -145,10 +145,7 @@ export const Config: Schema<MinecraftToolsConfig> = Schema.object({
       'networkidle2'
     ])
       .default('domcontentloaded')
-      .description('截图等待条件'),
-    showLinks: Schema.boolean()
-      .default(true)
-      .description('是否展示链接')
+      .description('截图等待条件')
   }).description('通用设置'),
 
   search: Schema.object({
@@ -160,7 +157,13 @@ export const Config: Schema<MinecraftToolsConfig> = Schema.object({
       .description('Wiki 每段预览字数'),
     linkCount: Schema.number()
       .default(4)
-      .description('相关链接最大显示数'),
+      .description('MCMod 相关链接最大显示数'),
+      showImages: Schema.union([
+        'always',
+        'noqq',
+        'never'
+      ]).default('noqq')
+        .description('MCMod 简介图片展示方式'),
     cfApi: Schema.string()
       .role('secret')
       .description('CurseForge API Key')
@@ -213,7 +216,7 @@ export const Config: Schema<MinecraftToolsConfig> = Schema.object({
       .default(true)
       .description('通知快照版本'),
     interval: Schema.number()
-      .default(60)
+      .default(20)
       .description('检查间隔时间（分钟）'),
     groups: Schema.array(String)
       .default([
@@ -283,7 +286,7 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
 
     const mcmod = ctx.command('mcmod <keyword:text>', '查询 Minecraft 相关资源')
     .usage('mcmod <关键词> - 查询 MCMod\nmcmod.find <关键词> - 搜索 MCMod\nmcmod.shot <关键词> - 截图 MCMod 页面\nmcmod.(find)mr <关键词> [类型] - 搜索 Modrinth\nmcmod.(find)cf <关键词> [类型] - 搜索 CurseForge')
-    .action(async ({ }, keyword) => {
+    .action(async ({ session }, keyword) => {
       if (!keyword) return '请输入要查询的关键词'
 
       try {
@@ -293,8 +296,9 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
         const result = results[0]
         const content = await fetchModContent(result.url, pluginConfig.wiki)
         return formatContent(content, result.url, {
-          showLinks: pluginConfig.wiki.showLinks ? pluginConfig.search.linkCount : 0,
-          forceShowLinks: pluginConfig.wiki.showLinks
+          linkCount: pluginConfig.search.linkCount,
+          showImages: pluginConfig.search.showImages,
+          platform: session.platform
         })
       } catch (error) {
         return error.message
