@@ -1,6 +1,5 @@
 import { Context } from 'koishi'
 import axios from 'axios'
-import { MinecraftToolsConfig } from './index'
 
 interface TexturesData {
   textures: {
@@ -28,163 +27,25 @@ interface PlayerProfile {
   }
 }
 
-const API_SOURCES = {
-  MOJANG: 'https://launchermeta.mojang.com/mc/game/version_manifest.json',
-  BMCLAPI: 'https://bmclapi2.bangbang93.com/mc/game/version_manifest.json',
-}
-
-/**
- * 获取 Minecraft 版本信息
- * @param {number} timeout - 请求超时时间(毫秒)
- * @returns {Promise<{latest: MinecraftVersionInfo, release: MinecraftVersionInfo, versions: MinecraftVersionInfo[]}>}
- * @throws {Error} 当所有 API 源都请求失败时抛出错误
- */
-export async function fetchVersions(timeout = 10000) {
-  const apiSources = Object.values(API_SOURCES)
-  let lastError = null
-
-  for (const apiUrl of apiSources) {
-    try {
-      const { data } = await axios.get(apiUrl, { timeout })
-
-      const latest = data.versions[0]
-      const release = data.versions.find(v => v.type === 'release')
-
-      if (!latest || !release) {
-        throw new Error('版本数据解析失败')
-      }
-
-      return { latest, release, versions: data.versions }
-    } catch (error) {
-      lastError = error
-      console.warn(`API 源 ${apiUrl} 请求失败:`, error.message || String(error))
-      continue
-    }
-  }
-
-  throw new Error(`所有 API 源均请求失败: ${lastError?.message || String(lastError)}`)
-}
-
-/**
- * 获取格式化的 Minecraft 版本信息
- * @returns {Promise<{success: boolean, data?: string, error?: string}>}
- */
-export async function getVersionInfo() {
-  try {
-    const { latest, release } = await fetchVersions()
-    const formatDate = (date: string) => new Date(date).toLocaleDateString('zh-CN')
-
-    return {
-      success: true,
-      data: `Minecraft 最新版本：\n正式版: ${release.id}(${formatDate(release.releaseTime)})\n快照版: ${latest.id}(${formatDate(latest.releaseTime)})`
-    }
-  } catch (error) {
-    return {
-      success: false,
-      error: `版本信息获取失败：${error.message || String(error)}`
-    }
-  }
-}
-
-/**
- * 解析通知目标配置
- * @param target 格式: "platform:type:id"
- */
-interface ParsedTarget {
-  platform: string
-  type: 'private' | 'group'
-  id: string
-}
-
-function parseTarget(target: string): ParsedTarget | null {
-  const parts = target.split(':')
-  if (parts.length !== 3) return null
-
-  const [platform, type, id] = parts
-  if (!['private', 'group'].includes(type)) return null
-
-  return { platform, type: type as 'private' | 'group', id }
-}
-
-/**
- * 向目标发送版本更新通知
- * @param {Context} ctx - Koishi 上下文
- * @param {string[]} targets - 目标配置列表 (格式: platform:type:id)
- * @param {string} updateMessage - 更新消息内容
- * @private
- */
-async function notifyVersionUpdate(ctx: any, targets: string[], updateMessage: string) {
-  for (const target of targets) {
-    const parsed = parseTarget(target)
-    if (!parsed) {
-      ctx.logger('mc-tools').warn(`无效的通知目标配置: ${target}`)
-      continue
-    }
-
-    for (const bot of ctx.bots) {
-      if (bot.platform !== parsed.platform) continue
-
-      try {
-        if (parsed.type === 'private') {
-          await bot.sendPrivateMessage(parsed.id, updateMessage)
-        } else {
-          await bot.sendMessage(parsed.id, updateMessage)
-        }
-      } catch (e) {
-        ctx.logger('mc-tools').warn(`通知发送失败（${parsed.type} ${parsed.id}）:`, e)
-      }
-    }
-  }
-}
-
-/**
- * 检查 Minecraft 版本更新并发送通知
- * @param {{snapshot: string, release: string}} versions - 当前版本信息
- * @param {any} ctx - Koishi 上下文
- * @param {MinecraftToolsConfig} config - 插件配置
- */
-export async function checkUpdate(versions: { snapshot: string, release: string }, ctx: any, config: MinecraftToolsConfig) {
-  try {
-    const { latest, release } = await fetchVersions()
-    const updates = [
-      { type: 'snapshot', version: latest, enabled: config.ver.snapshot },
-      { type: 'release', version: release, enabled: config.ver.release }
-    ]
-
-    for (const { type, version, enabled } of updates) {
-      if (versions[type] && version.id !== versions[type] && enabled) {
-        const msg = `Minecraft ${type === 'release' ? '正式版' : '快照版'}更新：${version.id}\n发布时间: ${new Date(version.releaseTime).toLocaleString('zh-CN')}`
-        await notifyVersionUpdate(ctx, config.ver.groups, msg)
-      }
-      versions[type] = version.id
-    }
-  } catch (error) {
-    ctx.logger('mc-tools').warn('版本检查失败：', error)
-  }
-}
-
 /**
  * 获取完整的玩家信息
  * @param {string} username - 玩家用户名
  * @returns {Promise<PlayerProfile>} 完整的玩家信息
  * @throws {Error} 当无法获取玩家信息时抛出错误
  */
-export async function getPlayerProfile(username: string): Promise<PlayerProfile> {
+async function getPlayerProfile(username: string): Promise<PlayerProfile> {
   try {
-    // 1. 获取基础信息
+    // 获取基础信息
     const { data: basicData } = await axios.get(`https://api.mojang.com/users/profiles/minecraft/${username}`);
     if (!basicData) throw new Error('未找到该玩家信息');
-
-    // 2. 获取档案数据
+    // 获取档案数据
     const { data: profileData } = await axios.get(`https://sessionserver.mojang.com/session/minecraft/profile/${basicData.id}`);
-
-    // 3. 解析材质信息
+    // 解析材质信息
     let texturesData: TexturesData | null = null;
     if (profileData.properties?.[0]?.value) {
       texturesData = JSON.parse(Buffer.from(profileData.properties[0].value, 'base64').toString());
     }
-
-    // 4. 格式化UUID
+    // 格式化UUID
     const uuidDashed = [
       basicData.id.slice(0, 8),
       basicData.id.slice(8, 12),
@@ -192,15 +53,13 @@ export async function getPlayerProfile(username: string): Promise<PlayerProfile>
       basicData.id.slice(16, 20),
       basicData.id.slice(20)
     ].join('-');
-
-    // 5. 构建玩家档案
+    // 构建玩家档案
     const profile: PlayerProfile = {
       name: basicData.name,
       uuid: basicData.id,
       uuidDashed
     };
-
-    // 6. 添加皮肤和披风信息
+    // 添加皮肤和披风信息
     if (texturesData?.textures) {
       if (texturesData.textures.SKIN) {
         profile.skin = {
@@ -242,7 +101,7 @@ export async function getPlayerProfile(username: string): Promise<PlayerProfile>
  * @param {string} [capeUrl] - 玩家披风的 URL 地址（可选）
  * @returns {Promise<string>} 返回渲染后的图片 Base64 编码字符串
  */
-export async function renderPlayerSkin(ctx: Context, skinUrl: string, capeUrl?: string): Promise<string> {
+async function renderPlayerSkin(ctx: Context, skinUrl: string, capeUrl?: string): Promise<string> {
   const page = await ctx.puppeteer.page()
   await page.setViewport({ width: 400, height: 400 })
 
@@ -315,4 +174,43 @@ export async function renderPlayerSkin(ctx: Context, skinUrl: string, capeUrl?: 
 
   await page.close()
   return screenshot
+}
+
+import { h } from 'koishi'
+import { MinecraftToolsConfig } from './index'
+
+/**
+ * 注册 Minecraft 皮肤查询命令
+ * @param {Context} ctx - Koishi 上下文
+ * @param {MinecraftToolsConfig} config - Minecraft 工具配置
+ */
+export function registerSkinCommands(ctx: Context, config: MinecraftToolsConfig) {
+  ctx.command('mcskin <username>', '查询 Minecraft 玩家信息')
+    .usage('mcskin <用户名> - 获取玩家信息并生成皮肤及披风预览')
+    .action(async ({ }, username) => {
+      if (!username) return '请输入玩家用户名'
+
+      try {
+        const profile = await getPlayerProfile(username);
+        const parts = [
+          `${profile.name}[${profile.uuidDashed}]`
+        ];
+
+        if (profile.skin) {
+          const skinImage = await renderPlayerSkin(ctx, profile.skin.url, profile.cape?.url);
+          parts.push(h.image(`data:image/png;base64,${skinImage}`).toString());
+
+          if (config.info.showSkull) {
+            parts.push(`使用 /give 获取 ${profile.name} ${profile.skin ? `(${profile.skin.model === 'slim' ? '纤细' : '经典'}) ` : ''}的头：(≤1.12 & ≥1.13)`);
+            parts.push(`minecraft:skull 1 3 {SkullOwner:"${profile.name}"}`);
+            parts.push(`minecraft:player_head{SkullOwner:"${profile.name}"}`);
+          }
+        } else {
+          parts.push('该玩家未设置皮肤');
+        }
+        return parts.join('\n');
+      } catch (error) {
+        return error.message
+      }
+    });
 }

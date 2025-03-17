@@ -1,21 +1,15 @@
-/**
- * @module modwiki
- * @description MCMOD.CN 内容抓取和解析模块
- */
-
-import { h } from 'koishi'
+import { Context, h } from 'koishi'
 import axios from 'axios'
 import * as cheerio from 'cheerio'
-import { CommonConfig } from './index'
+import { CommonConfig, MinecraftToolsConfig } from './index'
+import { searchMod, search, capture } from './subwiki'
 
 /**
  * 处理结果接口
  * @interface ProcessResult
  */
 interface ProcessResult {
-  /** 处理后的内容段落 */
   sections: string[];
-  /** 相关链接列表 */
   links: string[];
 }
 
@@ -450,7 +444,7 @@ export function formatContent(result: ProcessResult, url: string, options: {
 /**
  * 获取MCMOD内容
  * @param {string} url MCMOD.CN页面URL
- * @param {ModwikiConfig} config 配置项
+ * @param {CommonConfig} config 配置项
  * @returns {Promise<ProcessResult>} 处理结果Promise
  * @throws {Error} 当请求失败或页面不存在时抛出错误
  */
@@ -489,4 +483,69 @@ export async function fetchModContent(url: string, config: CommonConfig): Promis
     }
     throw error;
   }
+}
+
+/**
+ * 注册 MCMOD 相关命令
+ * @param {Context} ctx - Koishi 上下文
+ * @param {MinecraftToolsConfig} config - 插件配置
+ */
+export function registerModCommands(ctx: Context, config: MinecraftToolsConfig) {
+  const mcmod = ctx.command('mcmod <keyword:text>', '查询 Minecraft 相关资源')
+    .usage('mcmod <关键词> - 查询 MCMod\nmcmod.find <关键词> - 搜索 MCMod\nmcmod.shot <关键词> - 截图 MCMod 页面\nmcmod.(find)mr <关键词> [类型] - 搜索 Modrinth\nmcmod.(find)cf <关键词> [类型] - 搜索 CurseForge')
+    .action(async ({ session }, keyword) => {
+      if (!keyword) return '请输入要查询的关键词'
+
+      try {
+        const results = await searchMod(keyword, config)
+        if (!results.length) return '未找到相关内容'
+
+        const result = results[0]
+        const content = await fetchModContent(result.url, config.wiki)
+        return formatContent(content, result.url, {
+          linkCount: config.search.linkCount,
+          showImages: config.search.showImages,
+          platform: session.platform
+        })
+      } catch (error) {
+        return error.message
+      }
+    })
+
+  mcmod.subcommand('.find <keyword:text>', '搜索 MCMod')
+    .usage('mcmod.find <关键词> - 搜索 MCMOD 页面')
+    .action(async ({ session }, keyword) => {
+      return await search({
+        keyword,
+        source: 'mcmod',
+        session,
+        config,
+        ctx
+      })
+    })
+
+  mcmod.subcommand('.shot <keyword:text>', '截图 MCMod 页面')
+    .usage('mcmod.shot <关键词> - 搜索并获取指定页面截图')
+    .action(async ({ session }, keyword) => {
+      if (!keyword) return '请输入要查询的关键词'
+
+      try {
+        const results = await searchMod(keyword, config)
+        if (!results.length) throw new Error('未找到相关内容')
+        const targetUrl = results[0].url
+
+        await session.send(`正在获取页面...\n完整内容：${targetUrl}`)
+        const result = await capture(
+          targetUrl,
+          ctx,
+          { type: 'mcmod' },
+          config
+        )
+        return result.image
+      } catch (error) {
+        return error.message
+      }
+    })
+
+  return mcmod
 }

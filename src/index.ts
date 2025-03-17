@@ -1,13 +1,12 @@
-import { Context, Schema, h } from 'koishi'
+import { Context, Schema } from 'koishi'
 import {} from 'koishi-plugin-puppeteer'
-import { Rcon } from 'rcon-client'
-import { getVersionInfo, checkUpdate } from './utils'
-import { fetchModContent, formatContent } from './modwiki'
-import { processWikiRequest } from './mcwiki'
-import { searchMod, search, capture } from './subwiki'
-import { getPlayerProfile, renderPlayerSkin } from './utils'
-import { searchMods, getModDetails, formatSearchResults } from './mod'
-import { checkServerStatus, formatServerStatus } from './info'
+import { registerWikiCommands } from './mcwiki'
+import { registerModCommands } from './mcmod'
+import { registerModPlatformCommands } from './cfmr'
+import { registerVersionCommands } from './mcver'
+import { registerSkinCommands } from './mcskin'
+import { registerInfoCommands } from './mcinfo'
+import { registerRunCommands } from './mcrun'
 
 /**
  * Minecraft 工具箱插件
@@ -16,6 +15,7 @@ import { checkServerStatus, formatServerStatus } from './info'
 export const name = 'mc-tools'
 export const inject = {optional: ['puppeteer']}
 export const usage = '注意：使用 Docker 部署产生的问题请前往插件主页查看解决方案'
+
 export type LangCode = keyof typeof MINECRAFT_LANGUAGES
 
 const MINECRAFT_LANGUAGES = {
@@ -99,13 +99,13 @@ export interface MinecraftToolsConfig {
   }
   info: {
     default: string
+    defaultRcon: string
     showIP: boolean
     showIcon: boolean
     maxNumberDisplay: number
     javaApis: string[]
     bedrockApis: string[]
     showSkull: boolean
-    rconPort: number
     rconPassword: string
   }
   ver: {
@@ -127,7 +127,7 @@ export const Config: Schema<MinecraftToolsConfig> = Schema.object({
       .description('总预览字数'),
     descLength: Schema.number()
       .default(20)
-      .description('搜索内容描述字数'),
+      .description('搜索列表描述字数'),
     Timeout: Schema.number()
       .default(15)
       .description('搜索超时时间（秒）'),
@@ -145,8 +145,8 @@ export const Config: Schema<MinecraftToolsConfig> = Schema.object({
       'networkidle2'
     ])
       .default('domcontentloaded')
-      .description('截图等待条件')
-  }).description('通用设置'),
+      .description('截图完成等待条件')
+  }).description('通用查询配置'),
 
   search: Schema.object({
     Language: Schema.union(Object.keys(MINECRAFT_LANGUAGES) as LangCode[])
@@ -157,22 +157,22 @@ export const Config: Schema<MinecraftToolsConfig> = Schema.object({
       .description('Wiki 每段预览字数'),
     linkCount: Schema.number()
       .default(4)
-      .description('MCMod 相关链接最大显示数'),
+      .description('MCMod 相关链接显示个数'),
       showImages: Schema.union([
         'always',
         'noqq',
         'never'
       ]).default('noqq')
-        .description('MCMod 简介图片展示方式'),
+        .description('MCMod 简介图片展示平台'),
     cfApi: Schema.string()
       .role('secret')
       .description('CurseForge API Key')
-  }).description('查询设置'),
+  }).description('特定查询配置'),
 
   info: Schema.object({
     showSkull: Schema.boolean()
       .default(true)
-      .description('显示玩家头颅获取'),
+      .description('显示如何获取玩家头颅'),
     showIP: Schema.boolean()
       .default(false)
       .description('显示服务器地址'),
@@ -181,13 +181,13 @@ export const Config: Schema<MinecraftToolsConfig> = Schema.object({
       .description('显示服务器图标'),
     maxNumberDisplay: Schema.number()
       .default(8)
-      .description('列表最大显示数'),
+      .description('列表最大显示个数'),
     default: Schema.string()
       .default('hypixel.net')
-      .description('默认 INFO&RCON 服务器'),
-      rconPort: Schema.number()
-      .default(25575)
-      .description('RCON 端口'),
+      .description('默认 INFO 地址'),
+    defaultRcon: Schema.string()
+      .default('localhost:25575')
+      .description('默认 RCON 地址'),
     rconPassword: Schema.string()
       .role('secret')
       .description('RCON 密码'),
@@ -203,18 +203,18 @@ export const Config: Schema<MinecraftToolsConfig> = Schema.object({
         'https://api.mcsrvstat.us/bedrock/3/${address}'
       ])
       .description('Bedrock 查询 API')
-  }).description('服务器设置'),
+  }).description('服务器配置'),
 
   ver: Schema.object({
     enabled: Schema.boolean()
       .default(false)
-      .description('启用版本更新检查'),
+      .description('启用更新检查'),
     release: Schema.boolean()
       .default(true)
-      .description('通知正式版本'),
+      .description('正式版本通知'),
     snapshot: Schema.boolean()
       .default(true)
-      .description('通知快照版本'),
+      .description('快照版本通知'),
     interval: Schema.number()
       .default(20)
       .description('检查间隔时间（分钟）'),
@@ -223,8 +223,8 @@ export const Config: Schema<MinecraftToolsConfig> = Schema.object({
         'onebot:private:123456789',
         'discord:group:987654321'
       ])
-      .description('接收更新通知的目标(platform:type:id)')
-  }).description('更新检测设置')
+      .description('更新通知目标')
+  }).description('版本更新检测配置')
 })
 
 /**
@@ -234,272 +234,19 @@ export const Config: Schema<MinecraftToolsConfig> = Schema.object({
  */
 export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
   const userLanguageSettings = new Map<string, LangCode>()
-  const minecraftVersions = { snapshot: '', release: '' }
-  const mcwiki = ctx.command('mcwiki <keyword:text>', '查询 Minecraft Wiki')
-    .usage('mcwiki <关键词> - 查询 Wiki\nmcwiki.find <关键词> - 搜索 Wiki\nmcwiki.shot <关键词> - 截图 Wiki 页面')
-  mcwiki.action(async ({ session }, keyword) => {
-    try {
-      const result = await processWikiRequest(keyword, session.userId, pluginConfig, userLanguageSettings)
-      return result
-    } catch (error) {
-      return error.message
-    }
-  })
 
-  mcwiki.subcommand('.find <keyword:text>', '搜索 Wiki')
-    .usage('mcwiki.find <关键词> - 搜索 Wiki 页面')
-    .action(async ({ session }, keyword) => {
-      return await search({
-        keyword,
-        source: 'wiki',
-        session,
-        config: pluginConfig,
-        ctx,
-        lang: userLanguageSettings.get(session.userId) || pluginConfig.search.Language
-      })
-    })
-
-  mcwiki.subcommand('.shot <keyword:text>', '截图 Wiki 页面')
-    .usage('mcwiki.shot <关键词> - 搜索并获取指定页面截图')
-    .action(async ({ session }, keyword) => {
-      if (!keyword) return '请输入要查询的关键词'
-
-      try {
-        const wikiResult = await processWikiRequest(keyword, session.userId, pluginConfig, userLanguageSettings, 'image') as any
-        if (typeof wikiResult === 'string') return wikiResult
-
-        await session.send(`正在获取页面...\n完整内容：${wikiResult.url}`)
-        const result = await capture(
-          wikiResult.pageUrl,
-          ctx,
-          {
-            type: 'wiki',
-            lang: userLanguageSettings.get(session.userId) || pluginConfig.search.Language
-          },
-          pluginConfig
-        )
-        return result.image
-      } catch (error) {
-        return error.message
-      }
-    })
-
-    const mcmod = ctx.command('mcmod <keyword:text>', '查询 Minecraft 相关资源')
-    .usage('mcmod <关键词> - 查询 MCMod\nmcmod.find <关键词> - 搜索 MCMod\nmcmod.shot <关键词> - 截图 MCMod 页面\nmcmod.(find)mr <关键词> [类型] - 搜索 Modrinth\nmcmod.(find)cf <关键词> [类型] - 搜索 CurseForge')
-    .action(async ({ session }, keyword) => {
-      if (!keyword) return '请输入要查询的关键词'
-
-      try {
-        const results = await searchMod(keyword, pluginConfig)
-        if (!results.length) return '未找到相关内容'
-
-        const result = results[0]
-        const content = await fetchModContent(result.url, pluginConfig.wiki)
-        return formatContent(content, result.url, {
-          linkCount: pluginConfig.search.linkCount,
-          showImages: pluginConfig.search.showImages,
-          platform: session.platform
-        })
-      } catch (error) {
-        return error.message
-      }
-    })
-
-  mcmod.subcommand('.find <keyword:text>', '搜索 MCMod')
-    .usage('mcmod.find <关键词> - 搜索 MCMOD 页面')
-    .action(async ({ session }, keyword) => {
-      return await search({
-        keyword,
-        source: 'mcmod',
-        session,
-        config: pluginConfig,
-        ctx
-      })
-    })
-
-  mcmod.subcommand('.shot <keyword:text>', '截图 MCMod 页面')
-    .usage('mcmod.shot <关键词> - 搜索并获取指定页面截图')
-    .action(async ({ session }, keyword) => {
-      if (!keyword) return '请输入要查询的关键词'
-
-      try {
-        const results = await searchMod(keyword, pluginConfig)
-        if (!results.length) throw new Error('未找到相关内容')
-        const targetUrl = results[0].url
-
-        await session.send(`正在获取页面...\n完整内容：${targetUrl}`)
-        const result = await capture(
-          targetUrl,
-          ctx,
-          { type: 'mcmod' },
-          pluginConfig
-        )
-        return result.image
-      } catch (error) {
-        return error.message
-      }
-    })
-
-  mcmod.subcommand('.mr <keyword> [type]', '查询 Modrinth')
-    .usage('mcmod.mr <关键词> [类型] - 查询 Modrinth 内容\n可用类型：mod(模组), resourcepack(资源包), datapack(数据包), shader(光影), modpack(整合包), plugin(插件)')
-    .action(async ({ }, keyword, type) => {
-      if (!keyword) return '请输入要搜索的关键词'
-
-      try {
-        const results = await searchMods(keyword, 'modrinth', pluginConfig.wiki, undefined, type)
-        if (!results.length) return '未找到相关内容'
-        return await getModDetails(results[0], pluginConfig.wiki, pluginConfig.search.cfApi)
-      } catch (error) {
-        return error.message
-      }
-    })
-
-  mcmod.subcommand('.findmr <keyword> [type]', '搜索 Modrinth')
-    .usage('mcmod.findmr <关键词> [类型] - 搜索 Modrinth 项目\n可用类型：mod(模组), resourcepack(资源包), datapack(数据包), shader(光影), modpack(整合包), plugin(插件)')
-    .action(async ({ session }, keyword, type) => {
-      if (!keyword) return '请输入要搜索的关键词'
-
-      try {
-        const results = await searchMods(keyword, 'modrinth', pluginConfig.wiki, undefined, type)
-        if (!results.length) return '未找到相关项目'
-
-        await session.send('Modrinth 搜索结果：\n' + formatSearchResults(results, pluginConfig.wiki) + '\n请回复序号查看详细内容')
-
-        const response = await session.prompt(pluginConfig.wiki.Timeout * 1000)
-        if (!response) return '操作超时'
-
-        const index = parseInt(response) - 1
-        if (isNaN(index) || index < 0 || index >= results.length) {
-          return '请输入有效的序号'
-        }
-
-        return await getModDetails(results[index], pluginConfig.wiki, pluginConfig.search.cfApi)
-      } catch (error) {
-        return error.message
-      }
-    })
-
-  mcmod.subcommand('.cf <keyword> [type]', '查询 CurseForge')
-    .usage('mcmod.cf <关键词> [类型] - 查询 CurseForge 内容\n可用类型：mod(模组), resourcepack(资源包), modpack(整合包), shader(光影), datapack(数据包), world(地图), addon(附加包), plugin(插件)')
-    .action(async ({ }, keyword, type) => {
-      if (!keyword) return '请输入要搜索的关键词'
-
-      try {
-        const results = await searchMods(keyword, 'curseforge', pluginConfig.wiki, pluginConfig.search.cfApi, type)
-        if (!results.length) return '未找到相关内容'
-        return await getModDetails(results[0], pluginConfig.wiki, pluginConfig.search.cfApi)
-      } catch (error) {
-        return error.message
-      }
-    })
-
-  mcmod.subcommand('.findcf <keyword> [type]', '搜索 CurseForge')
-    .usage('mcmod.findcf <关键词> [类型] - 搜索 CurseForge 项目\n可用类型：mod(模组), resourcepack(资源包), modpack(整合包), shader(光影), datapack(数据包), world(地图), addon(附加包), plugin(插件)')
-    .action(async ({ session }, keyword, type) => {
-      if (!keyword) return '请输入要搜索的关键词'
-
-      try {
-        const results = await searchMods(keyword, 'curseforge', pluginConfig.wiki, pluginConfig.search.cfApi, type)
-        if (!results.length) return '未找到相关项目'
-
-        await session.send('CurseForge 搜索结果：\n' + formatSearchResults(results, pluginConfig.wiki) + '\n请回复序号查看详细内容')
-
-        const response = await session.prompt(pluginConfig.wiki.Timeout * 1000)
-        if (!response) return '操作超时'
-
-        const index = parseInt(response) - 1
-        if (isNaN(index) || index < 0 || index >= results.length) {
-          return '请输入有效的序号'
-        }
-
-        return await getModDetails(results[index], pluginConfig.wiki, pluginConfig.search.cfApi)
-      } catch (error) {
-        return error.message
-      }
-    })
-
-  ctx.command('mcver', '查询 Minecraft 版本信息')
-    .usage('mcver - 获取 Minecraft 最新版本信息')
-    .action(async () => {
-      const result = await getVersionInfo()
-      return result.success ? result.data : result.error
-    })
-
-  if (pluginConfig.ver.enabled && pluginConfig.ver.groups.length) {
-    checkUpdate(minecraftVersions, ctx, pluginConfig)
-    setInterval(() => checkUpdate(minecraftVersions, ctx, pluginConfig), pluginConfig.ver.interval * 60 * 1000)
-  }
-
-  const mcinfo = ctx.command('mcinfo [server]', '查询 Minecraft 服务器信息')
-    .usage(`mcinfo [地址[:端口]] - 查询 Java 版服务器\nmcinfo.be [地址[:端口]] - 查询 Bedrock 版服务器\nmcinfo.run <命令> - 通过 RCON 执行服务器命令`)
-    .action(async ({ }, server) => {
-      try {
-        const status = await checkServerStatus(server || pluginConfig.info.default, 'java', pluginConfig)
-        return formatServerStatus(status, pluginConfig.info)
-      } catch (error) {
-        return error.message
-      }
-    })
-
-    mcinfo.subcommand('.be [server]', '查询 Bedrock 版服务器')
-    .usage('mcinfo.be [地址[:端口]] - 查询 Bedrock 版服务器状态')
-    .action(async ({ }, server) => {
-      try {
-        const status = await checkServerStatus(server || pluginConfig.info.default, 'bedrock', pluginConfig)
-        return formatServerStatus(status, pluginConfig.info)
-      } catch (error) {
-        return error.message
-      }
-    })
-
-    mcinfo.subcommand('.run <command:text>', '执行 RCON 命令')
-    .usage('mcinfo.run <命令> - 通过 RCON 在服务器执行指定命令')
-    .action(async ({ }, command) => {
-      if (!command) return '请输入要执行的命令'
-      if (!pluginConfig.info.rconPassword) return '请先设置 RCON 密码'
-
-      const rcon = await Rcon.connect({
-        host: pluginConfig.info.default,
-        port: pluginConfig.info.rconPort,
-        password: pluginConfig.info.rconPassword
-      })
-
-      try {
-        const response = await rcon.send(command)
-        return response || '命令已执行，无返回信息'
-      } catch (error) {
-        return `RCON 执行失败: ${error.message}`
-      } finally {
-        await rcon.end()
-      }
-    })
-
-  ctx.command('mcskin <username>', '查询 Minecraft 玩家信息')
-    .usage('mcskin <用户名> - 获取玩家信息并生成皮肤及披风预览')
-    .action(async ({ }, username) => {
-      if (!username) return '请输入玩家用户名'
-
-      try {
-        const profile = await getPlayerProfile(username);
-        const parts = [
-          `${profile.name}[${profile.uuidDashed}]`
-        ];
-
-        if (profile.skin) {
-          const skinImage = await renderPlayerSkin(ctx, profile.skin.url, profile.cape?.url);
-          parts.push(h.image(`data:image/png;base64,${skinImage}`).toString());
-
-          if (pluginConfig.info.showSkull) {
-            parts.push(`使用 /give 获取 ${profile.name} ${profile.skin ? `(${profile.skin.model === 'slim' ? '纤细' : '经典'}) ` : ''}的头：(≤1.12 & ≥1.13)`);
-            parts.push(`minecraft:skull 1 3 {SkullOwner:"${profile.name}"}`);
-            parts.push(`minecraft:player_head{SkullOwner:"${profile.name}"}`);
-          }
-        } else {
-          parts.push('该玩家未设置皮肤');
-        }
-        return parts.join('\n');
-      } catch (error) {
-        return error.message
-      }
-  })
+  // 注册 Wiki 命令
+  registerWikiCommands(ctx, pluginConfig, userLanguageSettings)
+  // 注册 MCMOD 基础命令
+  const mcmod = registerModCommands(ctx, pluginConfig)
+  // 注册 Modrinth 和 CurseForge 命令
+  registerModPlatformCommands(mcmod, pluginConfig)
+  // 注册版本相关命令
+  registerVersionCommands(ctx, pluginConfig)
+  // 注册皮肤查询命令
+  registerSkinCommands(ctx, pluginConfig)
+  // 注册服务器信息查询命令
+  registerInfoCommands(ctx, pluginConfig)
+  // 注册RCON命令
+  registerRunCommands(ctx, pluginConfig)
 }

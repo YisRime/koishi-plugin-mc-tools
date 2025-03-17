@@ -1,7 +1,8 @@
+import { Context } from 'koishi'
 import * as cheerio from 'cheerio'
 import axios from 'axios'
 import { MinecraftToolsConfig, LangCode } from './index'
-import { searchWiki } from './subwiki'
+import { searchWiki, search, capture } from './subwiki'
 
 /**
  * 构建 Wiki URL
@@ -233,4 +234,68 @@ export async function processWikiRequest(keyword: string, userId: string, config
 
     return `查询"${keyword}"时遇到问题: ${error.message}`;
   }
+}
+
+/**
+ * 注册 Minecraft Wiki 相关命令
+ * @param {Context} ctx - Koishi 上下文
+ * @param {MinecraftToolsConfig} config - 插件配置
+ * @param {Map<string, LangCode>} userLangs - 用户语言设置
+ */
+export function registerWikiCommands(ctx: Context, config: MinecraftToolsConfig, userLangs: Map<string, LangCode>) {
+  const mcwiki = ctx.command('mcwiki <keyword:text>', '查询 Minecraft Wiki')
+    .usage('mcwiki <关键词> - 查询 Wiki\nmcwiki.find <关键词> - 搜索 Wiki\nmcwiki.shot <关键词> - 截图 Wiki 页面')
+    .action(async ({ session }, keyword) => {
+      try {
+        const result = await processWikiRequest(keyword, session.userId, config, userLangs)
+        return result
+      } catch (error) {
+        return error.message
+      }
+    })
+
+  mcwiki.subcommand('.find <keyword:text>', '搜索 Wiki')
+    .usage('mcwiki.find <关键词> - 搜索 Wiki 页面')
+    .action(async ({ session }, keyword) => {
+      try {
+        const result = await processWikiRequest(keyword, session.userId, config, userLangs, 'search') as any
+        if (typeof result === 'string') return result
+
+        return await search({
+          keyword,
+          source: 'wiki',
+          session,
+          config,
+          ctx,
+          lang: userLangs.get(session.userId) || config.search.Language
+        })
+      } catch (error) {
+        return error.message
+      }
+    })
+
+  mcwiki.subcommand('.shot <keyword:text>', '截图 Wiki 页面')
+    .usage('mcwiki.shot <关键词> - 搜索并获取指定页面截图')
+    .action(async ({ session }, keyword) => {
+      if (!keyword) return '请输入要查询的关键词'
+
+      try {
+        const wikiResult = await processWikiRequest(keyword, session.userId, config, userLangs, 'image') as any
+        if (typeof wikiResult === 'string') return wikiResult
+
+        await session.send(`正在获取页面...\n完整内容：${wikiResult.url}`)
+        const result = await capture(
+          wikiResult.pageUrl,
+          ctx,
+          {
+            type: 'wiki',
+            lang: userLangs.get(session.userId) || config.search.Language
+          },
+          config
+        )
+        return result.image
+      } catch (error) {
+        return error.message
+      }
+    })
 }

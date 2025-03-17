@@ -2,6 +2,16 @@ import axios from 'axios';
 import { TypeMap } from './index'
 import { CommonConfig, MinecraftToolsConfig } from './index'
 
+/**
+ * 模组搜索结果的统一接口
+ * @interface SearchModResult
+ * @property {('modrinth'|'curseforge')} source - 模组来源平台
+ * @property {string|number} id - 模组ID，Modrinth为字符串，CurseForge为数字
+ * @property {string} type - 模组类型
+ * @property {string} title - 模组标题
+ * @property {string} description - 模组描述
+ * @property {string[]} categories - 模组分类
+ */
 interface SearchModResult {
   source: 'modrinth' | 'curseforge'
   id: string | number
@@ -10,6 +20,21 @@ interface SearchModResult {
   description: string
   categories: string[]
 }
+
+/**
+ * Modrinth项目信息接口
+ * @interface ModrinthProject
+ * @property {string} slug - 项目短名称
+ * @property {string} title - 项目标题
+ * @property {string} description - 项目简短描述
+ * @property {string[]} categories - 项目分类
+ * @property {string} client_side - 客户端兼容性
+ * @property {string} server_side - 服务端兼容性
+ * @property {string} project_type - 项目类型
+ * @property {string} body - 项目详细描述
+ * @property {string[]} [game_versions] - 支持的游戏版本列表
+ * @property {string[]} [loaders] - 支持的加载器列表
+ */
 interface ModrinthProject {
   slug: string
   title: string
@@ -22,6 +47,19 @@ interface ModrinthProject {
   game_versions?: string[]
   loaders?: string[]
 }
+
+/**
+ * CurseForge项目信息接口
+ * @interface CurseForgeProject
+ * @property {number} id - 项目ID
+ * @property {string} name - 项目名称
+ * @property {string} summary - 项目摘要
+ * @property {string} description - 项目详细描述
+ * @property {(string|{name:string})[]} categories - 项目分类
+ * @property {number} classId - 项目类别ID
+ * @property {{displayName:string,gameVersions:string[]}[]} latestFiles - 最新文件列表
+ * @property {{websiteUrl:string}} links - 相关链接
+ */
 interface CurseForgeProject {
   id: number
   name: string
@@ -38,6 +76,13 @@ interface CurseForgeProject {
   }
 }
 
+/**
+ * 在Modrinth平台搜索项目
+ * @param {string} keyword - 搜索关键词
+ * @param {CommonConfig} config - 通用配置
+ * @param {string[]} [facets] - 搜索过滤条件
+ * @returns {Promise<ModrinthProject[]>} 搜索结果列表
+ */
 export async function searchModrinth(keyword: string, config: CommonConfig, facets?: string[]): Promise<ModrinthProject[]> {
   const response = await axios.get('https://api.modrinth.com/v2/search', {
     params: {
@@ -61,6 +106,8 @@ export async function searchModrinth(keyword: string, config: CommonConfig, face
 
 /**
  * 处理游戏版本列表，过滤快照并合并相似版本
+ * @param {string[]} versions - 原始版本列表
+ * @returns {string[]} 处理后的版本列表
  */
 function processGameVersions(versions: string[]): string[] {
   if (!versions?.length) return [];
@@ -92,6 +139,11 @@ function processGameVersions(versions: string[]): string[] {
   return result;
 }
 
+/**
+ * 获取Modrinth项目的详细信息
+ * @param {string} slug - 项目的slug标识符
+ * @returns {Promise<ModrinthProject>} 项目详细信息
+ */
 export async function getModrinthDetails(slug: string): Promise<ModrinthProject> {
   const response = await axios.get(`https://api.modrinth.com/v2/project/${slug}`);
   const {
@@ -121,6 +173,12 @@ export async function getModrinthDetails(slug: string): Promise<ModrinthProject>
   };
 }
 
+/**
+ * 格式化Modrinth项目的完整结果为可读文本
+ * @param {ModrinthProject} project - Modrinth项目信息
+ * @param {CommonConfig} config - 通用配置
+ * @returns {string} 格式化后的项目信息文本
+ */
 export function formatFullModrinthResult(project: ModrinthProject, config: CommonConfig): string {
   const clientSide = project.client_side === 'required' ? '必需' : project.client_side === 'optional' ? '可选' : '无需';
   const serverSide = project.server_side === 'required' ? '必需' : project.server_side === 'optional' ? '可选' : '无需';
@@ -143,6 +201,14 @@ export function formatFullModrinthResult(project: ModrinthProject, config: Commo
   return parts.filter(Boolean).join('\n');
 }
 
+/**
+ * 在CurseForge平台搜索项目
+ * @param {string} keyword - 搜索关键词
+ * @param {string} cfApiKey - CurseForge API密钥
+ * @param {CommonConfig} config - 通用配置
+ * @param {number} [classId] - 项目类别ID
+ * @returns {Promise<CurseForgeProject[]>} 搜索结果列表
+ */
 export async function searchCurseforge(keyword: string, cfApiKey: string, config: CommonConfig, classId?: number): Promise<CurseForgeProject[]> {
   const response = await axios.get('https://api.curseforge.com/v1/mods/search', {
     headers: {
@@ -162,6 +228,12 @@ export async function searchCurseforge(keyword: string, cfApiKey: string, config
   return response.data.data;
 }
 
+/**
+ * 获取CurseForge项目的详细信息
+ * @param {number} modId - 项目ID
+ * @param {string} cfApiKey - CurseForge API密钥
+ * @returns {Promise<CurseForgeProject>} 项目详细信息
+ */
 export async function getCurseforgeDetails(modId: number, cfApiKey: string): Promise<CurseForgeProject> {
   // 获取基本信息
   const response = await axios.get(`https://api.curseforge.com/v1/mods/${modId}`, {
@@ -183,7 +255,13 @@ export async function getCurseforgeDetails(modId: number, cfApiKey: string): Pro
   };
 }
 
-export function formatFullCurseforgeResult(project: CurseForgeProject, config: CommonConfig): string {
+/**
+ * 格式化CurseForge项目的完整结果为可读文本
+ * @param {CurseForgeProject} project - CurseForge项目信息
+ * @param {CommonConfig} config - 通用配置
+ * @returns {string} 格式化后的项目信息文本
+ */
+function formatFullCurseforgeResult(project: CurseForgeProject, config: CommonConfig): string {
   const typeInChinese = TypeMap.curseforgeTypeNames[TypeMap.curseforgeTypes[project.classId]] || '未知'
 
   let description = project.description || project.summary;
@@ -221,7 +299,9 @@ export function formatFullCurseforgeResult(project: CurseForgeProject, config: C
 }
 
 /**
- * 根据类型名称获取 CurseForge 的 classId
+ * 根据类型名称获取CurseForge的classId
+ * @param {string} type - 项目类型名称
+ * @returns {number|undefined} 对应的classId或undefined
  */
 function getCurseForgeClassId(type: string): number | undefined {
   const englishType = Object.entries(TypeMap.curseforgeTypeNames).find(([_, cn]) => cn === type)?.[0] || type
@@ -230,7 +310,9 @@ function getCurseForgeClassId(type: string): number | undefined {
 }
 
 /**
- * 根据类型名称获取 Modrinth 的 facets
+ * 根据类型名称获取Modrinth的facets过滤条件
+ * @param {string} type - 项目类型名称
+ * @returns {string[]|undefined} 对应的facets过滤条件或undefined
  */
 function getModrinthFacets(type: string): string[] | undefined {
   if (!type) return undefined
@@ -239,9 +321,16 @@ function getModrinthFacets(type: string): string[] | undefined {
 }
 
 /**
- * 统一搜索函数
+ * 统一搜索函数，可搜索Modrinth或CurseForge平台
+ * @param {string} keyword - 搜索关键词
+ * @param {('modrinth'|'curseforge')} source - 搜索平台
+ * @param {CommonConfig} config - 通用配置
+ * @param {string} [cfApiKey] - CurseForge API密钥
+ * @param {string} [type] - 项目类型
+ * @returns {Promise<SearchModResult[]>} 统一格式的搜索结果列表
+ * @throws {Error} 当类型无效或搜索失败时抛出错误
  */
-export async function searchMods(
+async function searchMods(
   keyword: string,
   source: 'modrinth' | 'curseforge',
   config: CommonConfig,
@@ -279,8 +368,12 @@ export async function searchMods(
 
 /**
  * 统一获取项目详情
+ * @param {SearchModResult} result - 搜索结果项
+ * @param {CommonConfig} config - 通用配置
+ * @param {string} [cfApiKey] - CurseForge API密钥
+ * @returns {Promise<string>} 格式化后的项目详情文本
  */
-export async function getModDetails(
+async function getModDetails(
   result: SearchModResult,
   config: CommonConfig,
   cfApiKey?: string
@@ -295,9 +388,12 @@ export async function getModDetails(
 }
 
 /**
- * 格式化搜索结果列表
+ * 格式化搜索结果列表为可读文本
+ * @param {SearchModResult[]} results - 搜索结果列表
+ * @param {CommonConfig} config - 通用配置
+ * @returns {string} 格式化后的结果列表文本
  */
-export function formatSearchResults(results: SearchModResult[], config: CommonConfig): string {
+function formatSearchResults(results: SearchModResult[], config: CommonConfig): string {
   return results.map((r, i) => {
     let description = r.description;
     if (description.length > config.descLength) {
@@ -309,4 +405,89 @@ export function formatSearchResults(results: SearchModResult[], config: CommonCo
       `描述: ${description}`
     ].join('\n')}`
   }).join('\n');
+}
+
+/**
+ * 注册Modrinth和CurseForge相关命令
+ * @param {any} mcmod - MCMOD命令对象
+ * @param {MinecraftToolsConfig} config - 插件配置
+ */
+export function registerModPlatformCommands(mcmod: any, config: MinecraftToolsConfig) {
+  mcmod.subcommand('.mr <keyword> [type]', '查询 Modrinth')
+    .usage('mcmod.mr <关键词> [类型] - 查询 Modrinth 内容\n可用类型：mod(模组), resourcepack(资源包), datapack(数据包), shader(光影), modpack(整合包), plugin(插件)')
+    .action(async ({ }, keyword, type) => {
+      if (!keyword) return '请输入要搜索的关键词'
+
+      try {
+        const results = await searchMods(keyword, 'modrinth', config.wiki, undefined, type)
+        if (!results.length) return '未找到相关内容'
+        return await getModDetails(results[0], config.wiki, config.search.cfApi)
+      } catch (error) {
+        return error.message
+      }
+    })
+
+  mcmod.subcommand('.findmr <keyword> [type]', '搜索 Modrinth')
+    .usage('mcmod.findmr <关键词> [类型] - 搜索 Modrinth 项目\n可用类型：mod(模组), resourcepack(资源包), datapack(数据包), shader(光影), modpack(整合包), plugin(插件)')
+    .action(async ({ session }, keyword, type) => {
+      if (!keyword) return '请输入要搜索的关键词'
+
+      try {
+        const results = await searchMods(keyword, 'modrinth', config.wiki, undefined, type)
+        if (!results.length) return '未找到相关项目'
+
+        await session.send('Modrinth 搜索结果：\n' + formatSearchResults(results, config.wiki) + '\n请回复序号查看详细内容')
+
+        const response = await session.prompt(config.wiki.Timeout * 1000)
+        if (!response) return '操作超时'
+
+        const index = parseInt(response) - 1
+        if (isNaN(index) || index < 0 || index >= results.length) {
+          return '请输入有效的序号'
+        }
+
+        return await getModDetails(results[index], config.wiki, config.search.cfApi)
+      } catch (error) {
+        return error.message
+      }
+    })
+
+  mcmod.subcommand('.cf <keyword> [type]', '查询 CurseForge')
+    .usage('mcmod.cf <关键词> [类型] - 查询 CurseForge 内容\n可用类型：mod(模组), resourcepack(资源包), modpack(整合包), shader(光影), datapack(数据包), world(地图), addon(附加包), plugin(插件)')
+    .action(async ({ }, keyword, type) => {
+      if (!keyword) return '请输入要搜索的关键词'
+
+      try {
+        const results = await searchMods(keyword, 'curseforge', config.wiki, config.search.cfApi, type)
+        if (!results.length) return '未找到相关内容'
+        return await getModDetails(results[0], config.wiki, config.search.cfApi)
+      } catch (error) {
+        return error.message
+      }
+    })
+
+  mcmod.subcommand('.findcf <keyword> [type]', '搜索 CurseForge')
+    .usage('mcmod.findcf <关键词> [类型] - 搜索 CurseForge 项目\n可用类型：mod(模组), resourcepack(资源包), modpack(整合包), shader(光影), datapack(数据包), world(地图), addon(附加包), plugin(插件)')
+    .action(async ({ session }, keyword, type) => {
+      if (!keyword) return '请输入要搜索的关键词'
+
+      try {
+        const results = await searchMods(keyword, 'curseforge', config.wiki, config.search.cfApi, type)
+        if (!results.length) return '未找到相关项目'
+
+        await session.send('CurseForge 搜索结果：\n' + formatSearchResults(results, config.wiki) + '\n请回复序号查看详细内容')
+
+        const response = await session.prompt(config.wiki.Timeout * 1000)
+        if (!response) return '操作超时'
+
+        const index = parseInt(response) - 1
+        if (isNaN(index) || index < 0 || index >= results.length) {
+          return '请输入有效的序号'
+        }
+
+        return await getModDetails(results[index], config.wiki, config.search.cfApi)
+      } catch (error) {
+        return error.message
+      }
+    })
 }

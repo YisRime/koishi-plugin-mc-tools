@@ -1,6 +1,6 @@
-import { h } from 'koishi'
-import { MinecraftToolsConfig } from './index'
+import { Context, h } from 'koishi'
 import axios from 'axios'
+import { MinecraftToolsConfig } from './index'
 
 /**
  * 表示 Minecraft 服务器状态的接口
@@ -417,4 +417,35 @@ export function formatServerStatus(status: ServerStatus, config: MinecraftToolsC
   }
 
   return lines.join('\n')
+}
+
+/**
+ * 注册 Minecraft 服务器信息查询命令
+ * @param {Context} ctx - Koishi 上下文
+ * @param {MinecraftToolsConfig} config - 插件配置
+ */
+export function registerInfoCommands(ctx: Context, config: MinecraftToolsConfig) {
+  const mcinfo = ctx.command('mcinfo [server]', '查询 Minecraft 服务器信息')
+    .usage(`mcinfo [地址[:端口]] - 查询 Java 版服务器\nmcinfo.be [地址[:端口]] - 查询 Bedrock 版服务器`)
+    .action(async ({ }, server) => {
+      try {
+        const status = await checkServerStatus(server || config.info.default, 'java', config)
+        return formatServerStatus(status, config.info)
+      } catch (error) {
+        return error.message
+      }
+    })
+
+  mcinfo.subcommand('.be [server]', '查询 Bedrock 版服务器')
+    .usage('mcinfo.be [地址[:端口]] - 查询 Bedrock 版服务器状态')
+    .action(async ({ }, server) => {
+      try {
+        const status = await checkServerStatus(server || config.info.default, 'bedrock', config)
+        return formatServerStatus(status, config.info)
+      } catch (error) {
+        return error.message
+      }
+    })
+
+  return mcinfo
 }

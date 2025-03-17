@@ -3,7 +3,7 @@ import axios from 'axios'
 import * as cheerio from 'cheerio'
 import { MinecraftToolsConfig, LangCode } from './index'
 import { buildUrl, fetchContent } from './mcwiki'
-import { fetchModContent, formatContent } from './modwiki'
+import { fetchModContent, formatContent } from './mcmod'
 
 export interface SearchResult {
   title: string
@@ -291,7 +291,7 @@ export async function searchMod(keyword: string, config: MinecraftToolsConfig): 
  * @param {MinecraftToolsConfig} config - Minecraft工具配置
  * @returns {string} 格式化后的搜索结果文本
  */
-function formatSearchResults(
+export function formatSearchResults(
   results: SearchResult[],
   source: 'wiki' | 'mcmod',
   config: MinecraftToolsConfig
@@ -319,7 +319,7 @@ function formatSearchResults(
  * @param {any} [params.session] - 会话对象，用于获取平台信息
  * @returns {Promise<string>} 处理结果或错误信息
  */
-async function processSelection(params: {
+export async function processSelection(params: {
   response: string
   results: SearchResult[]
   source: 'wiki' | 'mcmod'
