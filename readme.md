@@ -6,13 +6,13 @@
 
 ## 功能特性
 
-- 多语言 Minecraft Wiki 查询和搜索功能
-- MCMod/Modrinth/CurseForge 模组平台搜索
-- Wiki 和 MCMod 页面截图生成
-- Java/Bedrock 服务器状态查询
-- Minecraft 版本更新检测与推送
-- 玩家信息查询与 3D 皮肤预览
-- RCON 远程命令执行支持
+- 多语言 Minecraft Wiki 查询、搜索和页面截图功能
+- MCMod 内容的详细查询、搜索和页面截图
+- Modrinth 和 CurseForge 模组平台高级搜索与分类查询
+- Java 和 Bedrock 服务器状态查询和详细信息获取
+- Minecraft 版本更新检测与自动推送通知
+- 玩家信息查询与 3D 皮肤和披风渲染预览
+- 完整的 RCON 远程命令管理系统（消息广播、白名单管理、管理员操作等）
 
 ## 命令列表
 
@@ -32,12 +32,25 @@
 - `mcmod.cf <关键词> [类型]` - 查询 CurseForge
 - `mcmod.findcf <关键词> [类型]` - 搜索 CurseForge
 
+### 服务器管理命令
+
+- `mcinfo [server]` - 查询 Java 版服务器信息
+- `mcinfo.be [server]` - 查询 Bedrock 版服务器信息
+- `mcrun <message:text>` - 在服务器发送消息
+- `mcrun.wl [player:string]` - 管理服务器白名单
+  - `-r` - 从白名单中移除玩家
+  - `--on/--off` - 开启/关闭服务器白名单
+- `mcrun.op <player:string>` - 管理服务器管理员
+  - `-r` - 移除玩家管理员权限
+- `mcrun.kick <player:string> [reason:text]` - 踢出指定玩家
+- `mcrun.ban <player:string> [reason:text]` - 封禁指定玩家
+  - `--ip` - 封禁IP地址
+- `mcrun.run [...args]` - 执行服务器自定义命令
+  - 可通过配置中的授权用户列表或权限等级来限制使用
+
 ### 其他功能
 
-- `mcver` - 查询 Minecraft 版本信息
-- `mcinfo [服务器]` - 查询 Java 版服务器信息
-- `mcinfo.be [服务器]` - 查询 Bedrock 版服务器信息
-- `mcinfo.run <命令>` - 执行远程 RCON 命令
+- `mcver` - 查询 Minecraft 最新版本信息
 - `mcskin <用户名>` - 查询玩家信息与皮肤
 
 ## 配置说明
@@ -70,18 +83,18 @@ search:
 ```yaml
 info:
   default: 'hypixel.net'   # 默认服务器地址
+  defaultRcon: 'localhost:25575'  # 默认 RCON 地址
   showIP: false            # 是否显示服务器地址
   showIcon: true          # 是否显示服务器图标
   maxNumberDisplay: 8     # 列表最大显示数
   showSkull: true        # 是否显示头颅获取命令
-  rconPort: 25575       # RCON 端口
   rconPassword: ''     # RCON 密码
+  authorizedRunUsers: [] # 允许使用自定义 RCON 命令的用户ID
   javaApis:           # Java 版查询 API
     - 'https://api.mcstatus.io/v2/status/java/${address}'
     - 'https://api.mcsrvstat.us/3/${address}'
   bedrockApis:       # Bedrock 版查询 API
     - 'https://api.mcstatus.io/v2/status/bedrock/${address}'
-    - 'https://api.mcsrvstat.us/bedrock/3/${address}'
 ```
 
 ### 更新检测设置

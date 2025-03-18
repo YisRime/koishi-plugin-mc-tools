@@ -16,6 +16,9 @@ export const name = 'mc-tools'
 export const inject = {optional: ['puppeteer']}
 export const usage = '注意：使用 Docker 部署产生的问题请前往插件主页查看解决方案'
 
+// 版本检查定时器
+let versionCheckTimer: NodeJS.Timeout
+
 export type LangCode = keyof typeof MINECRAFT_LANGUAGES
 
 const MINECRAFT_LANGUAGES = {
@@ -107,6 +110,7 @@ export interface MinecraftToolsConfig {
     bedrockApis: string[]
     showSkull: boolean
     rconPassword: string
+    authorizedRunUsers: string[] // 新增授权用户ID列表
   }
   ver: {
     enabled: boolean
@@ -191,6 +195,9 @@ export const Config: Schema<MinecraftToolsConfig> = Schema.object({
     rconPassword: Schema.string()
       .role('secret')
       .description('RCON 密码'),
+    authorizedRunUsers: Schema.array(String)
+      .default([])
+      .description('允许执行自定义 RCON 命令的用户 ID'),
     javaApis: Schema.array(String)
       .default([
         'https://api.mcstatus.io/v2/status/java/${address}',
@@ -241,12 +248,24 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
   const mcmod = registerModCommands(ctx, pluginConfig)
   // 注册 Modrinth 和 CurseForge 命令
   registerModPlatformCommands(mcmod, pluginConfig)
-  // 注册版本相关命令
-  registerVersionCommands(ctx, pluginConfig)
+  // 注册版本相关命令并保存定时器引用
+  versionCheckTimer = registerVersionCommands(ctx, pluginConfig)
   // 注册皮肤查询命令
   registerSkinCommands(ctx, pluginConfig)
   // 注册服务器信息查询命令
   registerInfoCommands(ctx, pluginConfig)
   // 注册RCON命令
   registerRunCommands(ctx, pluginConfig)
+}
+
+/**
+ * 插件卸载函数
+ * 清理插件创建的所有定时任务
+ */
+export function dispose() {
+  // 清除版本检查定时器
+  if (versionCheckTimer) {
+    clearInterval(versionCheckTimer)
+    versionCheckTimer = null
+  }
 }

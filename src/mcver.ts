@@ -143,8 +143,9 @@ async function checkUpdate(versions: { snapshot: string, release: string }, ctx:
  * 注册 Minecraft 版本相关命令
  * @param {Context} ctx - Koishi 上下文
  * @param {MinecraftToolsConfig} config - 插件配置
+ * @returns {NodeJS.Timeout|undefined} - 如果启用了定时检查，返回定时器句柄
  */
-export function registerVersionCommands(ctx: Context, config: MinecraftToolsConfig) {
+export function registerVersionCommands(ctx: Context, config: MinecraftToolsConfig): NodeJS.Timeout | undefined {
   // 创建一个对象保存版本信息
   const minecraftVersions = { snapshot: '', release: '' }
   // 注册查询版本信息命令
@@ -158,6 +159,8 @@ export function registerVersionCommands(ctx: Context, config: MinecraftToolsConf
   // 如果启用了版本更新检查，启动定时任务
   if (config.ver.enabled && config.ver.groups.length) {
     checkUpdate(minecraftVersions, ctx, config)
-    setInterval(() => checkUpdate(minecraftVersions, ctx, config), config.ver.interval * 60 * 1000)
+    const timer = setInterval(() => checkUpdate(minecraftVersions, ctx, config), config.ver.interval * 60 * 1000)
+    return timer
   }
+  return undefined
 }
