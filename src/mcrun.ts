@@ -5,11 +5,11 @@ import { MinecraftToolsConfig } from './index'
 /**
  * 自动撤回消息
  */
-async function autoRecall(message: string, session?: Session): Promise<string> {
-  if (!session) return message
+async function autoRecall(message: string, session?: Session): Promise<void> {
+  if (!session) return
 
   const msgId = await session.send(message)
-  if (!msgId) return message
+  if (!msgId) return
 
   setTimeout(() => {
     try {
@@ -17,8 +17,6 @@ async function autoRecall(message: string, session?: Session): Promise<string> {
       ids.forEach(id => session.bot?.deleteMessage(session.channelId, String(id)))
     } catch {}
   }, 10000)
-
-  return message
 }
 
 /**
@@ -28,7 +26,7 @@ export async function executeRconCommand(
   command: string,
   config: MinecraftToolsConfig,
   session?: Session
-): Promise<string> {
+): Promise<void> {
   if (!command) return autoRecall('请输入要执行的命令', session)
   if (!config.info.rconPassword) return autoRecall('请先配置RCON密码', session)
 
