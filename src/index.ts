@@ -110,7 +110,8 @@ export interface MinecraftToolsConfig {
     bedrockApis: string[]
     showSkull: boolean
     rconPassword: string
-    authorizedRunUsers: string[] // 新增授权用户ID列表
+    authorizedRunUsers: string[]
+    authorizedGroups: string[] // 新增授权群组ID列表
   }
   ver: {
     enabled: boolean
@@ -186,18 +187,21 @@ export const Config: Schema<MinecraftToolsConfig> = Schema.object({
     maxNumberDisplay: Schema.number()
       .default(8)
       .description('列表最大显示个数'),
-    default: Schema.string()
-      .default('hypixel.net')
-      .description('默认 INFO 地址'),
     defaultRcon: Schema.string()
       .default('localhost:25575')
       .description('默认 RCON 地址'),
     rconPassword: Schema.string()
       .role('secret')
       .description('RCON 密码'),
+    authorizedGroups: Schema.array(String)
+      .default([])
+      .description('允许使用 RCON 命令的群组 ID'),
     authorizedRunUsers: Schema.array(String)
       .default([])
-      .description('允许执行自定义 RCON 命令的用户 ID'),
+      .description('允许使用自定义 RCON 命令的用户 ID'),
+    default: Schema.string()
+      .default('hypixel.net')
+      .description('默认 INFO 地址'),
     javaApis: Schema.array(String)
       .default([
         'https://api.mcstatus.io/v2/status/java/${address}',

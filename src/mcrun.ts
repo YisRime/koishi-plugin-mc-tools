@@ -58,6 +58,13 @@ export function registerRunCommands(ctx: Context, config: MinecraftToolsConfig) 
   // 主命令
   const mcrun = ctx.command('mcrun <message:text>', '执行 Minecraft 命令')
     .usage('mcrun <消息> - 发送消息到 Minecraft 服务器')
+    .before(({ session }) => {
+      // 检查群组权限
+      if (config.info.authorizedGroups?.length > 0 &&
+          !(session?.guildId && config.info.authorizedGroups.includes(session.guildId))) {
+        return autoRecall('此群组没有权限执行命令', session)
+      }
+    })
     .action(async ({ session }, message) => {
       if (!message) return autoRecall('请输入要发送的消息', session)
       // 获取用户昵称或ID
@@ -115,9 +122,9 @@ export function registerRunCommands(ctx: Context, config: MinecraftToolsConfig) 
   mcrun.subcommand('.run [...args]', '执行自定义命令')
     .usage('mcrun.run <命令> - 执行自定义 Minecraft 命令')
     .action(({ session }, ...args) => {
+      // 用户权限检查
       if (!config.info.authorizedRunUsers.includes(session?.userId))
-        return autoRecall('你没有权限执行此命令', session)
-
+        return autoRecall('你没有权限执行自定义命令', session)
       return args.length ? executeRconCommand(args.join(' '), config, session) :
                            autoRecall('请输入要执行的命令', session)
     })
