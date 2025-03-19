@@ -58,9 +58,12 @@ export function registerRunCommands(ctx: Context, config: MinecraftToolsConfig) 
   // 主命令
   const mcrun = ctx.command('mcrun <message:text>', '执行 Minecraft 命令')
     .usage('mcrun <消息> - 发送消息到 Minecraft 服务器')
-    .action(async ({ session }, message) =>
-      message ? executeRconCommand(`say ${message}`, config, session) :
-                autoRecall('请输入要发送的消息', session))
+    .action(async ({ session }, message) => {
+      if (!message) return autoRecall('请输入要发送的消息', session)
+      // 获取用户昵称或ID
+      const userIdentifier = session.username || session.userId
+      return executeRconCommand(`say ${userIdentifier}: ${message}`, config, session)
+    })
 
   // 白名单管理
   mcrun.subcommand('.wl [player:string]', '管理白名单', { authority: 2 })
