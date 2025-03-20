@@ -330,34 +330,30 @@ function parseRelatedLinks($: cheerio.CheerioAPI): string[] {
   const linkMap = new Map<string, { url: string; name: string }>()
 
   $('.common-link-frame .list ul li').each((_, item) => {
-    try {
-      const $item = $(item)
-      const $link = $item.find('a')
-      const url = $link.attr('href')
-      const rawType = $link.attr('data-original-title') || $item.find('.name').text().trim()
+    const $item = $(item)
+    const $link = $item.find('a')
+    const url = $link.attr('href')
+    const rawType = $link.attr('data-original-title') || $item.find('.name').text().trim()
 
-      if (!url || !rawType) return
+    if (!url || !rawType) return
 
-      const [type, customName] = rawType.split(':').map(s => s.trim())
-      const name = customName || type
-      let processedUrl = url
+    const [type, customName] = rawType.split(':').map(s => s.trim())
+    const name = customName || type
+    let processedUrl = url
 
-      if (url.startsWith('//link.mcmod.cn/target/')) {
-        try {
-          const encodedPart = url.split('target/')[1]
-          processedUrl = Buffer.from(encodedPart, 'base64').toString('utf-8')
-        } catch {
-          processedUrl = url
-        }
-      } else if (url.startsWith('//')) {
-        processedUrl = `https:${url}`
+    if (url.startsWith('//link.mcmod.cn/target/')) {
+      try {
+        const encodedPart = url.split('target/')[1]
+        processedUrl = Buffer.from(encodedPart, 'base64').toString('utf-8')
+      } catch {
+        processedUrl = url
       }
+    } else if (url.startsWith('//')) {
+      processedUrl = `https:${url}`
+    }
 
-      if (!linkMap.has(type)) {
-        linkMap.set(type, { url: processedUrl, name })
-      }
-    } catch (error) {
-      console.warn('处理链接时出错:', error)
+    if (!linkMap.has(type)) {
+      linkMap.set(type, { url: processedUrl, name })
     }
   })
 

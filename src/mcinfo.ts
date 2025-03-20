@@ -54,161 +54,82 @@ function parseServerAddress(
   input?: string,
   defaultServer?: string
 ): { address: string, type: 'java' | 'bedrock' } {
-  const address = input || defaultServer || 'localhost'
-  if (address.toLowerCase() === 'localhost') {
-    throw new Error('安全限制：不允许连接到 localhost')
-  }
+  const address = input || defaultServer
+
   try {
     let host: string, port: number | undefined
+    // 处理IPv6地址格式 [xxxx:xxxx::xxxx]:port
     if (address.includes('[')) {
       const match = address.match(/^\[([\da-fA-F:]+)\](?::(\d+))?$/)
-      if (!match) throw new Error('IPv6 地址格式不正确')
+      if (!match) throw new Error('无效的IPv6地址格式')
+
       host = match[1]
       port = match[2] ? parseInt(match[2], 10) : undefined
-      validateIPAddress(host, 'IPv6')
     }
+    // 处理带端口的地址 host:port
     else if (address.includes(':')) {
       const parts = address.split(':')
       host = parts[0]
       port = parseInt(parts[1], 10)
-      if (isNaN(port) || port < 1 || port > 65535) {
-        throw new Error('端口号必须在 1-65535 之间')
-      }
-      validateHost(host)
     }
+    // 处理不带端口的地址
     else {
       host = address
-      validateHost(host)
     }
-    const type = address.includes(':19132') ? 'bedrock' : 'java'
+    // 安全检查
+    if (host.toLowerCase() === 'localhost') {
+      throw new Error('不允许连接到本地服务器')
+    }
+    // IPv4地址检查
+    if (/^(\d{1,3}\.){3}\d{1,3}$/.test(host)) {
+      const parts = host.split('.').map(Number)
+      // 验证格式和检查私有地址
+      if (!parts.every(part => Number.isInteger(part) && part >= 0 && part <= 255)) {
+        throw new Error('无效的IPv4地址格式')
+      }
+      if (parts[0] === 127 || parts[0] === 10 ||
+          (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) ||
+          (parts[0] === 192 && parts[1] === 168) ||
+          (parts[0] === 169 && parts[1] === 254) ||
+          parts[0] >= 224 || parts[0] === 0) {
+        throw new Error('不允许连接到私有网络地址')
+      }
+    }
+    // IPv6地址检查
+    else if (/^[0-9a-fA-F:]+$/.test(host)) {
+      const lowerIP = host.toLowerCase()
+      const segments = host.split(':')
+      const doubleColonIndex = host.indexOf('::')
+      // 检查格式和私有地址
+      if ((doubleColonIndex !== -1 && host.indexOf('::', doubleColonIndex + 1) !== -1) ||
+          (doubleColonIndex === -1 && segments.length !== 8) ||
+          !segments.every(segment => segment === '' || /^[0-9a-fA-F]{1,4}$/.test(segment))) {
+        throw new Error('无效的IPv6地址格式')
+      }
+      if (lowerIP === '::1' || lowerIP === '0:0:0:0:0:0:0:1' ||
+          /^fe80:/i.test(lowerIP) || /^f[cd][0-9a-f]{2}:/i.test(lowerIP) ||
+          lowerIP.startsWith('ff')) {
+        throw new Error('不允许连接到私有网络地址')
+      }
+    }
+    // 域名格式检查
+    else if (!(host.length > 0 &&
+               host.length <= 253 &&
+               !/^\d+\.\d+\.\d+\.\d+$/.test(host) &&
+               /^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$/.test(host))) {
+      throw new Error('无效的域名格式')
+    }
+    // 验证端口
+    if (port !== undefined && (isNaN(port) || port < 1 || port > 65535)) {
+      throw new Error('端口号必须在1-65535之间')
+    }
+    // 根据端口判断服务器类型
+    const type = (port === 19132 || address.endsWith(':19132')) ? 'bedrock' : 'java'
     return { address, type }
   }
   catch (error) {
     throw new Error(`地址格式错误：${error.message}`)
   }
-}
-
-/**
- * 验证主机名或IP地址
- * @param {string} host - 要验证的主机
- * @throws {Error} 当主机格式不正确或为私有地址时抛出错误
- */
-function validateHost(host: string): void {
-  if (/^(\d{1,3}\.){3}\d{1,3}$/.test(host)) {
-    validateIPAddress(host, 'IPv4')
-  }
-  else if (!isValidDomain(host)) {
-    throw new Error('无效的域名格式')
-  }
-}
-
-/**
- * 统一验证 IP 地址格式并检查是否为私有地址
- * @param {string} ip - IP 地址
- * @param {'IPv4' | 'IPv6'} type - IP 地址类型
- * @throws {Error} 当 IP 格式不正确或为私有地址时抛出错误
- */
-function validateIPAddress(ip: string, type: 'IPv4' | 'IPv6'): void {
-  if (type === 'IPv4') {
-    const parts = ip.split('.').map(Number)
-    // 检查每个部分是否为有效的 0-255 范围
-    if (!parts.every(part => Number.isInteger(part) && part >= 0 && part <= 255)) {
-      throw new Error('无效的 IPv4 地址')
-    }
-    // 检查是否为私有 IPv4 地址
-    if (isPrivateIPv4(parts)) {
-      throw new Error('安全限制：不允许连接到私有 IPv4 地址')
-    }
-  }
-  else {
-    // IPv6 格式验证
-    if (!isValidIPv6Format(ip)) {
-      throw new Error('无效的 IPv6 地址格式')
-    }
-    // 检查是否为私有 IPv6 地址
-    if (isPrivateIPv6(ip)) {
-      throw new Error('安全限制：不允许连接到私有 IPv6 地址')
-    }
-  }
-}
-
-/**
- * 检查 IPv4 地址是否为私有地址
- * @param {number[]} parts - IPv4 地址的四个部分
- * @returns {boolean} 是否为私有地址
- */
-function isPrivateIPv4(parts: number[]): boolean {
-  return (
-    parts[0] === 127 || // 本地回环地址: 127.0.0.0/8
-    parts[0] === 10 || // 私有网络: 10.0.0.0/8
-    (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) || // 私有网络: 172.16.0.0/12
-    (parts[0] === 192 && parts[1] === 168) || // 私有网络: 192.168.0.0/16
-    (parts[0] === 169 && parts[1] === 254) || // 链路本地地址: 169.254.0.0/16
-    parts[0] >= 224 || // 组播地址和保留地址: 224.0.0.0/3
-    parts[0] === 0 // 0.0.0.0/8
-  )
-}
-
-/**
- * 检查 IPv6 格式是否有效
- * @param {string} ip - IPv6 地址
- * @returns {boolean} 格式是否有效
- */
-function isValidIPv6Format(ip: string): boolean {
-  try {
-    if (!/^[0-9a-fA-F:]+$/.test(ip)) return false
-    const segments = ip.split(':')
-    // 检查缩写格式 (::)
-    const doubleColonIndex = ip.indexOf('::')
-    if (doubleColonIndex !== -1) {
-      if (ip.indexOf('::', doubleColonIndex + 1) !== -1) {
-        return false
-      }
-      // 计算省略的零段数量
-      const actualSegments = segments.filter(Boolean).length
-      if (actualSegments > 7) return false
-    }
-    else if (segments.length !== 8) {
-      return false
-    }
-    // 检查每个段的值
-    return segments.every(segment => {
-      return segment === '' || /^[0-9a-fA-F]{1,4}$/.test(segment)
-    })
-  } catch (error) {
-    return false
-  }
-}
-
-/**
- * 检查 IPv6 地址是否为私有地址
- * @param {string} ip - IPv6 地址
- * @returns {boolean} 是否为私有地址
- */
-function isPrivateIPv6(ip: string): boolean {
-  const lowerIP = ip.toLowerCase()
-  return (
-    lowerIP === '::1' ||
-    lowerIP === '0:0:0:0:0:0:0:1' ||
-    /^::1\/\d+$/.test(lowerIP) ||
-    /^f[cd][0-9a-f]{2}:/i.test(lowerIP) || // ULA 地址 fc00::/7
-    /^fe[89ab][0-9a-f]:/i.test(lowerIP) || // 链路本地地址 fe80::/10
-    lowerIP.startsWith('ff') // 组播地址 ff00::/8
-  )
-}
-
-/**
- * 验证域名格式是否正确
- * @param {string} domain - 域名
- * @returns {boolean} 是否为有效域名
- */
-function isValidDomain(domain: string): boolean {
-  return (
-    domain.length > 0 &&
-    domain.length <= 253 &&
-    !/^\d+\.\d+\.\d+\.\d+$/.test(domain) &&
-    /^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$/.test(domain)
-  )
 }
 
 /**
@@ -237,9 +158,7 @@ export async function checkServerStatus(
       const actualUrl = apiUrl.replace('${address}', parsed.address)
       try {
         const response = await axios.get(actualUrl, {
-          headers: {
-            'User-Agent': 'koishi-plugin-mc-tools/1.0'
-          },
+          headers: { 'User-Agent': 'koishi-plugin-mc-tools/1.0' },
           timeout: 10000,
           validateStatus: null
         })
@@ -271,8 +190,8 @@ export async function checkServerStatus(
             name: data.version?.name
           },
           players: {
-            online: data.players?.online || null,
-            max: data.players?.max || null,
+            online: data.players?.online ?? null,
+            max: data.players?.max ?? null,
             list: data.players?.list?.map(p => p.name_clean)
           },
           motd: data.motd?.clean,
@@ -329,8 +248,8 @@ async function transformMcsrvstatResponse(data: any): Promise<ServerStatus> {
       name: data.protocol?.name
     },
     players: {
-      online: data.players?.online || 0,
-      max: data.players?.max || 0,
+      online: data.players?.online ?? 0,
+      max: data.players?.max ?? 0,
       list: data.players?.list?.map(p => p.name)
     },
     motd: data.motd?.clean?.[0] || data.motd?.raw?.[0],
@@ -351,52 +270,56 @@ async function transformMcsrvstatResponse(data: any): Promise<ServerStatus> {
  * @returns {string} 格式化后的状态信息
  */
 export function formatServerStatus(status: ServerStatus, config: MinecraftToolsConfig['info']) {
-  const lines: string[] = []
-
   if (!status.online) {
     return `服务器离线 - ${status.error || '连接失败'}`
   }
 
+  const lines: string[] = []
+
+  // 添加 IP 信息
   if (config.showIP) {
-    if (status.ip_address) lines.push(`IP: ${status.ip_address}`)
-    if (status.srv_record) lines.push(`SRV: ${status.srv_record.host}:${status.srv_record.port}`)
+    status.ip_address && lines.push(`IP: ${status.ip_address}`)
+    status.srv_record && lines.push(`SRV: ${status.srv_record.host}:${status.srv_record.port}`)
   }
 
-  if (config.showIcon && status.icon?.startsWith('data:image/png;base64,')) {
-    lines.push(h.image(status.icon).toString())
-  }
-  if (status.motd) {
-    lines.push(status.motd)
-  }
+  // 添加图标和 MOTD
+  status.icon?.startsWith('data:image/png;base64,') && config.showIcon && lines.push(h.image(status.icon).toString())
+  status.motd && lines.push(status.motd)
 
+  // 添加基本状态信息
   const statusParts = [
     status.version?.name_clean || '未知',
-    `${status.players?.online || 0}/${status.players?.max || 0}`,
+    `${status.players?.online ?? 0}/${status.players?.max ?? 0}`,
   ]
-  if (status.retrieved_at) statusParts.push(`${Date.now() - status.retrieved_at}ms`)
+  status.retrieved_at && statusParts.push(`${Date.now() - status.retrieved_at}ms`)
   lines.push(statusParts.join(' | '))
 
+  // 添加服务器信息
   const serverInfo = []
-  if (status.software) serverInfo.push(status.software)
+  status.software && serverInfo.push(status.software)
+
   if (status.edition) {
     const editionMap = { MCPE: '基岩版', MCEE: '教育版' }
     serverInfo.push(editionMap[status.edition] || status.edition)
   }
-  if (status.gamemode) serverInfo.push(status.gamemode)
-  if (status.eula_blocked) serverInfo.push('已被封禁')
-  if (status.server_id) serverInfo.push(`ID: ${status.server_id}`)
-  if (serverInfo.length > 0) {
-    lines.push(serverInfo.join(' | '))
-  }
 
-  if (status.players?.list?.length && config.maxNumberDisplay > 0) {
+  status.gamemode && serverInfo.push(status.gamemode)
+  status.eula_blocked && serverInfo.push('已被封禁')
+  status.server_id && serverInfo.push(`ID: ${status.server_id}`)
+  serverInfo.length > 0 && lines.push(serverInfo.join(' | '))
+
+  // 添加玩家列表
+  const hasPlayers = status.players?.list?.length && config.maxNumberDisplay > 0
+  if (hasPlayers) {
     const displayCount = Math.min(config.maxNumberDisplay, status.players.list.length)
     lines.push(`当前在线(${status.players.online}):`)
     const playerList = status.players.list.slice(0, displayCount).join(', ')
     lines.push(playerList + (status.players.list.length > displayCount ? ' ...' : ''))
   }
 
-  if (status.plugins?.length && config.maxNumberDisplay > 0) {
+  // 添加插件列表
+  const hasPlugins = status.plugins?.length && config.maxNumberDisplay > 0
+  if (hasPlugins) {
     const displayCount = Math.min(config.maxNumberDisplay, status.plugins.length)
     lines.push(`插件(${status.plugins.length}):`)
     const pluginList = status.plugins
@@ -406,7 +329,9 @@ export function formatServerStatus(status: ServerStatus, config: MinecraftToolsC
     lines.push(pluginList + (status.plugins.length > displayCount ? ' ...' : ''))
   }
 
-  if (status.mods?.length && config.maxNumberDisplay > 0) {
+  // 添加模组列表
+  const hasMods = status.mods?.length && config.maxNumberDisplay > 0
+  if (hasMods) {
     const displayCount = Math.min(config.maxNumberDisplay, status.mods.length)
     lines.push(`模组(${status.mods.length}):`)
     const modList = status.mods

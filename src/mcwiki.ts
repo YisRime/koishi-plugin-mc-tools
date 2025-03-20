@@ -34,7 +34,6 @@ export function buildUrl(articleTitle: string, languageCode: LangCode | string, 
     const baseUrl = `https://${wikiDomain}/w/${encodedTitle}`;
     return includeLanguageVariant && languageVariant ? `${baseUrl}?variant=${languageVariant}` : baseUrl;
   } catch (error) {
-    console.error(`构建URL时出错: ${error.message}`, { articleTitle, languageCode });
     const safeTitle = cleanTitle.replace(/[^\w\s-]/g, '').replace(/\s+/g, '_');
     const baseUrl = `https://${wikiDomain}/w/${safeTitle}`;
     return includeLanguageVariant && languageVariant ? `${baseUrl}?variant=${languageVariant}` : baseUrl;
@@ -69,11 +68,7 @@ export async function fetchContent(articleUrl: string, languageCode: LangCode, c
       (languageCode === 'zh' ? 'zh-cn' :
       languageCode === 'zh-hk' ? 'zh-hk' :
       languageCode === 'zh-tw' ? 'zh-tw' : 'zh-cn') : '';
-
     const requestUrl = articleUrl.includes('?') ? articleUrl : `${articleUrl}?variant=${languageVariant}`;
-
-    console.log(`请求Wiki URL: ${requestUrl}`);
-
     const response = await axios.get(requestUrl, {
       params: {
         uselang: languageCode,
@@ -96,40 +91,36 @@ export async function fetchContent(articleUrl: string, languageCode: LangCode, c
     let currentSection: { title?: string; content: string[] } = { content: [] };
 
     $('#mw-content-text .mw-parser-output > *').each((_, element) => {
-      try {
-        const el = $(element);
+      const el = $(element);
 
-        if (el.is('h2, h3, h4')) {
-          if (currentSection.content.length) {
-            const totalLength = currentSection.content.join(' ').length;
-            if (totalLength >= 12) {
-              sections.push(currentSection);
-            }
-          }
-          currentSection = {
-            title: el.find('.mw-headline').text().trim().replace(/[\u200B-\u200D\uFEFF]/g, ''),
-            content: []
-          };
-        }
-        else if (el.is('p, ul, ol')) {
-          const text = el.text().trim();
-          if (text && !text.startsWith('[') &&
-              !text.startsWith('跳转') &&
-              !el.hasClass('quote') &&
-              !el.hasClass('treeview')) {
-
-            const cleanText = el.text()
-              .trim()
-              .replace(/[\u200B-\u200D\uFEFF]/g, '')
-              .replace(/\s+/g, ' ');
-
-            if (cleanText.length > 0) {
-              currentSection.content.push(cleanText);
-            }
+      if (el.is('h2, h3, h4')) {
+        if (currentSection.content.length) {
+          const totalLength = currentSection.content.join(' ').length;
+          if (totalLength >= 12) {
+            sections.push(currentSection);
           }
         }
-      } catch (parseError) {
-        console.error(`解析元素时出错: ${parseError.message}`);
+        currentSection = {
+          title: el.find('.mw-headline').text().trim().replace(/[\u200B-\u200D\uFEFF]/g, ''),
+          content: []
+        };
+      }
+      else if (el.is('p, ul, ol')) {
+        const text = el.text().trim();
+        if (text && !text.startsWith('[') &&
+            !text.startsWith('跳转') &&
+            !el.hasClass('quote') &&
+            !el.hasClass('treeview')) {
+
+          const cleanText = el.text()
+            .trim()
+            .replace(/[\u200B-\u200D\uFEFF]/g, '')
+            .replace(/\s+/g, ' ');
+
+          if (cleanText.length > 0) {
+            currentSection.content.push(cleanText);
+          }
+        }
       }
     });
 
@@ -165,10 +156,6 @@ export async function fetchContent(articleUrl: string, languageCode: LangCode, c
       url: cleanUrl
     };
   } catch (error) {
-    console.error(`获取Wiki内容失败: ${error.message}`, { articleUrl, languageCode });
-    if (error.response) {
-      console.error(`请求错误: ${error.response.status} - ${error.response.statusText}`);
-    }
     throw new Error(`获取Wiki内容失败: ${error.message}`);
   }
 }
@@ -189,12 +176,9 @@ export async function processWikiRequest(keyword: string, userId: string, config
 
   try {
     const lang = userLangs.get(userId) || config.search.Language;
-    console.log(`处理Wiki请求: 关键词="${keyword}", 语言=${lang}, 模式=${mode}`);
-
     const results = await searchWiki(keyword);
 
     if (!results || !results.length) {
-      console.log(`未找到结果: ${keyword}`);
       return `未找到与"${keyword}"相关的内容。`;
     }
 
@@ -220,19 +204,11 @@ export async function processWikiRequest(keyword: string, userId: string, config
     try {
       const { content, url } = await fetchContent(pageUrl, lang, config);
       return `${content}\n详细内容：${url}`;
-    } catch (contentError) {
-      console.error(`获取内容失败: ${contentError.message}`, { result });
-      return `在获取"${result.title}"的内容时发生错误，请稍后再试。`;
+    } catch (error) {
+      return `获取"${result.title}"的内容时发生错误: ${error.message}`;
     }
   } catch (error) {
-    console.error(`处理Wiki请求失败: ${error.message}`, { keyword, userId, mode });
-
-    if (error.response) {
-      console.error(`请求状态: ${error.response.status}`);
-      console.error(`响应数据: ${JSON.stringify(error.response.data).slice(0, 500)}`);
-    }
-
-    return `查询"${keyword}"时遇到问题: ${error.message}`;
+    return `查询"${keyword}"时发生错误: ${error.message}`;
   }
 }
 
