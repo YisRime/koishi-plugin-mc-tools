@@ -2,7 +2,7 @@ import { Context } from 'koishi'
 import * as cheerio from 'cheerio'
 import axios from 'axios'
 import { MinecraftToolsConfig, LangCode } from './index'
-import { searchWiki, search, capture } from './subwiki'
+import { searchWiki, search, capture } from './sub'
 
 /**
  * 构建 Wiki URL
@@ -76,7 +76,7 @@ export async function fetchContent(articleUrl: string, languageCode: LangCode, c
       },
       timeout: 10000,
       headers: {
-        'User-Agent': 'KoishiBot/1.0 (https://github.com/koishijs/koishi)'
+        'Accept-Language': `${languageCode},${languageCode}-*;q=0.9,en;q=0.8`,
       }
     });
 
@@ -140,19 +140,19 @@ export async function fetchContent(articleUrl: string, languageCode: LangCode, c
       .map((section, index) => {
         const sectionText = index === 0
           ? section.content.join(' ')
-          : section.content.join(' ').slice(0, config.search.sectionLength);
+          : section.content.join(' ').slice(0, config.specific.sectionLength);
         if (section.title) {
-          return `『${section.title}』${sectionText}${sectionText.length >= config.search.sectionLength && index > 0 ? '...' : ''}`;
+          return `『${section.title}』${sectionText}${sectionText.length >= config.specific.sectionLength && index > 0 ? '...' : ''}`;
         }
         return sectionText;
       })
       .join('\n')
-      .slice(0, config.wiki.totalLength);
+      .slice(0, config.common.totalLength);
 
     const cleanUrl = articleUrl.split('?')[0];
     return {
       title,
-      content: formattedContent.length >= config.wiki.totalLength ? formattedContent + '...' : formattedContent,
+      content: formattedContent.length >= config.common.totalLength ? formattedContent + '...' : formattedContent,
       url: cleanUrl
     };
   } catch (error) {
@@ -175,7 +175,7 @@ export async function processWikiRequest(keyword: string, userId: string, config
   keyword = keyword.trim().replace(/[\u200B-\u200D\uFEFF]/g, '');
 
   try {
-    const lang = userLangs.get(userId) || config.search.Language;
+    const lang = userLangs.get(userId) || config.specific.Language;
     const results = await searchWiki(keyword);
 
     if (!results || !results.length) {
@@ -244,7 +244,7 @@ export function registerWikiCommands(ctx: Context, parent: any, config: Minecraf
           session,
           config,
           ctx,
-          lang: userLangs.get(session.userId) || config.search.Language
+          lang: userLangs.get(session.userId) || config.specific.Language
         })
       } catch (error) {
         return error.message
@@ -266,7 +266,7 @@ export function registerWikiCommands(ctx: Context, parent: any, config: Minecraf
           ctx,
           {
             type: 'wiki',
-            lang: userLangs.get(session.userId) || config.search.Language
+            lang: userLangs.get(session.userId) || config.specific.Language
           },
           config
         )

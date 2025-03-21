@@ -107,7 +107,7 @@ async function notifyVersionUpdate(ctx: any, targets: string[], updateMessage: s
           await bot.sendMessage(parsed.id, updateMessage)
         }
       } catch (e) {
-        logger.warn(`通知发送失败（${parsed.type} ${parsed.id}）:`, e)
+        logger.warn(`通知发送失败|${parsed.type} ${parsed.id}:`, e)
       }
     }
   }

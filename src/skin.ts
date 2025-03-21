@@ -78,18 +78,6 @@ async function getPlayerProfile(username: string): Promise<PlayerProfile> {
     return profile;
 
   } catch (error) {
-    if (error.response?.status === 404) {
-      throw new Error('玩家信息不存在');
-    }
-    if (error.response?.status === 400) {
-      throw new Error('UUID 格式不正确');
-    }
-    if (error.response?.status === 204) {
-      throw new Error('UUID 未关联玩家信息');
-    }
-    if (error.response?.status === 429) {
-      throw new Error('请求频率超出限制');
-    }
     throw new Error(`玩家信息获取失败: ${error.response?.data?.error || error.message}`);
   }
 }
@@ -201,7 +189,7 @@ export function registerSkinCommands(ctx: Context, parent: any, config: Minecraf
           const skinImage = await renderPlayerSkin(ctx, profile.skin.url, profile.cape?.url);
           parts.push(h.image(`data:image/png;base64,${skinImage}`).toString());
 
-          if (config.info.showSkull) {
+          if (config.specific.showSkull) {
             parts.push(`使用 /give 获取 ${profile.name} ${profile.skin ? `(${profile.skin.model === 'slim' ? '纤细' : '经典'}) ` : ''}的头：(≤1.12 & ≥1.13)`);
             parts.push(`minecraft:skull 1 3 {SkullOwner:"${profile.name}"}`);
             parts.push(`minecraft:player_head{SkullOwner:"${profile.name}"}`);

@@ -1,11 +1,11 @@
 import { Context, Schema } from 'koishi'
 import {} from 'koishi-plugin-puppeteer'
-import { registerWikiCommands } from './mcwiki'
-import { registerModCommands } from './mcmod'
-import { registerVersionCommands } from './mcver'
-import { registerSkinCommands } from './mcskin'
-import { registerInfoCommands } from './mcinfo'
-import { registerRunCommands } from './mcrun'
+import { registerWikiCommands } from './wiki'
+import { registerModCommands } from './mod'
+import { registerVersionCommands } from './ver'
+import { registerSkinCommands } from './skin'
+import { registerInfoCommands } from './info'
+import { registerRunCommands } from './link'
 
 /**
  * Minecraft 工具箱插件
@@ -87,30 +87,26 @@ export interface CommonConfig {
   descLength: number
 }
 export interface MinecraftToolsConfig {
-  wiki: CommonConfig & {
+  common: CommonConfig & {
     maxHeight: number
     waitUntil: 'load' | 'domcontentloaded' | 'networkidle0' | 'networkidle2'
     captureTimeout: number
   }
-  search: {
+  specific: {
     Language: LangCode
     sectionLength: number
     linkCount: number
     cfApi: string
+    showSkull: boolean
     showImages: 'always' | 'noqq' | 'never'
   }
   info: {
     default: string
-    defaultRcon: string
     showIP: boolean
     showIcon: boolean
     maxNumberDisplay: number
     javaApis: string[]
     bedrockApis: string[]
-    showSkull: boolean
-    rconPassword: string
-    authorizedRunUsers: string[]
-    authorizedGroups: string[] // 新增授权群组ID列表
   }
   ver: {
     enabled: boolean
@@ -119,13 +115,19 @@ export interface MinecraftToolsConfig {
     release: boolean
     snapshot: boolean
   }
+  link: {
+    defaultRcon: string
+    rconPassword: string
+    authorizedRunUsers: string[]
+    authorizedGroups: string[]
+  }
 }
 
 /**
  * 插件配置模式
  */
 export const Config: Schema<MinecraftToolsConfig> = Schema.object({
-  wiki: Schema.object({
+  common: Schema.object({
     totalLength: Schema.number()
       .default(400)
       .description('总预览字数'),
@@ -147,73 +149,33 @@ export const Config: Schema<MinecraftToolsConfig> = Schema.object({
       'domcontentloaded',
       'networkidle0',
       'networkidle2'
-    ])
-      .default('domcontentloaded')
-      .description('截图完成等待条件')
-  }).description('通用查询配置'),
+    ]).default('domcontentloaded')
+      .description('截图等待条件')
+  }).description('查询配置'),
 
-  search: Schema.object({
-    Language: Schema.union(Object.keys(MINECRAFT_LANGUAGES) as LangCode[])
-      .default('zh')
-      .description('Wiki 显示语言'),
+  specific: Schema.object({
     sectionLength: Schema.number()
       .default(50)
       .description('Wiki 每段预览字数'),
     linkCount: Schema.number()
       .default(4)
       .description('MCMod 相关链接显示个数'),
-      showImages: Schema.union([
-        'always',
-        'noqq',
-        'never'
-      ]).default('noqq')
-        .description('MCMod 简介图片展示平台'),
+    Language: Schema.union(Object.keys(MINECRAFT_LANGUAGES) as LangCode[])
+      .default('zh')
+      .description('Wiki 显示语言'),
+    showImages: Schema.union([
+      'always',
+      'noqq',
+      'never'
+    ]).default('noqq')
+      .description('MCMod 简介图片展示平台'),
     cfApi: Schema.string()
       .role('secret')
-      .description('CurseForge API Key')
-  }).description('特定查询配置'),
-
-  info: Schema.object({
+      .description('CurseForge API Key'),
     showSkull: Schema.boolean()
       .default(true)
-      .description('显示如何获取玩家头颅'),
-    showIP: Schema.boolean()
-      .default(false)
-      .description('显示服务器地址'),
-    showIcon: Schema.boolean()
-      .default(true)
-      .description('显示服务器图标'),
-    maxNumberDisplay: Schema.number()
-      .default(8)
-      .description('列表最大显示个数'),
-    defaultRcon: Schema.string()
-      .default('localhost:25575')
-      .description('默认 RCON 地址'),
-    rconPassword: Schema.string()
-      .role('secret')
-      .description('RCON 密码'),
-    authorizedGroups: Schema.array(String)
-      .default([])
-      .description('允许使用 RCON 命令的群组 ID'),
-    authorizedRunUsers: Schema.array(String)
-      .default([])
-      .description('允许使用自定义 RCON 命令的用户 ID'),
-    default: Schema.string()
-      .default('hypixel.net')
-      .description('默认 INFO 地址'),
-    javaApis: Schema.array(String)
-      .default([
-        'https://api.mcstatus.io/v2/status/java/${address}',
-        'https://api.mcsrvstat.us/3/${address}'
-      ])
-      .description('Java 查询 API'),
-    bedrockApis: Schema.array(String)
-      .default([
-        'https://api.mcstatus.io/v2/status/bedrock/${address}',
-        'https://api.mcsrvstat.us/bedrock/3/${address}'
-      ])
-      .description('Bedrock 查询 API')
-  }).description('服务器配置'),
+      .description('显示如何获取玩家头颅')
+  }).description('特定配置'),
 
   ver: Schema.object({
     enabled: Schema.boolean()
@@ -234,7 +196,49 @@ export const Config: Schema<MinecraftToolsConfig> = Schema.object({
         'discord:group:987654321'
       ])
       .description('更新通知目标')
-  }).description('版本更新检测配置')
+  }).description('更新检测配置'),
+
+  info: Schema.object({
+    showIP: Schema.boolean()
+      .default(false)
+      .description('显示服务器地址'),
+    showIcon: Schema.boolean()
+      .default(true)
+      .description('显示服务器图标'),
+    maxNumberDisplay: Schema.number()
+      .default(8)
+      .description('列表最大显示个数'),
+    default: Schema.string()
+      .default('hypixel.net')
+      .description('默认 INFO 地址'),
+    javaApis: Schema.array(String)
+      .default([
+        'https://api.mcstatus.io/v2/status/java/${address}',
+        'https://api.mcsrvstat.us/3/${address}'
+      ])
+      .description('Java 查询 API'),
+    bedrockApis: Schema.array(String)
+      .default([
+        'https://api.mcstatus.io/v2/status/bedrock/${address}',
+        'https://api.mcsrvstat.us/bedrock/3/${address}'
+      ])
+      .description('Bedrock 查询 API')
+  }).description('服务器配置'),
+
+  link: Schema.object({
+    defaultRcon: Schema.string()
+      .default('localhost:25575')
+      .description('默认 RCON 地址'),
+    rconPassword: Schema.string()
+      .role('secret')
+      .description('RCON 密码'),
+    authorizedGroups: Schema.array(String)
+      .default([])
+      .description('允许使用 RCON 命令的群组 ID'),
+    authorizedRunUsers: Schema.array(String)
+      .default([])
+      .description('允许使用自定义 RCON 命令的用户 ID')
+  }).description('服务器配置'),
 })
 
 /**
@@ -246,8 +250,7 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
   const userLanguageSettings = new Map<string, LangCode>()
 
   // 创建 mc 主命令
-  const mcCommand = ctx.command('mc', 'Minecraft工具箱')
-    .usage('mc - Minecraft相关工具箱\nmc.wiki - Wiki搜索\nmc.mod - 模组搜索\nmc.ver - 版本信息\nmc.skin - 皮肤查询\nmc.info - 服务器信息\nmc.run - 服务器命令')
+  const mcCommand = ctx.command('mc', 'Minecraft 工具')
 
   // 注册各功能子命令
   registerWikiCommands(ctx, mcCommand, pluginConfig, userLanguageSettings)
@@ -255,7 +258,7 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
   registerVersionCommands(ctx, mcCommand, pluginConfig)
   registerSkinCommands(ctx, mcCommand, pluginConfig)
   registerInfoCommands(mcCommand, pluginConfig)
-  registerRunCommands(ctx, mcCommand, pluginConfig)
+  registerRunCommands(mcCommand, pluginConfig)
 }
 
 /**

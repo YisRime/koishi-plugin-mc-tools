@@ -2,8 +2,8 @@ import { h } from 'koishi'
 import axios from 'axios'
 import * as cheerio from 'cheerio'
 import { MinecraftToolsConfig, LangCode } from './index'
-import { buildUrl, fetchContent } from './mcwiki'
-import { fetchModContent, formatContent } from './mcmod'
+import { buildUrl, fetchContent } from './wiki'
+import { fetchModContent, formatContent } from './mod'
 
 export interface SearchResult {
   title: string
@@ -58,6 +58,11 @@ export async function capture(
       page.setJavaScriptEnabled(false)
     ])
 
+    // 设置统一的浏览器头信息
+    await page.setExtraHTTPHeaders({
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    })
+
     page.on('request', request => {
       const resourceType = request.resourceType()
       const url = request.url().toLowerCase()
@@ -88,8 +93,8 @@ export async function capture(
     while (retries > 0) {
       try {
         await page.goto(url, {
-          waitUntil: config.wiki.waitUntil,
-          timeout: config.wiki.captureTimeout * 1000
+          waitUntil: config.common.waitUntil,
+          timeout: config.common.captureTimeout * 1000
         })
         break
       } catch (err) {
@@ -144,7 +149,7 @@ export async function capture(
         width: 1080,
         height: maxHeight === 0 ? Math.ceil(rect.height) : Math.min(maxHeight, Math.ceil(rect.height))
       }
-    }, { type: options.type, url, maxHeight: config.wiki.maxHeight })
+    }, { type: options.type, url, maxHeight: config.common.maxHeight })
 
     await page.setViewport({
       width: clipData.width,
@@ -207,7 +212,7 @@ export async function search(params: {
     const message = formatSearchResults(results, source, config)
     await session.send(message)
 
-    const response = await session.prompt(config.wiki.Timeout * 1000)
+    const response = await session.prompt(config.common.Timeout * 1000)
     if (!response) return '等待超时，已取消操作'
 
     return await processSelection({ response, results, source, config, ctx, lang, session })
@@ -250,7 +255,7 @@ export async function searchMod(keyword: string, config: MinecraftToolsConfig): 
   try {
     const response = await axios.get(
       `https://search.mcmod.cn/s?key=${encodeURIComponent(keyword)}`,
-      { timeout: config.wiki.Timeout * 1000 }
+      {         timeout: config.common.Timeout * 1000       }
     );
     const $ = cheerio.load(response.data);
 
@@ -260,11 +265,11 @@ export async function searchMod(keyword: string, config: MinecraftToolsConfig): 
       const titleEl = $item.find('.head a').last()
       const title = titleEl.text().trim()
       const url = titleEl.attr('href') || ''
-      const desc = config.wiki.descLength > 0
+      const desc = config.common.descLength > 0
         ? $item.find('.body').text().trim().replace(/\[.*?\]/g, '').trim()
         : ''
-      const normalizedDesc = desc && desc.length > config.wiki.descLength
-        ? desc.slice(0, config.wiki.descLength) + '...'
+      const normalizedDesc = desc && desc.length > config.common.descLength
+        ? desc.slice(0, config.common.descLength) + '...'
         : desc
 
       const normalizedUrl = url.startsWith('http') ? url : `https://www.mcmod.cn${url}`
@@ -298,7 +303,7 @@ export function formatSearchResults(
 ): string {
   const items = results.map((r, i) => {
     const base = `${i + 1}. ${r.title}`
-    const desc = source === 'mcmod' && config.wiki.descLength > 0 && r.desc
+    const desc = source === 'mcmod' && config.common.descLength > 0 && r.desc
       ? `\n    ${r.desc}` : ''
     return `${base}${desc}`
   })
@@ -404,10 +409,10 @@ async function fetchwikiContent(
     return `『${title}』${content}\n详细内容：${displayUrl}`
   }
 
-  const content = await fetchModContent(result.url, config.wiki)
+  const content = await fetchModContent(result.url, config.common)
   return formatContent(content, result.url, {
-    linkCount: config.search.linkCount,
-    showImages: config.search.showImages,
+    linkCount: config.specific.linkCount,
+    showImages: config.specific.showImages,
     platform: session?.platform
   }) || `内容获取失败，请访问：${result.url}`
 }

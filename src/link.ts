@@ -1,4 +1,4 @@
-import { Context, Session } from 'koishi'
+import { Session } from 'koishi'
 import { Rcon } from 'rcon-client'
 import { MinecraftToolsConfig } from './index'
 
@@ -28,9 +28,9 @@ export async function executeRconCommand(
   session?: Session
 ): Promise<void> {
   if (!command) return autoRecall('请输入要执行的命令', session)
-  if (!config.info.rconPassword) return autoRecall('请先配置RCON密码', session)
+  if (!config.link.rconPassword) return autoRecall('请先配置RCON密码', session)
 
-  const [serverHost, portStr] = (config.info.defaultRcon || '').split(':')
+  const [serverHost, portStr] = (config.link.defaultRcon || '').split(':')
   const port = portStr ? parseInt(portStr) : 25575
 
   if (!serverHost) return autoRecall('请先配置RCON地址', session)
@@ -38,7 +38,7 @@ export async function executeRconCommand(
 
   try {
     const rcon = await Rcon.connect({
-      host: serverHost, port, password: config.info.rconPassword
+      host: serverHost, port, password: config.link.rconPassword
     })
 
     const result = await rcon.send(command)
@@ -54,14 +54,14 @@ export async function executeRconCommand(
 /**
  * 注册命令
  */
-export function registerRunCommands(ctx: Context, parent: any, config: MinecraftToolsConfig) {
+export function registerRunCommands(parent: any, config: MinecraftToolsConfig) {
   // 主命令
   const mcrun = parent.subcommand('.run <message:text>', '执行 Minecraft 命令')
     .usage('mc.run <消息> - 发送消息到 Minecraft 服务器')
     .before(({ session }) => {
       // 检查群组权限
-      if (config.info.authorizedGroups?.length > 0 &&
-          !(session?.guildId && config.info.authorizedGroups.includes(session.guildId))) {
+      if (config.link.authorizedGroups?.length > 0 &&
+          !(session?.guildId && config.link.authorizedGroups.includes(session.guildId))) {
         return autoRecall('此群组没有权限执行命令', session)
       }
     })
@@ -123,7 +123,7 @@ export function registerRunCommands(ctx: Context, parent: any, config: Minecraft
     .usage('mc.run.cmd <命令> - 执行自定义 Minecraft 命令')
     .action(({ session }, ...args) => {
       // 用户权限检查
-      if (!config.info.authorizedRunUsers.includes(session?.userId))
+      if (!config.link.authorizedRunUsers.includes(session?.userId))
         return autoRecall('你没有权限执行自定义命令', session)
       return args.length ? executeRconCommand(args.join(' '), config, session) :
                            autoRecall('请输入要执行的命令', session)

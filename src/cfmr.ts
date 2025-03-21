@@ -419,26 +419,25 @@ export function registerModPlatformCommands(mcmod: any, config: MinecraftToolsCo
       if (!keyword) return '请输入要搜索的关键词'
 
       try {
-        const results = await searchMods(keyword, 'modrinth', config.wiki, undefined, type)
+        const results = await searchMods(keyword, 'modrinth', config.common, undefined, type)
         if (!results.length) return '未找到相关内容'
-        return await getModDetails(results[0], config.wiki, config.search.cfApi)
+        return await getModDetails(results[0], config.common, config.specific.cfApi)
       } catch (error) {
         return error.message
       }
     })
-
-  mcmod.subcommand('.findmr <keyword> [type]', '搜索 Modrinth')
+    .subcommand('.find <keyword> [type]', '搜索 Modrinth')
     .usage('mc.mod.findmr <关键词> [类型] - 搜索 Modrinth 项目\n可用类型：mod(模组), resourcepack(资源包), datapack(数据包), shader(光影), modpack(整合包), plugin(插件)')
     .action(async ({ session }, keyword, type) => {
       if (!keyword) return '请输入要搜索的关键词'
 
       try {
-        const results = await searchMods(keyword, 'modrinth', config.wiki, undefined, type)
+        const results = await searchMods(keyword, 'modrinth', config.common, undefined, type)
         if (!results.length) return '未找到相关项目'
 
-        await session.send('Modrinth 搜索结果：\n' + formatSearchResults(results, config.wiki) + '\n请回复序号查看详细内容')
+        await session.send('Modrinth 搜索结果：\n' + formatSearchResults(results, config.common) + '\n请回复序号查看详细内容')
 
-        const response = await session.prompt(config.wiki.Timeout * 1000)
+        const response = await session.prompt(config.common.Timeout * 1000)
         if (!response) return '操作超时'
 
         const index = parseInt(response) - 1
@@ -446,7 +445,7 @@ export function registerModPlatformCommands(mcmod: any, config: MinecraftToolsCo
           return '请输入有效的序号'
         }
 
-        return await getModDetails(results[index], config.wiki, config.search.cfApi)
+        return await getModDetails(results[index], config.common, config.specific.cfApi)
       } catch (error) {
         return error.message
       }
@@ -458,26 +457,25 @@ export function registerModPlatformCommands(mcmod: any, config: MinecraftToolsCo
       if (!keyword) return '请输入要搜索的关键词'
 
       try {
-        const results = await searchMods(keyword, 'curseforge', config.wiki, config.search.cfApi, type)
+        const results = await searchMods(keyword, 'curseforge', config.common, config.specific.cfApi, type)
         if (!results.length) return '未找到相关内容'
-        return await getModDetails(results[0], config.wiki, config.search.cfApi)
+        return await getModDetails(results[0], config.common, config.specific.cfApi)
       } catch (error) {
         return error.message
       }
     })
-
-  mcmod.subcommand('.findcf <keyword> [type]', '搜索 CurseForge')
+    .subcommand('.find <keyword> [type]', '搜索 CurseForge')
     .usage('mc.mod.findcf <关键词> [类型] - 搜索 CurseForge 项目\n可用类型：mod(模组), resourcepack(资源包), modpack(整合包), shader(光影), datapack(数据包), world(地图), addon(附加包), plugin(插件)')
     .action(async ({ session }, keyword, type) => {
       if (!keyword) return '请输入要搜索的关键词'
 
       try {
-        const results = await searchMods(keyword, 'curseforge', config.wiki, config.search.cfApi, type)
+        const results = await searchMods(keyword, 'curseforge', config.common, config.specific.cfApi, type)
         if (!results.length) return '未找到相关项目'
 
-        await session.send('CurseForge 搜索结果：\n' + formatSearchResults(results, config.wiki) + '\n请回复序号查看详细内容')
+        await session.send('CurseForge 搜索结果：\n' + formatSearchResults(results, config.common) + '\n请回复序号查看详细内容')
 
-        const response = await session.prompt(config.wiki.Timeout * 1000)
+        const response = await session.prompt(config.common.Timeout * 1000)
         if (!response) return '操作超时'
 
         const index = parseInt(response) - 1
@@ -485,7 +483,7 @@ export function registerModPlatformCommands(mcmod: any, config: MinecraftToolsCo
           return '请输入有效的序号'
         }
 
-        return await getModDetails(results[index], config.wiki, config.search.cfApi)
+        return await getModDetails(results[index], config.common, config.specific.cfApi)
       } catch (error) {
         return error.message
       }

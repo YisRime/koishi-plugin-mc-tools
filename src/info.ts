@@ -1,4 +1,4 @@
-import { Context, h } from 'koishi'
+import { h } from 'koishi'
 import axios from 'axios'
 import { MinecraftToolsConfig } from './index'
 

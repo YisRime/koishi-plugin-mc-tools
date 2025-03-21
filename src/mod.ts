@@ -3,7 +3,7 @@ import axios from 'axios'
 import * as cheerio from 'cheerio'
 import { CommonConfig, MinecraftToolsConfig } from './index'
 import { registerModPlatformCommands } from './cfmr'
-import { searchMod, search, capture } from './subwiki'
+import { searchMod, search, capture } from './sub'
 
 /**
  * 处理结果接口
@@ -499,10 +499,10 @@ export function registerModCommands(ctx: Context, parent: any, config: Minecraft
         if (!results.length) return '未找到相关内容'
 
         const result = results[0]
-        const content = await fetchModContent(result.url, config.wiki)
+        const content = await fetchModContent(result.url, config.common)
         return formatContent(content, result.url, {
-          linkCount: config.search.linkCount,
-          showImages: config.search.showImages,
+          linkCount: config.specific.linkCount,
+          showImages: config.specific.showImages,
           platform: session.platform
         })
       } catch (error) {
