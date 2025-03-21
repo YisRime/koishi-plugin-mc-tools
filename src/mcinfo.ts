@@ -347,11 +347,12 @@ export function formatServerStatus(status: ServerStatus, config: MinecraftToolsC
 /**
  * 注册 Minecraft 服务器信息查询命令
  * @param {Context} ctx - Koishi 上下文
+ * @param {Command} parent - 父命令
  * @param {MinecraftToolsConfig} config - 插件配置
  */
-export function registerInfoCommands(ctx: Context, config: MinecraftToolsConfig) {
-  const mcinfo = ctx.command('mcinfo [server]', '查询 Minecraft 服务器信息')
-    .usage(`mcinfo [地址[:端口]] - 查询 Java 版服务器\nmcinfo.be [地址[:端口]] - 查询 Bedrock 版服务器`)
+export function registerInfoCommands(parent: any, config: MinecraftToolsConfig) {
+  const mcinfo = parent.subcommand('.info [server]', '查询 Minecraft 服务器信息')
+    .usage(`mc.info [地址[:端口]] - 查询 Java 版服务器\nmc.info.be [地址[:端口]] - 查询 Bedrock 版服务器`)
     .action(async ({ }, server) => {
       try {
         const status = await checkServerStatus(server || config.info.default, 'java', config)
@@ -362,7 +363,7 @@ export function registerInfoCommands(ctx: Context, config: MinecraftToolsConfig)
     })
 
   mcinfo.subcommand('.be [server]', '查询 Bedrock 版服务器')
-    .usage('mcinfo.be [地址[:端口]] - 查询 Bedrock 版服务器状态')
+    .usage('mc.info.be [地址[:端口]] - 查询 Bedrock 版服务器状态')
     .action(async ({ }, server) => {
       try {
         const status = await checkServerStatus(server || config.info.default, 'bedrock', config)
@@ -371,6 +372,4 @@ export function registerInfoCommands(ctx: Context, config: MinecraftToolsConfig)
         return error.message
       }
     })
-
-  return mcinfo
 }

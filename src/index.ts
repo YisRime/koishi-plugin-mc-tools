@@ -2,7 +2,6 @@ import { Context, Schema } from 'koishi'
 import {} from 'koishi-plugin-puppeteer'
 import { registerWikiCommands } from './mcwiki'
 import { registerModCommands } from './mcmod'
-import { registerModPlatformCommands } from './cfmr'
 import { registerVersionCommands } from './mcver'
 import { registerSkinCommands } from './mcskin'
 import { registerInfoCommands } from './mcinfo'
@@ -246,20 +245,17 @@ export const Config: Schema<MinecraftToolsConfig> = Schema.object({
 export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
   const userLanguageSettings = new Map<string, LangCode>()
 
-  // 注册 Wiki 命令
-  registerWikiCommands(ctx, pluginConfig, userLanguageSettings)
-  // 注册 MCMOD 基础命令
-  const mcmod = registerModCommands(ctx, pluginConfig)
-  // 注册 Modrinth 和 CurseForge 命令
-  registerModPlatformCommands(mcmod, pluginConfig)
-  // 注册版本相关命令并保存定时器引用
-  versionCheckTimer = registerVersionCommands(ctx, pluginConfig)
-  // 注册皮肤查询命令
-  registerSkinCommands(ctx, pluginConfig)
-  // 注册服务器信息查询命令
-  registerInfoCommands(ctx, pluginConfig)
-  // 注册RCON命令
-  registerRunCommands(ctx, pluginConfig)
+  // 创建 mc 主命令
+  const mcCommand = ctx.command('mc', 'Minecraft工具箱')
+    .usage('mc - Minecraft相关工具箱\nmc.wiki - Wiki搜索\nmc.mod - 模组搜索\nmc.ver - 版本信息\nmc.skin - 皮肤查询\nmc.info - 服务器信息\nmc.run - 服务器命令')
+
+  // 注册各功能子命令
+  registerWikiCommands(ctx, mcCommand, pluginConfig, userLanguageSettings)
+  registerModCommands(ctx, mcCommand, pluginConfig)
+  registerVersionCommands(ctx, mcCommand, pluginConfig)
+  registerSkinCommands(ctx, mcCommand, pluginConfig)
+  registerInfoCommands(mcCommand, pluginConfig)
+  registerRunCommands(ctx, mcCommand, pluginConfig)
 }
 
 /**

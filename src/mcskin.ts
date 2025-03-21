@@ -182,11 +182,12 @@ import { MinecraftToolsConfig } from './index'
 /**
  * 注册 Minecraft 皮肤查询命令
  * @param {Context} ctx - Koishi 上下文
+ * @param {Command} parent - 父命令
  * @param {MinecraftToolsConfig} config - Minecraft 工具配置
  */
-export function registerSkinCommands(ctx: Context, config: MinecraftToolsConfig) {
-  ctx.command('mcskin <username>', '查询 Minecraft 玩家信息')
-    .usage('mcskin <用户名> - 获取玩家信息并生成皮肤及披风预览')
+export function registerSkinCommands(ctx: Context, parent: any, config: MinecraftToolsConfig) {
+  parent.subcommand('.skin <username>', '查询 Minecraft 玩家信息')
+    .usage('mc.skin <用户名> - 获取玩家信息并生成皮肤及披风预览')
     .action(async ({ }, username) => {
       if (!username) return '请输入玩家用户名'
 

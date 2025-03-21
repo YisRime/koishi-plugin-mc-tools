@@ -54,10 +54,10 @@ export async function executeRconCommand(
 /**
  * 注册命令
  */
-export function registerRunCommands(ctx: Context, config: MinecraftToolsConfig) {
+export function registerRunCommands(ctx: Context, parent: any, config: MinecraftToolsConfig) {
   // 主命令
-  const mcrun = ctx.command('mcrun <message:text>', '执行 Minecraft 命令')
-    .usage('mcrun <消息> - 发送消息到 Minecraft 服务器')
+  const mcrun = parent.subcommand('.run <message:text>', '执行 Minecraft 命令')
+    .usage('mc.run <消息> - 发送消息到 Minecraft 服务器')
     .before(({ session }) => {
       // 检查群组权限
       if (config.info.authorizedGroups?.length > 0 &&
@@ -77,7 +77,7 @@ export function registerRunCommands(ctx: Context, config: MinecraftToolsConfig) 
     .option('r', '-r 移除玩家')
     .option('on', '--on 开启白名单')
     .option('off', '--off 关闭白名单')
-    .usage('mcrun.wl - 查看白名单\nmcrun.wl <玩家名> - 添加玩家到白名单\nmcrun.wl -r <玩家名> - 从白名单移除玩家\nmcrun.wl --on/off - 开启/关闭白名单')
+    .usage('mc.run.wl - 查看白名单\nmc.run.wl <玩家名> - 添加玩家到白名单\nmc.run.wl -r <玩家名> - 从白名单移除玩家\nmc.run.wl --on/off - 开启/关闭白名单')
     .action(({ options, session }, player) => {
       let cmd;
 
@@ -96,14 +96,14 @@ export function registerRunCommands(ctx: Context, config: MinecraftToolsConfig) 
   // OP管理
   mcrun.subcommand('.op <player:string>', '管理管理员', { authority: 3 })
     .option('r', '-r 移除权限')
-    .usage('mcrun.op <玩家名> - 添加管理员权限\nmcrun.op -r <玩家名> - 移除管理员权限')
+    .usage('mc.run.op <玩家名> - 添加管理员权限\nmc.run.op -r <玩家名> - 移除管理员权限')
     .action(({ options, session }, player) =>
       player ? executeRconCommand(options.r ? `deop ${player}` : `op ${player}`, config, session) :
                autoRecall('请输入玩家名', session))
 
   // 踢出玩家
   mcrun.subcommand('.kick <player:string> [reason:text]', '踢出玩家', { authority: 2 })
-    .usage('mcrun.kick <玩家名> [理由] - 将玩家踢出服务器')
+    .usage('mc.run.kick <玩家名> [理由] - 将玩家踢出服务器')
     .action(({ session }, player, reason) =>
       player ? executeRconCommand(`kick ${player}${reason ? ` ${reason}` : ''}`, config, session) :
                autoRecall('请输入玩家名', session))
@@ -111,7 +111,7 @@ export function registerRunCommands(ctx: Context, config: MinecraftToolsConfig) 
   // 封禁玩家
   mcrun.subcommand('.ban <player:string> [reason:text]', '封禁玩家', { authority: 3 })
     .option('ip', '--ip 封禁IP')
-    .usage('mcrun.ban <玩家名> [理由] - 封禁玩家\nmcrun.ban --ip <IP地址> [理由] - 封禁IP地址')
+    .usage('mc.run.ban <玩家名> [理由] - 封禁玩家\nmc.run.ban --ip <IP地址> [理由] - 封禁IP地址')
     .action(({ options, session }, player, reason) => {
       if (!player) return autoRecall('请输入玩家名或IP地址', session)
       const cmd = `${options.ip ? 'ban-ip' : 'ban'} ${player}${reason ? ` ${reason}` : ''}`
@@ -119,8 +119,8 @@ export function registerRunCommands(ctx: Context, config: MinecraftToolsConfig) 
     })
 
   // 自定义命令
-  mcrun.subcommand('.run [...args]', '执行自定义命令')
-    .usage('mcrun.run <命令> - 执行自定义 Minecraft 命令')
+  mcrun.subcommand('.cmd [...args]', '执行自定义命令')
+    .usage('mc.run.cmd <命令> - 执行自定义 Minecraft 命令')
     .action(({ session }, ...args) => {
       // 用户权限检查
       if (!config.info.authorizedRunUsers.includes(session?.userId))

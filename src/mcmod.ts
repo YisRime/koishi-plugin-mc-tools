@@ -2,6 +2,7 @@ import { Context, h } from 'koishi'
 import axios from 'axios'
 import * as cheerio from 'cheerio'
 import { CommonConfig, MinecraftToolsConfig } from './index'
+import { registerModPlatformCommands } from './cfmr'
 import { searchMod, search, capture } from './subwiki'
 
 /**
@@ -484,11 +485,12 @@ export async function fetchModContent(url: string, config: CommonConfig): Promis
 /**
  * 注册 MCMOD 相关命令
  * @param {Context} ctx - Koishi 上下文
+ * @param {Command} parent - 父命令
  * @param {MinecraftToolsConfig} config - 插件配置
  */
-export function registerModCommands(ctx: Context, config: MinecraftToolsConfig) {
-  const mcmod = ctx.command('mcmod <keyword:text>', '查询 Minecraft 相关资源')
-    .usage('mcmod <关键词> - 查询 MCMod\nmcmod.find <关键词> - 搜索 MCMod\nmcmod.shot <关键词> - 截图 MCMod 页面\nmcmod.(find)mr <关键词> [类型] - 搜索 Modrinth\nmcmod.(find)cf <关键词> [类型] - 搜索 CurseForge')
+export function registerModCommands(ctx: Context, parent: any, config: MinecraftToolsConfig) {
+  const mcmod = parent.subcommand('.mod <keyword:text>', '查询 Minecraft 相关资源')
+    .usage('mc.mod <关键词> - 查询 MCMod\nmc.mod.find <关键词> - 搜索 MCMod\nmc.mod.shot <关键词> - 截图 MCMod 页面\nmc.mod.(find)mr <关键词> [类型] - 搜索 Modrinth\nmc.mod.(find)cf <关键词> [类型] - 搜索 CurseForge')
     .action(async ({ session }, keyword) => {
       if (!keyword) return '请输入要查询的关键词'
 
@@ -509,7 +511,7 @@ export function registerModCommands(ctx: Context, config: MinecraftToolsConfig) 
     })
 
   mcmod.subcommand('.find <keyword:text>', '搜索 MCMod')
-    .usage('mcmod.find <关键词> - 搜索 MCMOD 页面')
+    .usage('mc.mod.find <关键词> - 搜索 MCMOD 页面')
     .action(async ({ session }, keyword) => {
       return await search({
         keyword,
@@ -521,7 +523,7 @@ export function registerModCommands(ctx: Context, config: MinecraftToolsConfig) 
     })
 
   mcmod.subcommand('.shot <keyword:text>', '截图 MCMod 页面')
-    .usage('mcmod.shot <关键词> - 搜索并获取指定页面截图')
+    .usage('mc.mod.shot <关键词> - 搜索并获取指定页面截图')
     .action(async ({ session }, keyword) => {
       if (!keyword) return '请输入要查询的关键词'
 
@@ -542,6 +544,5 @@ export function registerModCommands(ctx: Context, config: MinecraftToolsConfig) 
         return error.message
       }
     })
-
-  return mcmod
+  registerModPlatformCommands(mcmod, config)
 }

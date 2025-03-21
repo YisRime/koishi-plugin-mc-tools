@@ -414,7 +414,7 @@ function formatSearchResults(results: SearchModResult[], config: CommonConfig): 
  */
 export function registerModPlatformCommands(mcmod: any, config: MinecraftToolsConfig) {
   mcmod.subcommand('.mr <keyword> [type]', '查询 Modrinth')
-    .usage('mcmod.mr <关键词> [类型] - 查询 Modrinth 内容\n可用类型：mod(模组), resourcepack(资源包), datapack(数据包), shader(光影), modpack(整合包), plugin(插件)')
+    .usage('mc.mod.mr <关键词> [类型] - 查询 Modrinth 内容\n可用类型：mod(模组), resourcepack(资源包), datapack(数据包), shader(光影), modpack(整合包), plugin(插件)')
     .action(async ({ }, keyword, type) => {
       if (!keyword) return '请输入要搜索的关键词'
 
@@ -428,7 +428,7 @@ export function registerModPlatformCommands(mcmod: any, config: MinecraftToolsCo
     })
 
   mcmod.subcommand('.findmr <keyword> [type]', '搜索 Modrinth')
-    .usage('mcmod.findmr <关键词> [类型] - 搜索 Modrinth 项目\n可用类型：mod(模组), resourcepack(资源包), datapack(数据包), shader(光影), modpack(整合包), plugin(插件)')
+    .usage('mc.mod.findmr <关键词> [类型] - 搜索 Modrinth 项目\n可用类型：mod(模组), resourcepack(资源包), datapack(数据包), shader(光影), modpack(整合包), plugin(插件)')
     .action(async ({ session }, keyword, type) => {
       if (!keyword) return '请输入要搜索的关键词'
 
@@ -453,7 +453,7 @@ export function registerModPlatformCommands(mcmod: any, config: MinecraftToolsCo
     })
 
   mcmod.subcommand('.cf <keyword> [type]', '查询 CurseForge')
-    .usage('mcmod.cf <关键词> [类型] - 查询 CurseForge 内容\n可用类型：mod(模组), resourcepack(资源包), modpack(整合包), shader(光影), datapack(数据包), world(地图), addon(附加包), plugin(插件)')
+    .usage('mc.mod.cf <关键词> [类型] - 查询 CurseForge 内容\n可用类型：mod(模组), resourcepack(资源包), modpack(整合包), shader(光影), datapack(数据包), world(地图), addon(附加包), plugin(插件)')
     .action(async ({ }, keyword, type) => {
       if (!keyword) return '请输入要搜索的关键词'
 
@@ -467,7 +467,7 @@ export function registerModPlatformCommands(mcmod: any, config: MinecraftToolsCo
     })
 
   mcmod.subcommand('.findcf <keyword> [type]', '搜索 CurseForge')
-    .usage('mcmod.findcf <关键词> [类型] - 搜索 CurseForge 项目\n可用类型：mod(模组), resourcepack(资源包), modpack(整合包), shader(光影), datapack(数据包), world(地图), addon(附加包), plugin(插件)')
+    .usage('mc.mod.findcf <关键词> [类型] - 搜索 CurseForge 项目\n可用类型：mod(模组), resourcepack(资源包), modpack(整合包), shader(光影), datapack(数据包), world(地图), addon(附加包), plugin(插件)')
     .action(async ({ session }, keyword, type) => {
       if (!keyword) return '请输入要搜索的关键词'
 

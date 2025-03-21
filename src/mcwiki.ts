@@ -215,12 +215,13 @@ export async function processWikiRequest(keyword: string, userId: string, config
 /**
  * 注册 Minecraft Wiki 相关命令
  * @param {Context} ctx - Koishi 上下文
+ * @param {Command} parent - 父命令
  * @param {MinecraftToolsConfig} config - 插件配置
  * @param {Map<string, LangCode>} userLangs - 用户语言设置
  */
-export function registerWikiCommands(ctx: Context, config: MinecraftToolsConfig, userLangs: Map<string, LangCode>) {
-  const mcwiki = ctx.command('mcwiki <keyword:text>', '查询 Minecraft Wiki')
-    .usage('mcwiki <关键词> - 查询 Wiki\nmcwiki.find <关键词> - 搜索 Wiki\nmcwiki.shot <关键词> - 截图 Wiki 页面')
+export function registerWikiCommands(ctx: Context, parent: any, config: MinecraftToolsConfig, userLangs: Map<string, LangCode>) {
+  const mcwiki = parent.subcommand('.wiki <keyword:text>', '查询 Minecraft Wiki')
+    .usage('mc.wiki <关键词> - 查询 Wiki\nmc.wiki.find <关键词> - 搜索 Wiki\nmc.wiki.shot <关键词> - 截图 Wiki 页面')
     .action(async ({ session }, keyword) => {
       try {
         const result = await processWikiRequest(keyword, session.userId, config, userLangs)
@@ -231,7 +232,7 @@ export function registerWikiCommands(ctx: Context, config: MinecraftToolsConfig,
     })
 
   mcwiki.subcommand('.find <keyword:text>', '搜索 Wiki')
-    .usage('mcwiki.find <关键词> - 搜索 Wiki 页面')
+    .usage('mc.wiki.find <关键词> - 搜索 Wiki 页面')
     .action(async ({ session }, keyword) => {
       try {
         const result = await processWikiRequest(keyword, session.userId, config, userLangs, 'search') as any
@@ -251,7 +252,7 @@ export function registerWikiCommands(ctx: Context, config: MinecraftToolsConfig,
     })
 
   mcwiki.subcommand('.shot <keyword:text>', '截图 Wiki 页面')
-    .usage('mcwiki.shot <关键词> - 搜索并获取指定页面截图')
+    .usage('mc.wiki.shot <关键词> - 搜索并获取指定页面截图')
     .action(async ({ session }, keyword) => {
       if (!keyword) return '请输入要查询的关键词'
 
