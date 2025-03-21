@@ -60,8 +60,8 @@ export function registerRunCommands(parent: any, config: MinecraftToolsConfig) {
     .usage('mc.run <消息> - 发送消息到 Minecraft 服务器')
     .before(({ session }) => {
       // 检查群组权限
-      if (config.link.authorizedGroups?.length > 0 &&
-          !(session?.guildId && config.link.authorizedGroups.includes(session.guildId))) {
+      if (!(config.link.groups?.length && session?.channelId &&
+          config.link.groups.some(channel => channel === `${session.platform}:${session.channelId}`))) {
         return autoRecall('此群组没有权限执行命令', session)
       }
     })
@@ -123,7 +123,7 @@ export function registerRunCommands(parent: any, config: MinecraftToolsConfig) {
     .usage('mc.run.cmd <命令> - 执行自定义 Minecraft 命令')
     .action(({ session }, ...args) => {
       // 用户权限检查
-      if (!config.link.authorizedRunUsers.includes(session?.userId))
+      if (!config.link.sudoUsers.includes(session?.userId))
         return autoRecall('你没有权限执行自定义命令', session)
       return args.length ? executeRconCommand(args.join(' '), config, session) :
                            autoRecall('请输入要执行的命令', session)

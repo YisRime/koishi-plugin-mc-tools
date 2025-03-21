@@ -2,7 +2,7 @@
 
 [![npm](https://img.shields.io/npm/v/koishi-plugin-mc-tools?style=flat-square)](https://www.npmjs.com/package/koishi-plugin-mc-tools)
 
-我的世界（Minecraft/MC）工具。支持1.查询&截图MCWiki/MCMod/CurseForge/Modrinth内容。2.查询服务器&运行RCON命令。3.查询&推送最新版本4.查询渲染玩家皮肤
+我的世界（Minecraft/MC）工具。支持查询MCWiki/MCMod/CurseForge/Modrinth、服务器信息、最新版本和玩家皮肤；推送MC更新通知，运行命令等
 
 ## 功能特性
 
