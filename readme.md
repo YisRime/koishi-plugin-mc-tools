@@ -18,96 +18,123 @@
 
 ### Wiki 相关命令
 
-- `mcwiki <关键词>` - 查询 Minecraft Wiki
-- `mcwiki.find <关键词>` - 搜索 Wiki 页面
-- `mcwiki.shot <关键词>` - 截图 Wiki 页面
+- `mc.wiki <关键词>` - 查询 Minecraft Wiki
+- `mc.wiki.find <关键词>` - 搜索 Wiki 页面
+- `mc.wiki.shot <关键词>` - 截图 Wiki 页面
 
 ### 模组相关命令
 
-- `mcmod <关键词>` - 查询 MCMod
-- `mcmod.find <关键词>` - 搜索 MCMod
-- `mcmod.shot <关键词>` - 截图 MCMod 页面
-- `mcmod.mr <关键词> [类型]` - 查询 Modrinth
-- `mcmod.findmr <关键词> [类型]` - 搜索 Modrinth
-- `mcmod.cf <关键词> [类型]` - 查询 CurseForge
-- `mcmod.findcf <关键词> [类型]` - 搜索 CurseForge
+- `mc.mod <关键词>` - 查询 MCMod
+- `mc.mod.find <关键词>` - 搜索 MCMod
+- `mc.mod.shot <关键词>` - 截图 MCMod 页面
+- `mc.mod.mr <关键词> [类型]` - 查询 Modrinth
+- `mc.mod.mr.find <关键词> [类型]` - 搜索 Modrinth
+- `mc.mod.cf <关键词> [类型]` - 查询 CurseForge
+- `mc.mod.cf.find <关键词> [类型]` - 搜索 CurseForge
+
+### 服务器信息查询
+
+- `mc.info [server]` - 查询 Java 版服务器信息
+- `mc.info.be [server]` - 查询 Bedrock 版服务器信息
 
 ### 服务器管理命令
 
-- `mcinfo [server]` - 查询 Java 版服务器信息
-- `mcinfo.be [server]` - 查询 Bedrock 版服务器信息
-- `mcrun <message:text>` - 在服务器发送消息
-- `mcrun.wl [player:string]` - 管理服务器白名单
+- `mc.server` - 查看 Minecraft 服务器状态
+- `mc.server.say <message>` - 发送消息到服务器
+- `mc.server.tell <player> <message>` - 向指定玩家发送私聊消息
+- `mc.server.title <title> [subtitle]` - 发送标题消息
+  - `-i <seconds>` - 淡入时间(秒)
+  - `-s <seconds>` - 停留时间(秒)
+  - `-o <seconds>` - 淡出时间(秒)
+- `mc.server.actionbar <message>` - 发送动作栏消息
+- `mc.server.player` - 获取服务器在线玩家信息
+- `mc.server.broadcast <message>` - 广播消息
+- `mc.server.kick <player> [reason]` - 踢出玩家
+- `mc.server.op <player>` - 管理管理员
+  - `-r` - 移除玩家管理员权限
+- `mc.server.status` - 查看服务器状态
+- `mc.server.wl [player]` - 管理白名单
   - `-r` - 从白名单中移除玩家
   - `--on/--off` - 开启/关闭服务器白名单
-- `mcrun.op <player:string>` - 管理服务器管理员
-  - `-r` - 移除玩家管理员权限
-- `mcrun.kick <player:string> [reason:text]` - 踢出指定玩家
-- `mcrun.ban <player:string> [reason:text]` - 封禁指定玩家
-  - `--ip` - 封禁IP地址
-- `mcrun.run [...args]` - 执行服务器自定义命令
-  - 可通过配置中的授权用户列表或权限等级来限制使用
+- `mc.server.run <command>` - 执行自定义命令
+
+所有服务器命令均支持 `-s <name>` 选项指定服务器。
 
 ### 其他功能
 
-- `mcver` - 查询 Minecraft 最新版本信息
-- `mcskin <用户名>` - 查询玩家信息与皮肤
+- `mc.ver` - 查询 Minecraft 最新版本信息
+- `mc.skin <用户名>` - 查询玩家信息与皮肤
 
 ## 配置说明
 
-### 通用设置
+### 通用配置
 
 ```yaml
-wiki:
-  totalLength: 400      # 总预览字数
-  descLength: 20       # 搜索内容描述字数
-  Timeout: 15         # 搜索超时时间（秒）
-  captureTimeout: 3   # 截图超时时间（秒）
-  maxHeight: 4096    # 截图最大高度（像素），0表示无限制
+common:
+  totalLength: 400       # 总预览字数
+  descLength: 20         # 搜索列表描述字数
+  Timeout: 15            # 搜索超时时间（秒）
+  captureTimeout: 3      # 截图超时时间（秒）
+  maxHeight: 4096        # 截图最大高度（像素）
   waitUntil: 'domcontentloaded'  # 截图等待条件
 ```
 
-### 查询设置
+### 特定功能配置
 
 ```yaml
-search:
-  Language: 'zh'      # Wiki 显示语言，支持多语言切换
-  sectionLength: 50   # Wiki 每段预览字数
-  linkCount: 4       # MCMod 相关链接最大显示数
-  showImages: 'noqq'  # MCMod 简介图片展示方式: always(总是), noqq(非QQ平台), never(禁用)
-  cfApi: ''         # CurseForge API Key
+specific:
+  sectionLength: 50      # Wiki 每段预览字数
+  linkCount: 4           # MCMod 相关链接显示个数
+  Language: 'zh'         # Wiki 显示语言
+  showImages: 'noqq'     # MCMod 简介图片展示方式: always(总是), noqq(非QQ平台), never(禁用)
+  cfApi: ''              # CurseForge API Key
+  showSkull: true        # 显示如何获取玩家头颅
 ```
 
-### 服务器设置
+### 服务器信息查询配置
 
 ```yaml
 info:
   default: 'hypixel.net'   # 默认服务器地址
-  defaultRcon: 'localhost:25575'  # 默认 RCON 地址
   showIP: false            # 是否显示服务器地址
-  showIcon: true          # 是否显示服务器图标
-  maxNumberDisplay: 8     # 列表最大显示数
-  showSkull: true        # 是否显示头颅获取命令
-  rconPassword: ''     # RCON 密码
-  authorizedRunUsers: [] # 允许使用自定义 RCON 命令的用户ID
-  javaApis:           # Java 版查询 API
+  showIcon: true           # 是否显示服务器图标
+  maxNumberDisplay: 8      # 列表最大显示个数
+  javaApis:                # Java 版查询 API
     - 'https://api.mcstatus.io/v2/status/java/${address}'
     - 'https://api.mcsrvstat.us/3/${address}'
-  bedrockApis:       # Bedrock 版查询 API
+  bedrockApis:             # Bedrock 版查询 API
     - 'https://api.mcstatus.io/v2/status/bedrock/${address}'
+    - 'https://api.mcsrvstat.us/bedrock/3/${address}'
 ```
 
-### 更新检测设置
+### 版本更新检测配置
 
 ```yaml
 ver:
   enabled: false       # 启用版本更新检查
-  release: true       # 通知正式版本
-  snapshot: true      # 通知快照版本
-  interval: 20        # 检查间隔时间（分钟）
-  groups:             # 接收更新通知的目标(格式: platform:type:id)
+  release: true        # 通知正式版本
+  snapshot: true       # 通知快照版本
+  interval: 20         # 检查间隔时间（分钟）
+  groups:              # 接收更新通知的目标(格式: platform:type:id)
     - 'onebot:private:123456789'
     - 'discord:group:987654321'
+```
+
+### 服务器连接配置
+
+```yaml
+link:
+  events:              # 监听事件类型
+  servers:             # 服务器配置列表
+    - name: 'default'  # 服务器名称
+      group: 'sandbox:default'  # 互联群组 ID
+      rcon:            # RCON 配置
+        address: 'localhost:25575'
+        password: ''
+      websocket:       # WebSocket 配置
+        mode: 'client' # 模式：client 或 server
+        address: 'localhost:8080'
+        token: ''
 ```
 
 ## 注意事项

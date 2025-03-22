@@ -5,7 +5,8 @@ import { registerModCommands } from './mod'
 import { registerVersionCommands } from './ver'
 import { registerSkinCommands } from './skin'
 import { registerInfoCommands } from './info'
-import { initWebSocketCommunication, registerServerCommands, cleanupWebSocket, McEvent } from './link'
+import { registerServerCommands } from './link'
+import { initWebSocketCommunication, McEvent, cleanupWebSocket } from './linkservice'
 
 /**
  * Minecraft 工具箱插件
@@ -20,6 +21,9 @@ let versionCheckTimer: NodeJS.Timeout
 
 export type LangCode = keyof typeof MINECRAFT_LANGUAGES
 
+/**
+ * 支持的Minecraft语言
+ */
 const MINECRAFT_LANGUAGES = {
   'zh': '简体中文',
   'zh-hk': '繁體中文（香港）',
@@ -38,6 +42,9 @@ const MINECRAFT_LANGUAGES = {
   'tr': 'Türkçe'
 }
 
+/**
+ * 类型映射相关配置
+ */
 export const TypeMap = {
   modrinthTypes: {
     'mod': '模组',
@@ -75,17 +82,44 @@ export const TypeMap = {
     'addon': '附加内容',
     'plugin': '服务器插件'
   },
+  /**
+   * 验证类型是否有效
+   * @param source 源站点
+   * @param type 类型
+   * @returns 是否有效
+   */
   isValidType: (source: 'modrinth' | 'curseforge', type?: string): boolean => {
     if (!type) return true
     const types = source === 'modrinth' ? Object.keys(TypeMap.modrinthTypes) : Object.values(TypeMap.curseforgeTypes)
     return types.includes(type as any)
   }
 }
+
+/**
+ * 通用配置接口
+ */
 export interface CommonConfig {
   Timeout: number
   totalLength: number
   descLength: number
+  maxHeight?: number
+  waitUntil?: 'load' | 'domcontentloaded' | 'networkidle0' | 'networkidle2'
+  captureTimeout?: number
 }
+
+/**
+ * 服务器配置接口
+ */
+export interface ServerConfig {
+  name: string
+  group: string
+  rcon: { address: string, password: string }
+  websocket: { mode: 'client' | 'server', address: string, token: string }
+}
+
+/**
+ * 插件完整配置接口
+ */
 export interface MinecraftToolsConfig {
   common: CommonConfig & {
     maxHeight: number
@@ -118,20 +152,6 @@ export interface MinecraftToolsConfig {
   link: {
     servers: ServerConfig[]
     events: number
-  }
-}
-
-export interface ServerConfig {
-  name: string // 作为唯一标识符和显示名称
-  groups: string[] // 每个服务器的专属群组
-  rcon: {
-    address: string
-    password: string // 不为空则启用
-  }
-  websocket: {
-    mode: 'client' | 'server'
-    address: string
-    token: string // 不为空则启用
   }
 }
 
@@ -246,8 +266,7 @@ export const Config: Schema<MinecraftToolsConfig> = Schema.object({
         .required()
         .pattern(/^[a-zA-Z0-9_]+$/)
         .description('服务器名称'),
-      groups: Schema.array(String)
-        .default([])
+      group: Schema.string()
         .description('互联群组 ID'),
       rcon: Schema.object({
         address: Schema.string()
@@ -270,7 +289,7 @@ export const Config: Schema<MinecraftToolsConfig> = Schema.object({
       })
     })).default([{
       name: 'default',
-      groups: [],
+      group: 'sandbox:default',
       rcon: {
         address: 'localhost:25575',
         password: ''
@@ -286,10 +305,9 @@ export const Config: Schema<MinecraftToolsConfig> = Schema.object({
 
 /**
  * 插件主函数
- * @param {Context} ctx - Koishi 上下文
- * @param {MinecraftToolsConfig} config - 插件配置
  */
 export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
+  // 用户语言设置
   const userLanguageSettings = new Map<string, LangCode>()
   // 创建 mc 主命令
   const mcCommand = ctx.command('mc', 'Minecraft 工具')
@@ -299,7 +317,6 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
   registerVersionCommands(ctx, mcCommand, pluginConfig)
   registerSkinCommands(ctx, mcCommand, pluginConfig)
   registerInfoCommands(mcCommand, pluginConfig)
-
   // 判断是否启用服务器连接功能
   const hasServerConfig = pluginConfig.link.servers.some(server =>
     server.rcon.password || server.websocket.token
@@ -307,21 +324,17 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
   // 如果配置了服务器，则注册服务器管理命令
   if (hasServerConfig) {
     registerServerCommands(mcCommand, pluginConfig, ctx)
-    // 初始化所有启用WebSocket的服务器连接
     initWebSocketCommunication(ctx, pluginConfig)
   }
 }
 
 /**
  * 插件卸载函数
- * 清理插件创建的所有定时任务
  */
 export function dispose() {
-  // 清除版本检查定时器
   if (versionCheckTimer) {
     clearInterval(versionCheckTimer)
     versionCheckTimer = null
   }
-  // 清理 WebSocket 资源
   cleanupWebSocket()
 }
