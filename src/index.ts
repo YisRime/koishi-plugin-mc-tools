@@ -116,16 +116,27 @@ export interface MinecraftToolsConfig {
     snapshot: boolean
   }
   link: {
-    connectionType: 'none' | 'rcon' | 'ws' | 'both'  // 统一连接类型
-    defaultRcon: string
-    rconPassword: string
-    sudoUsers: string[]
-    mode: 'client' | 'server'
-    defaultWs: string
-    token: string
-    serverName: string
+    defaultServer: string
+    servers: ServerConfig[]
     groups: string[]
     events: number
+    sudoUsers: string[]
+  }
+}
+
+export interface ServerConfig {
+  id: string
+  name: string
+  rcon: {
+    enabled: boolean
+    address: string
+    password: string
+  }
+  websocket: {
+    enabled: boolean
+    mode: 'client' | 'server'
+    address: string
+    token: string
   }
 }
 
@@ -232,37 +243,60 @@ export const Config: Schema<MinecraftToolsConfig> = Schema.object({
   }).description('服务器配置'),
 
   link: Schema.object({
-    connectionType: Schema.union([
-      'none',
-      'rcon',
-      'ws',
-      'both'
-    ]).default('none')
-      .description('服务器连接方式'),
-    defaultRcon: Schema.string()
-      .default('localhost:25575')
-      .description('RCON 地址'),
-    rconPassword: Schema.string()
-      .role('secret')
-      .description('RCON 密码'),
-    defaultWs: Schema.string()
-      .default('localhost:8080')
-      .description('WebSocket 地址'),
-    token: Schema.string()
-      .role('secret')
-      .description('WebSocket 密码'),
-    mode: Schema.union(['client', 'server'])
-      .default('client')
-      .description('工作模式'),
-    serverName: Schema.string()
-      .default('Server')
-      .description('服务器名称'),
-    events: Schema.bitset(McEvent)
-      .default(McEvent.玩家聊天 | McEvent.玩家命令 | McEvent.玩家加入 | McEvent.玩家退出)
-      .description('监听事件类型'),
+    defaultServer: Schema.string()
+      .description('默认服务器ID'),
+    servers: Schema.array(Schema.object({
+      id: Schema.string()
+        .required()
+        .description('服务器唯一标识'),
+      name: Schema.string()
+        .description('服务器显示名称'),
+      rcon: Schema.object({
+        enabled: Schema.boolean()
+          .default(false)
+          .description('启用RCON连接'),
+        address: Schema.string()
+          .default('localhost:25575')
+          .description('RCON地址'),
+        password: Schema.string()
+          .role('secret')
+          .description('RCON密码')
+      }).description('RCON配置'),
+      websocket: Schema.object({
+        enabled: Schema.boolean()
+          .default(false)
+          .description('启用WebSocket连接'),
+        mode: Schema.union(['client', 'server'])
+          .default('client')
+          .description('WebSocket模式'),
+        address: Schema.string()
+          .default('localhost:8080')
+          .description('WebSocket地址'),
+        token: Schema.string()
+          .role('secret')
+          .description('WebSocket令牌')
+      }).description('WebSocket配置')
+    })).default([{
+      id: 'default',
+      name: 'Minecraft服务器',
+      rcon: {
+        enabled: false,
+        address: 'localhost:25575',
+        password: ''
+      },
+      websocket: {
+        enabled: false,
+        mode: 'client',
+        address: 'localhost:8080',
+        token: ''
+      }
+    }]).description('服务器配置列表'),
     groups: Schema.array(String)
       .default(['onebot:12345678'])
       .description('通信和命令的目标群组 ID'),
+    events: Schema.bitset(McEvent)
+      .default(McEvent.玩家聊天 | McEvent.玩家命令 | McEvent.玩家加入 | McEvent.玩家退出)
+      .description('监听事件类型'),
     sudoUsers: Schema.array(String)
       .default([])
       .description('允许发送命令的用户 ID'),
@@ -284,13 +318,20 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
   registerVersionCommands(ctx, mcCommand, pluginConfig)
   registerSkinCommands(ctx, mcCommand, pluginConfig)
   registerInfoCommands(mcCommand, pluginConfig)
-  // 注册服务器管理相关命令
-  if (pluginConfig.link.connectionType !== 'none') {
+  // 设置默认服务器（如果未设置）
+  if (!pluginConfig.link.defaultServer && pluginConfig.link.servers.length > 0) {
+    pluginConfig.link.defaultServer = pluginConfig.link.servers[0].id
+  }
+  // 判断是否启用服务器连接功能
+  const hasServerConfig = pluginConfig.link.servers.some(server =>
+    (server.rcon.enabled && server.rcon.password) ||
+    (server.websocket.enabled && server.websocket.token)
+  )
+  // 如果配置了服务器，则注册服务器管理命令
+  if (hasServerConfig) {
     registerServerCommands(mcCommand, pluginConfig, ctx)
-    // 如果启用了WebSocket，初始化通信
-    if (pluginConfig.link.connectionType === 'ws' || pluginConfig.link.connectionType === 'both') {
-      initWebSocketCommunication(ctx, pluginConfig)
-    }
+    // 初始化所有启用WebSocket的服务器连接
+    initWebSocketCommunication(ctx, pluginConfig)
   }
 }
 

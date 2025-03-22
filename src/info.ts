@@ -77,7 +77,7 @@ function parseServerAddress(
       host = address
     }
     // 安全检查
-    if (host.toLowerCase() === 'localhost') {
+    if (host.toLowerCase() === 'localhost' || host === '0.0.0.0') {
       throw new Error('不允许连接到本地服务器')
     }
     // IPv4地址检查
@@ -108,16 +108,9 @@ function parseServerAddress(
       }
       if (lowerIP === '::1' || lowerIP === '0:0:0:0:0:0:0:1' ||
           /^fe80:/i.test(lowerIP) || /^f[cd][0-9a-f]{2}:/i.test(lowerIP) ||
-          lowerIP.startsWith('ff')) {
+          lowerIP.startsWith('ff') || lowerIP === '::') {
         throw new Error('不允许连接到私有网络地址')
       }
-    }
-    // 域名格式检查
-    else if (!(host.length > 0 &&
-               host.length <= 253 &&
-               !/^\d+\.\d+\.\d+\.\d+$/.test(host) &&
-               /^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$/.test(host))) {
-      throw new Error('无效的域名格式')
     }
     // 验证端口
     if (port !== undefined && (isNaN(port) || port < 1 || port > 65535)) {
@@ -158,7 +151,7 @@ export async function checkServerStatus(
       const actualUrl = apiUrl.replace('${address}', parsed.address)
       try {
         const response = await axios.get(actualUrl, {
-          headers: { 'User-Agent': 'koishi-plugin-mc-tools/1.0' },
+          headers: {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'},
           timeout: 10000,
           validateStatus: null
         })
@@ -271,21 +264,18 @@ async function transformMcsrvstatResponse(data: any): Promise<ServerStatus> {
  */
 export function formatServerStatus(status: ServerStatus, config: MinecraftToolsConfig['info']) {
   if (!status.online) {
-    return `服务器离线 - ${status.error || '连接失败'}`
+    return status.error || '服务器离线 - 连接失败'
   }
 
   const lines: string[] = []
-
   // 添加 IP 信息
   if (config.showIP) {
     status.ip_address && lines.push(`IP: ${status.ip_address}`)
     status.srv_record && lines.push(`SRV: ${status.srv_record.host}:${status.srv_record.port}`)
   }
-
   // 添加图标和 MOTD
   status.icon?.startsWith('data:image/png;base64,') && config.showIcon && lines.push(h.image(status.icon).toString())
   status.motd && lines.push(status.motd)
-
   // 添加基本状态信息
   const statusParts = [
     status.version?.name_clean || '未知',
@@ -293,7 +283,6 @@ export function formatServerStatus(status: ServerStatus, config: MinecraftToolsC
   ]
   status.retrieved_at && statusParts.push(`${Date.now() - status.retrieved_at}ms`)
   lines.push(statusParts.join(' | '))
-
   // 添加服务器信息
   const serverInfo = []
   status.software && serverInfo.push(status.software)
@@ -307,7 +296,6 @@ export function formatServerStatus(status: ServerStatus, config: MinecraftToolsC
   status.eula_blocked && serverInfo.push('已被封禁')
   status.server_id && serverInfo.push(`ID: ${status.server_id}`)
   serverInfo.length > 0 && lines.push(serverInfo.join(' | '))
-
   // 添加玩家列表
   const hasPlayers = status.players?.list?.length && config.maxNumberDisplay > 0
   if (hasPlayers) {
@@ -316,7 +304,6 @@ export function formatServerStatus(status: ServerStatus, config: MinecraftToolsC
     const playerList = status.players.list.slice(0, displayCount).join(', ')
     lines.push(playerList + (status.players.list.length > displayCount ? ' ...' : ''))
   }
-
   // 添加插件列表
   const hasPlugins = status.plugins?.length && config.maxNumberDisplay > 0
   if (hasPlugins) {
@@ -328,7 +315,6 @@ export function formatServerStatus(status: ServerStatus, config: MinecraftToolsC
       .join(', ')
     lines.push(pluginList + (status.plugins.length > displayCount ? ' ...' : ''))
   }
-
   // 添加模组列表
   const hasMods = status.mods?.length && config.maxNumberDisplay > 0
   if (hasMods) {
@@ -340,7 +326,6 @@ export function formatServerStatus(status: ServerStatus, config: MinecraftToolsC
       .join(', ')
     lines.push(modList + (status.mods.length > displayCount ? ' ...' : ''))
   }
-
   return lines.join('\n')
 }
 
