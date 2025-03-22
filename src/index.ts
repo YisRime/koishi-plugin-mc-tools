@@ -5,8 +5,7 @@ import { registerModCommands } from './mod'
 import { registerVersionCommands } from './ver'
 import { registerSkinCommands } from './skin'
 import { registerInfoCommands } from './info'
-import { registerRunCommands } from './link'
-import { initWebSocketCommunication, registerWsCommands, cleanupWebSocket, McEvent } from './ws'
+import { initWebSocketCommunication, registerServerCommands, cleanupWebSocket, McEvent } from './link'
 
 /**
  * Minecraft 工具箱插件
@@ -117,11 +116,10 @@ export interface MinecraftToolsConfig {
     snapshot: boolean
   }
   link: {
-    enabledRcon: boolean
+    connectionType: 'none' | 'rcon' | 'ws' | 'both'  // 统一连接类型
     defaultRcon: string
     rconPassword: string
     sudoUsers: string[]
-    enabledWs: boolean
     mode: 'client' | 'server'
     defaultWs: string
     token: string
@@ -234,40 +232,41 @@ export const Config: Schema<MinecraftToolsConfig> = Schema.object({
   }).description('服务器配置'),
 
   link: Schema.object({
+    connectionType: Schema.union([
+      'none',
+      'rcon',
+      'ws',
+      'both'
+    ]).default('none')
+      .description('服务器连接方式'),
+    defaultRcon: Schema.string()
+      .default('localhost:25575')
+      .description('RCON 地址'),
+    rconPassword: Schema.string()
+      .role('secret')
+      .description('RCON 密码'),
+    defaultWs: Schema.string()
+      .default('localhost:8080')
+      .description('WebSocket 地址'),
+    token: Schema.string()
+      .role('secret')
+      .description('WebSocket 密码'),
+    mode: Schema.union(['client', 'server'])
+      .default('client')
+      .description('工作模式'),
+    serverName: Schema.string()
+      .default('Server')
+      .description('服务器名称'),
+    events: Schema.bitset(McEvent)
+      .default(McEvent.玩家聊天 | McEvent.玩家命令 | McEvent.玩家加入 | McEvent.玩家退出)
+      .description('监听事件类型'),
     groups: Schema.array(String)
       .default(['onebot:12345678'])
       .description('通信和命令的目标群组 ID'),
     sudoUsers: Schema.array(String)
       .default([])
       .description('允许发送命令的用户 ID'),
-    enabledRcon: Schema.boolean()
-      .default(false)
-      .description('开启 RCON 功能'),
-    defaultRcon: Schema.string()
-      .default('localhost:25575')
-      .description('默认 RCON 地址'),
-    rconPassword: Schema.string()
-      .role('secret')
-      .description('RCON 密码'),
-    enabledWs: Schema.boolean()
-      .default(false)
-      .description('开启 WebSocket 功能'),
-    defaultWs: Schema.string()
-      .default('localhost:8080')
-      .description('默认 WebSocket 地址'),
-    token: Schema.string()
-      .role('secret')
-      .description('Access Token'),
-    mode: Schema.union(['client', 'server'])
-      .default('client')
-      .description('WebSocket 工作模式'),
-    serverName: Schema.string()
-      .default('Server')
-      .description('服务器名称'),
-    events: Schema.bitset(McEvent)
-      .default(McEvent.chat | McEvent.join | McEvent.quit | McEvent.death)
-      .description('监听事件类型')
-  }).description('服务器配置'),
+  }).description('服务器连接配置'),
 })
 
 /**
@@ -277,24 +276,21 @@ export const Config: Schema<MinecraftToolsConfig> = Schema.object({
  */
 export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
   const userLanguageSettings = new Map<string, LangCode>()
-
   // 创建 mc 主命令
   const mcCommand = ctx.command('mc', 'Minecraft 工具')
-
   // 注册各功能子命令
   registerWikiCommands(ctx, mcCommand, pluginConfig, userLanguageSettings)
   registerModCommands(ctx, mcCommand, pluginConfig)
   registerVersionCommands(ctx, mcCommand, pluginConfig)
   registerSkinCommands(ctx, mcCommand, pluginConfig)
   registerInfoCommands(mcCommand, pluginConfig)
-  // 只有在启用 RCON 时才注册相关命令
-  if (pluginConfig.link.enabledRcon) {
-    registerRunCommands(mcCommand, pluginConfig)
-  }
-  // 只有在启用 WebSocket 时才注册相关命令和初始化通信
-  if (pluginConfig.link.enabledWs) {
-    registerWsCommands(mcCommand, pluginConfig, ctx)
-    initWebSocketCommunication(ctx, pluginConfig)
+  // 注册服务器管理相关命令
+  if (pluginConfig.link.connectionType !== 'none') {
+    registerServerCommands(mcCommand, pluginConfig, ctx)
+    // 如果启用了WebSocket，初始化通信
+    if (pluginConfig.link.connectionType === 'ws' || pluginConfig.link.connectionType === 'both') {
+      initWebSocketCommunication(ctx, pluginConfig)
+    }
   }
 }
 
