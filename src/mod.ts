@@ -3,7 +3,7 @@ import axios from 'axios'
 import * as cheerio from 'cheerio'
 import { CommonConfig, MinecraftToolsConfig } from './index'
 import { registerModPlatformCommands } from './cfmr'
-import { searchMod, search, capture } from './sub'
+import { searchMod, search, capture } from './wikiservice'
 
 /**
  * 处理结果接口

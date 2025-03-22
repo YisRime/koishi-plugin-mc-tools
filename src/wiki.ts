@@ -2,7 +2,7 @@ import { Context } from 'koishi'
 import * as cheerio from 'cheerio'
 import axios from 'axios'
 import { MinecraftToolsConfig, LangCode } from './index'
-import { searchWiki, search, capture } from './sub'
+import { searchWiki, search, capture } from './wikiservice'
 
 /**
  * 构建 Wiki URL
