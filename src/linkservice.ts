@@ -21,7 +21,7 @@ export interface ServerConnection {
   }>
 }
 
-// 服务器连接映射
+// 服务器连接映射 - 使用name作为键
 export const serverConnections = new Map<string, ServerConnection>()
 
 // Minecraft 事件枚举
@@ -199,9 +199,9 @@ export function verifyHeaders(headers: any, token: string): boolean {
 }
 
 // 辅助函数 - 获取服务器连接
-export function getServerConnection(serverId: string): ServerConnection {
-  if (!serverConnections.has(serverId)) {
-    serverConnections.set(serverId, {
+export function getServerConnection(serverName: string): ServerConnection {
+  if (!serverConnections.has(serverName)) {
+    serverConnections.set(serverName, {
       ws: null,
       wss: null,
       clients: new Set<WebSocket>(),
@@ -210,13 +210,18 @@ export function getServerConnection(serverId: string): ServerConnection {
       pendingRequests: new Map()
     })
   }
-  return serverConnections.get(serverId)
+  return serverConnections.get(serverName)
 }
 
 // 辅助函数 - 获取指定服务器配置
-export function getServerConfig(config: MinecraftToolsConfig, serverId?: string): ServerConfig | null {
-  const targetServerId = serverId || config.link.defaultServer
-  return config.link.servers.find(server => server.id === targetServerId) || null
+export function getServerConfig(config: MinecraftToolsConfig, serverName: string): ServerConfig | null {
+  if (!serverName) return null
+  return config.link.servers.find(server => server.name === serverName) || null
+}
+
+// 判断消息是否应该转发到指定服务器的群组
+export function shouldForwardToServer(session: Session, server: ServerConfig): boolean {
+  return isChannelInList(session, server.groups)
 }
 
 // 检查服务器连接状态
@@ -228,8 +233,8 @@ export function isConnected(serverConn: ServerConnection): boolean {
 }
 
 // WebSocket通信
-export function sendWebSocketMessage(message: string, serverId: string): void {
-  const serverConn = serverConnections.get(serverId)
+export function sendWebSocketMessage(message: string, serverName: string): void {
+  const serverConn = serverConnections.get(serverName)
   if (!serverConn) return
 
   if (serverConn.ws && serverConn.ws.readyState === WebSocket.OPEN) {
@@ -244,10 +249,10 @@ export function sendWebSocketMessage(message: string, serverId: string): void {
   })
 }
 
-export async function sendRequestAndWaitResponse(api: string, data: any = {}, serverId: string): Promise<any> {
-  const serverConn = serverConnections.get(serverId)
+export async function sendRequestAndWaitResponse(api: string, data: any = {}, serverName: string): Promise<any> {
+  const serverConn = serverConnections.get(serverName)
   if (!serverConn) {
-    throw new Error(`服务器 ${serverId} 未初始化连接`)
+    throw new Error(`服务器 ${serverName} 未初始化连接`)
   }
 
   const requestId = ++serverConn.requestIdCounter
@@ -261,7 +266,7 @@ export async function sendRequestAndWaitResponse(api: string, data: any = {}, se
     serverConn.pendingRequests.set(requestId, { resolve, reject, timer })
 
     try {
-      sendWebSocketMessage(JSON.stringify({ api, data, request_id: requestId }), serverId)
+      sendWebSocketMessage(JSON.stringify({ api, data, request_id: requestId }), serverName)
     } catch (err) {
       clearTimeout(timer)
       serverConn.pendingRequests.delete(requestId)
@@ -271,10 +276,10 @@ export async function sendRequestAndWaitResponse(api: string, data: any = {}, se
 }
 
 // 清理WebSocket连接
-export function cleanupWebSocket(serverId?: string): void {
-  if (serverId) {
+export function cleanupWebSocket(serverName?: string): void {
+  if (serverName) {
     // 清理指定服务器连接
-    const serverConn = serverConnections.get(serverId)
+    const serverConn = serverConnections.get(serverName)
     if (serverConn) {
       if (serverConn.ws) {
         try { serverConn.ws.terminate() } catch {}
@@ -307,12 +312,12 @@ export function cleanupWebSocket(serverId?: string): void {
 export async function sendMinecraftMessage(
   type: string,
   params: any = {},
-  serverId: string,
+  serverName: string,
   successHint?: string
 ): Promise<string> {
-  const serverConn = serverConnections.get(serverId)
+  const serverConn = serverConnections.get(serverName)
   if (!serverConn || !isConnected(serverConn)) {
-    return `未连接到服务器 ${serverId}，请检查连接状态。`
+    return `未连接到服务器 ${serverName}，请检查连接状态。`
   }
 
   const apiData = {api: '', data: {}} as any
@@ -351,7 +356,7 @@ export async function sendMinecraftMessage(
         return `未知的消息类型: ${type}`
     }
 
-    const response = await sendRequestAndWaitResponse(apiData.api, apiData.data, serverId)
+    const response = await sendRequestAndWaitResponse(apiData.api, apiData.data, serverName)
 
     if (type === 'private' && response.message && response.message.includes('不在线')) {
       return `消息发送失败: ${response.message}`
@@ -368,15 +373,16 @@ export async function executeRconCommand(
   command: string,
   config: MinecraftToolsConfig,
   session?: Session,
-  serverId?: string
+  serverName?: string
 ): Promise<void> {
   if (!command) return autoRecall('请输入要执行的命令', session)
+  if (!serverName) return autoRecall('请指定服务器名称', session)
 
-  const serverConfig = getServerConfig(config, serverId)
-  if (!serverConfig) return autoRecall(`找不到服务器配置: ${serverId || '默认'}`, session)
+  const serverConfig = getServerConfig(config, serverName)
+  if (!serverConfig) return autoRecall(`找不到服务器配置: ${serverName}`, session)
 
-  if (!serverConfig.rcon.enabled || !serverConfig.rcon.password) {
-    return autoRecall(`服务器 ${serverConfig.name} 未启用RCON或未配置密码`, session)
+  if (!serverConfig.rcon.password) {
+    return autoRecall(`服务器 ${serverConfig.name} 未配置RCON密码`, session)
   }
 
   const [serverHost, portStr] = serverConfig.rcon.address.split(':')
@@ -404,13 +410,13 @@ export function handleIncomingMessage(
   ctx: Context,
   config: MinecraftToolsConfig,
   message: string,
-  serverId: string
+  serverName: string
 ): void {
   try {
-    const serverConn = serverConnections.get(serverId)
+    const serverConn = serverConnections.get(serverName)
     if (!serverConn) return
 
-    const serverConfig = getServerConfig(config, serverId)
+    const serverConfig = getServerConfig(config, serverName)
     if (!serverConfig) return
 
     const data = JSON.parse(message)
@@ -441,30 +447,30 @@ export function handleIncomingMessage(
 
     // 格式化消息
     let formattedMsg = ''
-    const serverName = data.server_name || serverConfig.name
+    const serverDisplayName = data.server_name || serverConfig.name
 
     switch (subType) {
       case 'chat':
-        formattedMsg = `[${serverName}] <${playerName}> ${data.message || ''}`
+        formattedMsg = `[${serverDisplayName}] <${playerName}> ${data.message || ''}`
         break
       case 'player_command':
-        formattedMsg = `[${serverName}] ${playerName} 执行命令: ${data.message || ''}`
+        formattedMsg = `[${serverDisplayName}] ${playerName} 执行命令: ${data.message || ''}`
         break
       case 'death':
-        formattedMsg = `[${serverName}] ${data.message || `${playerName} 死亡了`}`
+        formattedMsg = `[${serverDisplayName}] ${data.message || `${playerName} 死亡了`}`
         break
       case 'join':
-        formattedMsg = `[${serverName}] ${playerName} 加入了游戏`
+        formattedMsg = `[${serverDisplayName}] ${playerName} 加入了游戏`
         break
       case 'quit':
-        formattedMsg = `[${serverName}] ${playerName} 退出了游戏`
+        formattedMsg = `[${serverDisplayName}] ${playerName} 退出了游戏`
         break
       default:
         return
     }
 
-    // 转发消息到群组
-    config.link.groups.forEach(channelId => {
+    // 转发消息到该服务器的专属群组
+    serverConfig.groups.forEach(channelId => {
       const [platform, id] = channelId.split(':', 2)
       if (!platform || !id) return
       ctx.bots.forEach(bot => {
@@ -480,16 +486,16 @@ export function handleIncomingMessage(
 
 // WebSocket服务端初始化
 export function initWebSocketServer(ctx: Context, config: MinecraftToolsConfig, serverConfig: ServerConfig): void {
-  if (!serverConfig.websocket.enabled || !serverConfig.websocket.token) return
+  if (!serverConfig.websocket.token) return
 
-  const serverId = serverConfig.id
-  const serverConn = getServerConnection(serverId)
+  const serverName = serverConfig.name
+  const serverConn = getServerConnection(serverName)
 
   const { address } = serverConfig.websocket
   const { host, port } = parseWsAddress(address)
 
   serverConn.wss = new WebSocketServer({ host, port })
-  ctx.logger.info(`[${serverConfig.name}] WebSocket 服务器启动 ws://${host}:${port}`)
+  ctx.logger.info(`[${serverName}] WebSocket 服务器启动 ws://${host}:${port}`)
 
   serverConn.wss.on('connection', (ws, req) => {
     const headers = {
@@ -503,7 +509,7 @@ export function initWebSocketServer(ctx: Context, config: MinecraftToolsConfig, 
       return
     }
 
-    ctx.logger.info(`[${serverConfig.name}] 新的客户端连接: ${headers['x-self-name']} (${req.socket.remoteAddress})`)
+    ctx.logger.info(`[${serverName}] 新的客户端连接: ${headers['x-self-name']} (${req.socket.remoteAddress})`)
     serverConn.clients.add(ws)
 
     ws.send(JSON.stringify({
@@ -511,40 +517,40 @@ export function initWebSocketServer(ctx: Context, config: MinecraftToolsConfig, 
       data: { events: getSubscribedEvents(config.link.events) }
     }))
 
-    ws.on('message', (data) => handleIncomingMessage(ctx, config, data.toString(), serverId))
+    ws.on('message', (data) => handleIncomingMessage(ctx, config, data.toString(), serverName))
     ws.on('close', () => {
-      ctx.logger.info(`[${serverConfig.name}] 客户端断开连接: ${headers['x-self-name']}`)
+      ctx.logger.info(`[${serverName}] 客户端断开连接: ${headers['x-self-name']}`)
       serverConn.clients.delete(ws)
     })
     ws.on('error', (error) => {
-      ctx.logger.error(`[${serverConfig.name}] WebSocket 服务器错误: ${error.message}`)
+      ctx.logger.error(`[${serverName}] WebSocket 服务器错误: ${error.message}`)
       serverConn.clients.delete(ws)
     })
   })
 
-  serverConn.wss.on('error', (error) => ctx.logger.error(`[${serverConfig.name}] WebSocket 服务器错误: ${error.message}`))
+  serverConn.wss.on('error', (error) => ctx.logger.error(`[${serverName}] WebSocket 服务器错误: ${error.message}`))
 }
 
 // WebSocket客户端初始化
 export function initWebSocketClient(ctx: Context, config: MinecraftToolsConfig, serverConfig: ServerConfig): void {
-  if (!serverConfig.websocket.enabled || !serverConfig.websocket.token) return
+  if (!serverConfig.websocket.token) return
 
-  const serverId = serverConfig.id
-  const serverConn = getServerConnection(serverId)
+  const serverName = serverConfig.name
+  const serverConn = getServerConnection(serverName)
 
   const { address } = serverConfig.websocket
   const { host, port } = parseWsAddress(address)
 
   serverConn.ws = new WebSocket(`ws://${host}:${port}/minecraft/ws`, {
     headers: {
-      "x-self-name": serverConfig.name,
+      "x-self-name": serverName,
       "Authorization": `Bearer ${serverConfig.websocket.token}`,
       "x-client-origin": "koishi"
     }
   })
 
   serverConn.ws.on('open', () => {
-    ctx.logger.info(`[${serverConfig.name}] WebSocket 客户端连接成功`)
+    ctx.logger.info(`[${serverName}] WebSocket 客户端连接成功`)
     serverConn.reconnectCount = 0
 
     serverConn.ws.send(JSON.stringify({
@@ -553,17 +559,17 @@ export function initWebSocketClient(ctx: Context, config: MinecraftToolsConfig, 
     }))
   })
 
-  serverConn.ws.on('message', (data) => handleIncomingMessage(ctx, config, data.toString(), serverId))
-  serverConn.ws.on('error', (error) => ctx.logger.error(`[${serverConfig.name}] WebSocket 客户端错误: ${error.message}`))
+  serverConn.ws.on('message', (data) => handleIncomingMessage(ctx, config, data.toString(), serverName))
+  serverConn.ws.on('error', (error) => ctx.logger.error(`[${serverName}] WebSocket 客户端错误: ${error.message}`))
   serverConn.ws.on('close', (code, reason) => {
-    ctx.logger.warn(`[${serverConfig.name}] WebSocket 客户端连接关闭: ${code} ${reason.toString()}`)
+    ctx.logger.warn(`[${serverName}] WebSocket 客户端连接关闭: ${code} ${reason.toString()}`)
     serverConn.ws = null
 
     if (serverConn.reconnectCount < 3) {
       serverConn.reconnectCount++
       setTimeout(() => initWebSocketClient(ctx, config, serverConfig), 20000)
     } else {
-      ctx.logger.error(`[${serverConfig.name}] WebSocket 连接失败`)
+      ctx.logger.error(`[${serverName}] WebSocket 连接失败`)
     }
   })
 }
@@ -575,7 +581,7 @@ export function initWebSocketCommunication(ctx: Context, config: MinecraftToolsC
 
   // 为每个配置的服务器初始化连接
   config.link.servers.forEach(serverConfig => {
-    if (!serverConfig.websocket.enabled || !serverConfig.websocket.token) return
+    if (!serverConfig.websocket.token) return
 
     // 根据模式初始化不同类型的连接
     if (serverConfig.websocket.mode === 'client') {
@@ -587,18 +593,22 @@ export function initWebSocketCommunication(ctx: Context, config: MinecraftToolsC
 
   // 处理消息转发到Minecraft
   ctx.on('message', (session) => {
-    if (!isChannelInList(session, config.link.groups) ||
-        session.content.startsWith('/') ||
-        session.content.startsWith('.')) {
+    // 如果是命令，则不转发
+    if (session.content.startsWith('/') || session.content.startsWith('.')) {
       return
     }
 
     const { output, color } = extractAndRemoveColor(session.content)
-    // 发送到所有启用了WebSocket的服务器
+
+    // 为每个服务器检查并转发消息
     config.link.servers.forEach(serverConfig => {
-      if (!serverConfig.websocket.enabled) return
-      const serverId = serverConfig.id
-      const serverConn = serverConnections.get(serverId)
+      // 检查这条消息是否应该转发到这个服务器
+      if (!serverConfig.websocket.token || !shouldForwardToServer(session, serverConfig)) {
+        return
+      }
+
+      const serverName = serverConfig.name
+      const serverConn = serverConnections.get(serverName)
       if (!serverConn || !isConnected(serverConn)) return
 
       const msgData = {
@@ -621,7 +631,26 @@ export function initWebSocketCommunication(ctx: Context, config: MinecraftToolsC
         msgData.data.message.data.text = msgData.data.message.data.text.replace(sendImage, `<img src="${sendImage}" />`)
       }
 
-      sendWebSocketMessage(JSON.stringify(msgData), serverId)
+      sendWebSocketMessage(JSON.stringify(msgData), serverName)
     })
   })
+}
+
+// 根据会话的群组信息查找对应的服务器
+export function getServerByGroup(config: MinecraftToolsConfig, session: Session): ServerConfig | null {
+  if (!session?.channelId) return null
+
+  const channelKey = `${session.platform}:${session.channelId}`
+
+  // 查找将此群组作为互联群组的服务器
+  const matchedServers = config.link.servers.filter(server =>
+    server.groups.includes(channelKey)
+  )
+
+  // 如果有多个匹配，选择第一个（并生成警告）
+  if (matchedServers.length > 1) {
+    console.warn(`群组 ${channelKey} 被多个服务器配置为互联群组，将使用第一个匹配: ${matchedServers[0].name}`)
+  }
+
+  return matchedServers.length > 0 ? matchedServers[0] : null
 }
