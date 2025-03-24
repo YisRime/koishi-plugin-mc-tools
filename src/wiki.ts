@@ -60,9 +60,10 @@ export function formatTitle(data: any): string {
  * @param {string} articleUrl - 文章URL
  * @param {LangCode} languageCode - 语言代码
  * @param {MinecraftToolsConfig} config - 插件配置
- * @returns {Promise<{title: string, content: string, url: string}>}
+ * @param {boolean} [fullContent=false] - 是否获取完整内容（合并转发模式）
+ * @returns {Promise<{title: string, content: string, fullContent?: string, url: string}>}
  */
-export async function fetchContent(articleUrl: string, languageCode: LangCode, config: MinecraftToolsConfig) {
+export async function fetchContent(articleUrl: string, languageCode: LangCode, config: MinecraftToolsConfig, fullContent: boolean = false) {
   try {
     const languageVariant = languageCode.startsWith('zh') ?
       (languageCode === 'zh' ? 'zh-cn' :
@@ -135,7 +136,17 @@ export async function fetchContent(articleUrl: string, languageCode: LangCode, c
       const cleanUrl = articleUrl.split('?')[0];
       return { title, content: `${title}：本页面没有内容。`, url: cleanUrl };
     }
-
+    // 为合并转发模式准备完整内容
+    const completeContent = sections
+      .map((section) => {
+        const text = section.content.join(' ');
+        if (section.title) {
+          return `『${section.title}』${text}`;
+        }
+        return text;
+      })
+      .join('\n');
+    // 格式化普通模式下的内容
     const formattedContent = sections
       .map((section, index) => {
         const sectionText = index === 0
@@ -153,6 +164,7 @@ export async function fetchContent(articleUrl: string, languageCode: LangCode, c
     return {
       title,
       content: formattedContent.length >= config.common.totalLength ? formattedContent + '...' : formattedContent,
+      fullContent: fullContent ? completeContent : undefined,
       url: cleanUrl
     };
   } catch (error) {

@@ -105,6 +105,7 @@ export interface CommonConfig {
   maxHeight?: number
   waitUntil?: 'load' | 'domcontentloaded' | 'networkidle0' | 'networkidle2'
   captureTimeout?: number
+  forward?: boolean
 }
 
 /**
@@ -125,6 +126,7 @@ export interface MinecraftToolsConfig {
     maxHeight: number
     waitUntil: 'load' | 'domcontentloaded' | 'networkidle0' | 'networkidle2'
     captureTimeout: number
+    forward: boolean
   }
   specific: {
     Language: LangCode
@@ -160,6 +162,9 @@ export interface MinecraftToolsConfig {
  */
 export const Config: Schema<MinecraftToolsConfig> = Schema.object({
   common: Schema.object({
+    forward: Schema.boolean()
+      .default(false)
+      .description('启用合并转发消息'),
     totalLength: Schema.number()
       .default(400)
       .description('总预览字数'),
