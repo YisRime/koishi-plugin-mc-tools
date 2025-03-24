@@ -3,7 +3,7 @@ import axios from 'axios'
 import * as cheerio from 'cheerio'
 import { CommonConfig, MinecraftToolsConfig } from './index'
 import { registerModPlatformCommands } from './cfmr'
-import { searchMod, search, capture } from './wikiservice'
+import { searchMod, search, capture, sendForwardMessage } from './wikiservice'
 
 /**
  * 处理结果接口
@@ -12,6 +12,15 @@ import { searchMod, search, capture } from './wikiservice'
 interface ProcessResult {
   sections: string[];
   links: string[];
+}
+
+/**
+ * 检查URL是否为图片链接
+ * @param {string} url 要检查的URL
+ * @returns {boolean} 是否为图片链接
+ */
+function isImageUrl(url: string): boolean {
+  return url && /\.(png|jpg|jpeg|gif|webp)(\?.*)?$/i.test(url);
 }
 
 /**
@@ -44,6 +53,8 @@ function parseLink($: cheerio.CheerioAPI, $elem: cheerio.Cheerio<any>): string |
     const urlMatch = scriptContent.match(/content:"[^"]*?<strong>([^<]+)/)
     if (urlMatch && urlMatch[1]) {
       const url = urlMatch[1]
+      // 跳过图片链接
+      if (isImageUrl(url)) return
       // 获取链接文本描述
       let prefix = ''
       let prevNode = $link[0].previousSibling
@@ -55,7 +66,7 @@ function parseLink($: cheerio.CheerioAPI, $elem: cheerio.Cheerio<any>): string |
       // 判断链接文本是否为URL格式
       const linkText = $link.text().trim()
       const isUrl = linkText.match(/^https?:\/\//)
-      // 使用 Markdown 格式处理链接:
+      // 使用 Markdown 格式处理链接
       const formattedLink = isUrl ? url : `[${linkText}](${url})`
       links.push(prefix ? `${prefix} ${formattedLink}` : formattedLink)
     }
@@ -107,8 +118,8 @@ function parseText($: cheerio.CheerioAPI, $elem: cheerio.Cheerio<any>): string |
         processedHref = `https://www.mcmod.cn${href}`
       }
 
-      // 忽略 javascript 和锚点链接
-      if (!href.includes('javascript:') && !href.startsWith('#')) {
+      // 忽略 javascript、锚点链接和图片链接
+      if (!href.includes('javascript:') && !href.startsWith('#') && !isImageUrl(processedHref)) {
         let prefix = ''
         let prevNode = link.previousSibling
         while (prevNode && prevNode.type === 'text') {
@@ -410,11 +421,7 @@ export function formatContent(result: ProcessResult, url: string, options: {
       index > 1 &&
       s.startsWith('http') &&
       !s.includes(':') &&
-      !s.endsWith('.png') &&
-      !s.endsWith('.jpg') &&
-      !s.endsWith('.jpeg') &&
-      !s.endsWith('.gif') &&
-      !s.endsWith('.webp')
+      !isImageUrl(s)
     )
   };
 
@@ -507,11 +514,18 @@ export function registerModCommands(ctx: Context, parent: any, config: Minecraft
 
         const result = results[0]
         const content = await fetchModContent(result.url, config.common)
-        return formatContent(content, result.url, {
+        const formattedContent = formatContent(content, result.url, {
           linkCount: config.specific.linkCount,
           showImages: config.specific.showImages,
           platform: session.platform
         })
+
+        if (config.common.forward) {
+          const success = await sendForwardMessage(session, [formattedContent]);
+          if (success) return '';
+        }
+
+        return formattedContent
       } catch (error) {
         return error.message
       }

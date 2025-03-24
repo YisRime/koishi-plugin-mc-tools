@@ -1,4 +1,5 @@
-import { Context } from 'koishi'
+import { Context, h } from 'koishi'
+import { MinecraftToolsConfig } from './index'
 import axios from 'axios'
 
 interface TexturesData {
@@ -254,9 +255,6 @@ async function renderPlayerHead(ctx: Context, skinUrl: string): Promise<string> 
   await page.close()
   return screenshot
 }
-
-import { h } from 'koishi'
-import { MinecraftToolsConfig } from './index'
 
 /**
  * 注册 Minecraft 皮肤查询命令

@@ -2,7 +2,7 @@ import { Context } from 'koishi'
 import * as cheerio from 'cheerio'
 import axios from 'axios'
 import { MinecraftToolsConfig, LangCode } from './index'
-import { searchWiki, search, capture } from './wikiservice'
+import { searchWiki, search, capture, sendForwardMessage } from './wikiservice'
 
 /**
  * 构建 Wiki URL
@@ -214,8 +214,8 @@ export async function processWikiRequest(keyword: string, userId: string, config
     }
 
     try {
-      const { content, url } = await fetchContent(pageUrl, lang, config);
-      return `${content}\n详细内容：${url}`;
+      const { content, url, fullContent } = await fetchContent(pageUrl, lang, config, config.common.forward);
+      return { content, url, fullContent };
     } catch (error) {
       return `获取"${result.title}"的内容时发生错误: ${error.message}`;
     }
@@ -236,8 +236,17 @@ export function registerWikiCommands(ctx: Context, parent: any, config: Minecraf
     .usage('mc.wiki <关键词> - 查询 Wiki\nmc.wiki.find <关键词> - 搜索 Wiki\nmc.wiki.shot <关键词> - 截图 Wiki 页面')
     .action(async ({ session }, keyword) => {
       try {
-        const result = await processWikiRequest(keyword, session.userId, config, userLangs)
-        return result
+        const result = await processWikiRequest(keyword, session.userId, config, userLangs) as any
+        if (typeof result === 'string') return result
+
+        const { content, url, fullContent } = result
+
+        if (config.common.forward && fullContent) {
+          const success = await sendForwardMessage(session, [`『${result.title || keyword}』\n${fullContent}\n详细内容：${url}`])
+          if (success) return ''
+        }
+
+        return `${content}\n详细内容：${url}`
       } catch (error) {
         return error.message
       }
