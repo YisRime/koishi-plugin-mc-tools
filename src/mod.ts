@@ -407,7 +407,14 @@ export function formatContent(result: ProcessResult, url: string, options: {
       return s;
     }),
     images: sections.filter((s, index) =>
-      index > 1 && s.startsWith('http') && !s.includes(':')
+      index > 1 &&
+      s.startsWith('http') &&
+      !s.includes(':') &&
+      !s.endsWith('.png') &&
+      !s.endsWith('.jpg') &&
+      !s.endsWith('.jpeg') &&
+      !s.endsWith('.gif') &&
+      !s.endsWith('.webp')
     )
   };
 
