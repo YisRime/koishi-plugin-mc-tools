@@ -425,7 +425,7 @@ export function registerModPlatformCommands(mcmod: any, config: MinecraftToolsCo
 
         const content = await getModDetails(results[0], config.common, config.specific.cfApi)
 
-        if (config.common.forward && session?.onebot) {
+        if (config.common.forward) {
           const success = await sendForwardMessage(session, [content]);
           if (success) return '';
         }
@@ -456,7 +456,7 @@ export function registerModPlatformCommands(mcmod: any, config: MinecraftToolsCo
 
         const content = await getModDetails(results[index], config.common, config.specific.cfApi)
 
-        if (config.common.forward && session?.onebot) {
+        if (config.common.forward) {
           const success = await sendForwardMessage(session, [content]);
           if (success) return '';
         }
@@ -478,7 +478,7 @@ export function registerModPlatformCommands(mcmod: any, config: MinecraftToolsCo
 
         const content = await getModDetails(results[0], config.common, config.specific.cfApi)
 
-        if (config.common.forward && session?.onebot) {
+        if (config.common.forward) {
           const success = await sendForwardMessage(session, [content]);
           if (success) return '';
         }
@@ -509,7 +509,7 @@ export function registerModPlatformCommands(mcmod: any, config: MinecraftToolsCo
 
         const content = await getModDetails(results[index], config.common, config.specific.cfApi)
 
-        if (config.common.forward && session?.onebot) {
+        if (config.common.forward) {
           const success = await sendForwardMessage(session, [content]);
           if (success) return '';
         }

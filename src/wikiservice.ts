@@ -439,7 +439,7 @@ async function fetchwikiContent(
     const displayUrl = buildUrl(result.title, lang)
     const { title, content, fullContent } = await fetchContent(pageUrl, lang, config, config.common.forward)
 
-    if (config.common.forward && session?.onebot) {
+    if (config.common.forward) {
       const wikiContent = fullContent || content;
       const forwardContents = [
         `『${title}』\n${wikiContent}\n详细内容：${displayUrl}`
@@ -457,7 +457,7 @@ async function fetchwikiContent(
     totalLength: config.common.forward ? Number.MAX_SAFE_INTEGER : config.common.totalLength
   });
 
-  if (config.common.forward && session?.onebot) {
+  if (config.common.forward) {
     const formattedContent = formatContent(content, result.url, {
       linkCount: Number.MAX_SAFE_INTEGER,
       showImages: config.specific.showImages,

@@ -87,11 +87,17 @@ async function getPlayerProfile(username: string): Promise<PlayerProfile> {
  * @param {Context} ctx - Koishi 上下文对象，用于获取 Puppeteer 实例
  * @param {string} skinUrl - 玩家皮肤的 URL 地址
  * @param {string} [capeUrl] - 玩家披风的 URL 地址（可选）
+ * @param {boolean} [renderElytra=false] - 是否渲染鞘翅（需要披风）
  * @returns {Promise<string>} 返回渲染后的图片 Base64 编码字符串
  */
-async function renderPlayerSkin(ctx: Context, skinUrl: string, capeUrl?: string): Promise<string> {
+async function renderPlayerSkin(ctx: Context, skinUrl: string, capeUrl?: string, renderElytra: boolean = false): Promise<string> {
+  // 确定渲染尺寸
+  const viewportWidth = renderElytra ? 600 : (capeUrl ? 400 : 360);
+  const viewportHeight = 400;
+  const viewWidth = renderElytra ? 300 : (capeUrl ? 200 : 180);
+
   const page = await ctx.puppeteer.page()
-  await page.setViewport({ width: 400, height: 400 })
+  await page.setViewport({ width: viewportWidth, height: viewportHeight })
 
   const html = `
     <html>
@@ -99,8 +105,12 @@ async function renderPlayerSkin(ctx: Context, skinUrl: string, capeUrl?: string)
         <script src="https://unpkg.com/skinview3d@3.1.0/bundles/skinview3d.bundle.js"></script>
         <style>
           body { margin: 0; background: transparent; display: flex; justify-content: center; align-items: center; }
-          .container { display: flex; width: 400px; height: 400px; }
-          .view { width: 200px; height: 400px; }
+          .container {
+            display: flex;
+            width: ${viewportWidth}px;
+            height: ${viewportHeight}px;
+          }
+          .view { width: ${viewWidth}px; height: ${viewportHeight}px; }
         </style>
       </head>
       <body>
@@ -112,16 +122,17 @@ async function renderPlayerSkin(ctx: Context, skinUrl: string, capeUrl?: string)
           const createView = (id, rotationAngle) => {
             const viewer = new skinview3d.SkinViewer({
               canvas: document.getElementById(id),
-              width: 200,
-              height: 400,
+              width: ${viewWidth},
+              height: ${viewportHeight},
               preserveDrawingBuffer: true,
               fov: 30,
               zoom: 0.95
             });
-
-            viewer.renderer.setClearColor(0x000000, 0);  // 设置透明背景
+            // 设置透明背景
+            viewer.renderer.setClearColor(0x000000, 0);
             viewer.playerObject.rotation.y = rotationAngle;
-            viewer.animation = null;  // 完全禁用动画
+            // 完全禁用动画
+            viewer.animation = null;
 
             return viewer;
           };
@@ -133,7 +144,10 @@ async function renderPlayerSkin(ctx: Context, skinUrl: string, capeUrl?: string)
             // 为每个视图加载皮肤和披风（如果有）
             for (const view of [view1, view2]) {
               await view.loadSkin("${skinUrl}");
-              ${capeUrl ? `await view.loadCape("${capeUrl}");` : ''}
+              ${capeUrl ? `
+              await view.loadCape("${capeUrl}");
+              ${renderElytra ? 'view.playerObject.cape.visible = false; view.playerObject.elytra.visible = true;' : 'view.playerObject.cape.visible = true; view.playerObject.elytra.visible = false;'}
+              ` : ''}
               view.render();
             }
           })();
@@ -164,6 +178,83 @@ async function renderPlayerSkin(ctx: Context, skinUrl: string, capeUrl?: string)
   return screenshot
 }
 
+/**
+ * 渲染玩家皮肤为大头娃娃风格（头大身小）
+ * @param {Context} ctx - Koishi 上下文对象，用于获取 Puppeteer 实例
+ * @param {string} skinUrl - 玩家皮肤的 URL 地址
+ * @returns {Promise<string>} 返回渲染后的图片 Base64 编码字符串
+ */
+async function renderPlayerHead(ctx: Context, skinUrl: string): Promise<string> {
+  const page = await ctx.puppeteer.page()
+  await page.setViewport({ width: 400, height: 400 })
+
+  const html = `
+    <html>
+      <head>
+        <script src="https://unpkg.com/skinview3d@3.1.0/bundles/skinview3d.bundle.js"></script>
+        <style>
+          body { margin: 0; background: transparent; display: flex; justify-content: center; align-items: center; }
+          .container { width: 400px; height: 400px; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <canvas id="view" width="400" height="400"></canvas>
+        </div>
+        <script>
+          (async () => {
+            const viewer = new skinview3d.SkinViewer({
+              canvas: document.getElementById('view'),
+              width: 400,
+              height: 400,
+              preserveDrawingBuffer: true,
+              fov: 10,
+              zoom: 1.0
+            });
+            // 设置透明背景
+            viewer.renderer.setClearColor(0x000000, 0);
+
+            await viewer.loadSkin("${skinUrl}");
+
+            // 设置正面角度，稍微低头
+            viewer.playerObject.rotation.x = 0.05;
+            // 只放大头部，其他部位保持原比例
+            viewer.playerObject.skin.head.scale.set(3.0, 3.0, 3.0);
+            // 头部位置调整，补偿放大导致的偏移
+            viewer.playerObject.skin.head.position.y = 0.5 * (3.0 - 1.0);
+            // 整体模型缩放
+            const globalScale = 0.6;
+            viewer.playerObject.scale.set(globalScale, globalScale, globalScale);
+            // 整体位置向下调整，使头部居中
+            viewer.playerObject.position.y = -5;
+            // 禁用动画，保持静态
+            viewer.animation = null;
+            viewer.render();
+          })();
+      </script>
+      </body>
+    </html>
+  `
+
+  await page.setContent(html)
+  await page.waitForFunction(() => {
+    const canvas = document.getElementById('view');
+    return canvas && (canvas as HTMLCanvasElement).toDataURL() !== 'data:,';
+  }, { timeout: 5000 })
+
+  await new Promise(resolve => setTimeout(resolve, 100))
+
+  // 截取渲染结果
+  const element = await page.$('.container')
+  const screenshot = await element.screenshot({
+    encoding: 'base64',
+    omitBackground: true
+  }) as string
+
+  await page.close()
+  return screenshot
+}
+
 import { h } from 'koishi'
 import { MinecraftToolsConfig } from './index'
 
@@ -175,8 +266,10 @@ import { MinecraftToolsConfig } from './index'
  */
 export function registerSkinCommands(ctx: Context, parent: any, config: MinecraftToolsConfig) {
   parent.subcommand('.skin <username>', '查询 Minecraft 玩家信息')
-    .usage('mc.skin <用户名> - 获取玩家信息并生成皮肤及披风预览')
-    .action(async ({ }, username) => {
+    .usage('mc.skin <用户名> [-e] [-c] - 获取玩家信息并生成皮肤预览，可选显示鞘翅或披风')
+    .option('elytra', '-e 显示鞘翅')
+    .option('cape', '-c 显示披风')
+    .action(async ({ options }, username) => {
       if (!username) return '请输入玩家用户名'
 
       try {
@@ -186,7 +279,11 @@ export function registerSkinCommands(ctx: Context, parent: any, config: Minecraf
         ];
 
         if (profile.skin) {
-          const skinImage = await renderPlayerSkin(ctx, profile.skin.url, profile.cape?.url);
+          const renderCape = Boolean(options.cape && profile.cape?.url);
+          const renderElytra = Boolean(options.elytra && profile.cape?.url);
+          const capeUrl = (renderCape || renderElytra) ? profile.cape?.url : undefined;
+
+          const skinImage = await renderPlayerSkin(ctx, profile.skin.url, capeUrl, renderElytra);
           parts.push(h.image(`data:image/png;base64,${skinImage}`).toString());
 
           if (config.specific.showSkull) {
@@ -194,6 +291,26 @@ export function registerSkinCommands(ctx: Context, parent: any, config: Minecraf
             parts.push(`minecraft:skull 1 3 {SkullOwner:"${profile.name}"}`);
             parts.push(`minecraft:player_head{SkullOwner:"${profile.name}"}`);
           }
+        } else {
+          parts.push('该玩家未设置皮肤');
+        }
+        return parts.join('\n');
+      } catch (error) {
+        return error.message
+      }
+    })
+    .subcommand('.head <username>', '获取 Minecraft 玩家大头')
+    .usage('mc.skin.head <用户名> - 获取玩家大头娃娃风格头像')
+    .action(async ({ }, username) => {
+      if (!username) return '请输入玩家用户名'
+
+      try {
+        const profile = await getPlayerProfile(username);
+        const parts = [];
+
+        if (profile.skin) {
+          const headImage = await renderPlayerHead(ctx, profile.skin.url);
+          parts.push(h.image(`data:image/png;base64,${headImage}`).toString());
         } else {
           parts.push('该玩家未设置皮肤');
         }
