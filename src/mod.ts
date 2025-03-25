@@ -100,6 +100,11 @@ function parseText($: cheerio.CheerioAPI, $elem: cheerio.Cheerio<any>): string |
     const text = $link.text().trim()
 
     if (href && text) {
+      // 跳过图片链接
+      if (href.match(/\.(jpg|jpeg|png|gif|webp|bmp|tiff|tif)$/i)) {
+        return;
+      }
+
       let processedHref = href
       if (href.startsWith('//')) {
         processedHref = `https:${href}`
@@ -401,7 +406,7 @@ export function formatContent(result: ProcessResult, url: string, options: {
       !['支持版本:', '行为包:', 'Forge:', 'Fabric:']
         .some(type => s.includes(type))
     ).map((s, i, arr) => {
-      if (i === arr.length - 1 && !s.startsWith('http') && !s.endsWith('...')) {
+      if (i === arr.length - 1 && !s.startsWith('http') && !s.endsWith('...') && !options.linkCount) {
         return s + '...';
       }
       return s;
@@ -411,8 +416,9 @@ export function formatContent(result: ProcessResult, url: string, options: {
     )
   };
 
+  // 当启用了合并转发时，显示所有链接
   const links = result.links?.length
-    ? ['相关链接:', ...result.links.slice(0, options.linkCount)]
+    ? ['相关链接:', ...result.links.slice(0, options.linkCount || result.links.length)]
     : [];
 
   // 判断是否显示图片

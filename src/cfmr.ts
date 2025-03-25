@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { TypeMap } from './index'
 import { CommonConfig, MinecraftToolsConfig } from './index'
+import { sendForwardMessage } from './wikiservice';
 
 /**
  * 模组搜索结果的统一接口
@@ -415,12 +416,28 @@ function formatSearchResults(results: SearchModResult[], config: CommonConfig): 
 export function registerModPlatformCommands(mcmod: any, config: MinecraftToolsConfig) {
   mcmod.subcommand('.mr <keyword> [type]', '查询 Modrinth')
     .usage('mc.mod.mr <关键词> [类型] - 查询 Modrinth 内容\n可用类型：mod(模组), resourcepack(资源包), datapack(数据包), shader(光影), modpack(整合包), plugin(插件)')
-    .action(async ({ }, keyword, type) => {
+    .action(async ({ session }, keyword, type) => {
       if (!keyword) return '请输入要搜索的关键词'
 
       try {
         const results = await searchMods(keyword, 'modrinth', config.common, undefined, type)
         if (!results.length) return '未找到相关内容'
+
+        // 检查是否使用合并转发
+        if (config.common.useForwardMsg && session?.onebot?._request) {
+          // 获取无长度限制的详细内容
+          const tempConfig = { ...config.common, totalLength: 10000 };
+          const fullContent = await getModDetails(results[0], tempConfig, config.specific.cfApi);
+          const url = `https://modrinth.com/${results[0].type}/${results[0].id}`;
+
+          try {
+            await sendForwardMessage(session, results[0].title, fullContent, url);
+            return `已发送 Modrinth 项目: ${results[0].title}`;
+          } catch (error) {
+            return `合并转发消息发送失败: ${error.message}\n请访问: ${url}`;
+          }
+        }
+
         return await getModDetails(results[0], config.common, config.specific.cfApi)
       } catch (error) {
         return error.message
@@ -445,6 +462,21 @@ export function registerModPlatformCommands(mcmod: any, config: MinecraftToolsCo
           return '请输入有效的序号'
         }
 
+        // 检查是否使用合并转发
+        if (config.common.useForwardMsg && session?.onebot?._request) {
+          // 获取无长度限制的详细内容
+          const tempConfig = { ...config.common, totalLength: 10000 };
+          const fullContent = await getModDetails(results[index], tempConfig, config.specific.cfApi);
+          const url = `https://modrinth.com/${results[index].type}/${results[index].id}`;
+
+          try {
+            await sendForwardMessage(session, results[index].title, fullContent, url);
+            return `已发送 Modrinth 项目: ${results[index].title}`;
+          } catch (error) {
+            return `合并转发消息发送失败: ${error.message}\n请访问: ${url}`;
+          }
+        }
+
         return await getModDetails(results[index], config.common, config.specific.cfApi)
       } catch (error) {
         return error.message
@@ -453,12 +485,29 @@ export function registerModPlatformCommands(mcmod: any, config: MinecraftToolsCo
 
   mcmod.subcommand('.cf <keyword> [type]', '查询 CurseForge')
     .usage('mc.mod.cf <关键词> [类型] - 查询 CurseForge 内容\n可用类型：mod(模组), resourcepack(资源包), modpack(整合包), shader(光影), datapack(数据包), world(地图), addon(附加包), plugin(插件)')
-    .action(async ({ }, keyword, type) => {
+    .action(async ({ session }, keyword, type) => {
       if (!keyword) return '请输入要搜索的关键词'
 
       try {
         const results = await searchMods(keyword, 'curseforge', config.common, config.specific.cfApi, type)
         if (!results.length) return '未找到相关内容'
+
+        // 检查是否使用合并转发
+        if (config.common.useForwardMsg && session?.onebot?._request) {
+          // 获取无长度限制的详细内容
+          const tempConfig = { ...config.common, totalLength: 10000 };
+          const fullContent = await getModDetails(results[0], tempConfig, config.specific.cfApi);
+          const url = results[0].source === 'curseforge' ?
+            `https://www.curseforge.com/minecraft/${results[0].type}s/${results[0].title.toLowerCase().replace(/\s+/g, '-')}` : '';
+
+          try {
+            await sendForwardMessage(session, results[0].title, fullContent, url);
+            return `已发送 CurseForge 项目: ${results[0].title}`;
+          } catch (error) {
+            return `合并转发消息发送失败: ${error.message}\n请访问: ${url}`;
+          }
+        }
+
         return await getModDetails(results[0], config.common, config.specific.cfApi)
       } catch (error) {
         return error.message
@@ -481,6 +530,22 @@ export function registerModPlatformCommands(mcmod: any, config: MinecraftToolsCo
         const index = parseInt(response) - 1
         if (isNaN(index) || index < 0 || index >= results.length) {
           return '请输入有效的序号'
+        }
+
+        // 检查是否使用合并转发
+        if (config.common.useForwardMsg && session?.onebot?._request) {
+          // 获取无长度限制的详细内容
+          const tempConfig = { ...config.common, totalLength: 10000 };
+          const fullContent = await getModDetails(results[index], tempConfig, config.specific.cfApi);
+          const url = results[index].source === 'curseforge' ?
+            `https://www.curseforge.com/minecraft/${results[index].type}s/${results[index].title.toLowerCase().replace(/\s+/g, '-')}` : '';
+
+          try {
+            await sendForwardMessage(session, results[index].title, fullContent, url);
+            return `已发送 CurseForge 项目: ${results[index].title}`;
+          } catch (error) {
+            return `合并转发消息发送失败: ${error.message}\n请访问: ${url}`;
+          }
         }
 
         return await getModDetails(results[index], config.common, config.specific.cfApi)

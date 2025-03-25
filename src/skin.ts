@@ -87,12 +87,11 @@ async function getPlayerProfile(username: string): Promise<PlayerProfile> {
  * 渲染玩家皮肤和披风，生成两个不同角度的视图
  * @param {Context} ctx - Koishi 上下文对象，用于获取 Puppeteer 实例
  * @param {string} skinUrl - 玩家皮肤的 URL 地址
- * @param {string} [skinModel='classic'] - 皮肤模型类型，'slim'或'classic'
  * @param {string} [capeUrl] - 玩家披风的 URL 地址（可选）
  * @param {boolean} [renderElytra=false] - 是否渲染鞘翅（需要披风）
  * @returns {Promise<string>} 返回渲染后的图片 Base64 编码字符串
  */
-async function renderPlayerSkin(ctx: Context, skinUrl: string, skinModel: 'slim' | 'classic' = 'classic', capeUrl?: string, renderElytra: boolean = false): Promise<string> {
+async function renderPlayerSkin(ctx: Context, skinUrl: string, capeUrl?: string, renderElytra: boolean = false): Promise<string> {
   // 确定渲染尺寸
   const viewportWidth = renderElytra ? 600 : (capeUrl ? 400 : 360);
   const viewportHeight = 400;
@@ -145,7 +144,7 @@ async function renderPlayerSkin(ctx: Context, skinUrl: string, skinModel: 'slim'
             const view2 = createView('view2', Math.PI * 4 / 5);
             // 为每个视图加载皮肤和披风（如果有）
             for (const view of [view1, view2]) {
-              await view.loadSkin("${skinUrl}", "${skinModel === 'slim' ? 'slim' : 'default'}");
+              await view.loadSkin("${skinUrl}");
               ${capeUrl ? `
               await view.loadCape("${capeUrl}");
               ${renderElytra ? 'view.playerObject.cape.visible = false; view.playerObject.elytra.visible = true;' : 'view.playerObject.cape.visible = true; view.playerObject.elytra.visible = false;'}
@@ -184,10 +183,9 @@ async function renderPlayerSkin(ctx: Context, skinUrl: string, skinModel: 'slim'
  * 渲染玩家皮肤为大头娃娃风格（头大身小）
  * @param {Context} ctx - Koishi 上下文对象，用于获取 Puppeteer 实例
  * @param {string} skinUrl - 玩家皮肤的 URL 地址
- * @param {string} [skinModel='classic'] - 皮肤模型类型，'slim'或'classic'
  * @returns {Promise<string>} 返回渲染后的图片 Base64 编码字符串
  */
-async function renderPlayerHead(ctx: Context, skinUrl: string, skinModel: 'slim' | 'classic' = 'classic'): Promise<string> {
+async function renderPlayerHead(ctx: Context, skinUrl: string): Promise<string> {
   const page = await ctx.puppeteer.page()
   await page.setViewport({ width: 400, height: 400 })
 
@@ -217,7 +215,7 @@ async function renderPlayerHead(ctx: Context, skinUrl: string, skinModel: 'slim'
             // 设置透明背景
             viewer.renderer.setClearColor(0x000000, 0);
 
-            await viewer.loadSkin("${skinUrl}", "${skinModel === 'slim' ? 'slim' : 'default'}");
+            await viewer.loadSkin("${skinUrl}");
 
             // 设置正面角度，稍微低头
             viewer.playerObject.rotation.x = 0.05;
@@ -283,7 +281,7 @@ export function registerSkinCommands(ctx: Context, parent: any, config: Minecraf
           const renderElytra = Boolean(options.elytra && profile.cape?.url);
           const capeUrl = (renderCape || renderElytra) ? profile.cape?.url : undefined;
 
-          const skinImage = await renderPlayerSkin(ctx, profile.skin.url, profile.skin.model, capeUrl, renderElytra);
+          const skinImage = await renderPlayerSkin(ctx, profile.skin.url, capeUrl, renderElytra);
           parts.push(h.image(`data:image/png;base64,${skinImage}`).toString());
 
           if (config.specific.showSkull) {
@@ -309,7 +307,7 @@ export function registerSkinCommands(ctx: Context, parent: any, config: Minecraf
         const parts = [];
 
         if (profile.skin) {
-          const headImage = await renderPlayerHead(ctx, profile.skin.url, profile.skin.model);
+          const headImage = await renderPlayerHead(ctx, profile.skin.url);
           parts.push(h.image(`data:image/png;base64,${headImage}`).toString());
         } else {
           parts.push('该玩家未设置皮肤');

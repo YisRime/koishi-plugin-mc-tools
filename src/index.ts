@@ -105,6 +105,7 @@ export interface CommonConfig {
   maxHeight?: number
   waitUntil?: 'load' | 'domcontentloaded' | 'networkidle0' | 'networkidle2'
   captureTimeout?: number
+  useForwardMsg?: boolean
 }
 
 /**
@@ -182,7 +183,10 @@ export const Config: Schema<MinecraftToolsConfig> = Schema.object({
       'networkidle0',
       'networkidle2'
     ]).default('domcontentloaded')
-      .description('截图等待条件')
+      .description('截图等待条件'),
+    useForwardMsg: Schema.boolean()
+      .default(false)
+      .description('启用合并转发（仅支持QQ平台）')
   }).description('查询配置'),
 
   specific: Schema.object({

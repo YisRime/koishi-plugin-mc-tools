@@ -181,6 +181,86 @@ export async function capture(
 }
 
 /**
+ * 发送合并转发消息
+ * @param {any} session - 会话对象
+ * @param {string} title - 消息标题
+ * @param {string} content - 消息内容
+ * @param {string} [url] - 可选的链接URL
+ * @returns {Promise<any>} 发送结果
+ * @throws {Error} 当不支持合并转发或发送失败时抛出错误
+ */
+export async function sendForwardMessage(session: any, title: string, content: string, url?: string): Promise<any> {
+  if (!session?.onebot?._request) {
+    throw new Error('当前平台不支持合并转发消息');
+  }
+
+  try {
+    // 准备转发消息节点
+    const messages = [
+      {
+        type: 'node',
+        data: {
+          name: 'Minecraft 工具',
+          uin: session.bot.selfId,
+          content: title
+        }
+      }
+    ];
+
+    // 处理主体内容，切分内容避免超长
+    const maxLength = 1000;
+    let remainingContent = content;
+
+    while (remainingContent.length > 0) {
+      const chunk = remainingContent.substring(0, maxLength);
+      remainingContent = remainingContent.substring(maxLength);
+
+      messages.push({
+        type: 'node',
+        data: {
+          name: 'Minecraft 工具',
+          uin: session.bot.selfId,
+          content: chunk
+        }
+      });
+    }
+
+    // 添加URL链接
+    if (url) {
+      messages.push({
+        type: 'node',
+        data: {
+          name: 'Minecraft 工具',
+          uin: session.bot.selfId,
+          content: `详细内容: ${url}`
+        }
+      });
+    }
+
+    // 发送合并转发消息
+    const messageType = session.subtype === 'group' ? 'group' : 'private';
+    const params: any = {
+      message_type: messageType,
+      messages
+    };
+
+    if (messageType === 'group') {
+      params.group_id = session.guildId;
+    } else {
+      params.user_id = session.userId;
+    }
+
+    const result = await session.onebot._request('send_forward_msg', params);
+    return {
+      messageId: result.message_id,
+      resId: result.res_id
+    };
+  } catch (error) {
+    throw new Error(`发送合并转发消息失败: ${error.message}`);
+  }
+}
+
+/**
  * 统一的搜索处理
  * @param {Object} params - 搜索参数
  * @param {string} params.keyword - 搜索关键词
@@ -402,17 +482,57 @@ async function fetchwikiContent(
   lang?: LangCode,
   session?: any
 ) {
+  // 当启用合并转发且是QQ平台时
+  const useForwardMsg = config.common.useForwardMsg && session?.onebot?._request;
+
   if (source === 'wiki') {
     const pageUrl = buildUrl(result.title, lang, true)
     const displayUrl = buildUrl(result.title, lang)
+
+    if (useForwardMsg) {
+      try {
+        // 获取完整内容，忽略长度限制
+        const tempConfig = JSON.parse(JSON.stringify(config));
+        tempConfig.common.totalLength = 10000;
+        tempConfig.specific.sectionLength = 5000;
+
+        const { title, content } = await fetchContent(pageUrl, lang, tempConfig);
+        await sendForwardMessage(session, `『${title}』`, content, displayUrl);
+        return `已发送 Wiki 条目:『${title}』`;
+      } catch (error) {
+        return `合并转发消息发送失败: ${error.message}\n『${result.title}』的内容请访问: ${displayUrl}`;
+      }
+    }
+
     const { title, content } = await fetchContent(pageUrl, lang, config)
     return `『${title}』${content}\n详细内容：${displayUrl}`
+  }
+
+  if (useForwardMsg) {
+    try {
+      // 获取完整内容，忽略长度限制
+      const tempConfig = JSON.parse(JSON.stringify(config.common));
+      tempConfig.totalLength = 10000;
+
+      const content = await fetchModContent(result.url, tempConfig);
+      const formattedContent = formatContent(content, result.url, {
+        linkCount: 999, // 显示所有链接
+        showImages: config.specific.showImages,
+        platform: session.platform
+      });
+
+      const title = content.sections?.[0] || result.title;
+      await sendForwardMessage(session, title, formattedContent, result.url);
+      return `已发送 MCMOD 条目: ${title}`;
+    } catch (error) {
+      return `合并转发消息发送失败: ${error.message}\n内容请访问: ${result.url}`;
+    }
   }
 
   const content = await fetchModContent(result.url, config.common)
   return formatContent(content, result.url, {
     linkCount: config.specific.linkCount,
     showImages: config.specific.showImages,
-    platform: session?.platform
+    platform: session.platform
   }) || `内容获取失败，请访问：${result.url}`
 }
