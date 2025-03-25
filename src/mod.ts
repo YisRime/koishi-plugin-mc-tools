@@ -106,6 +106,11 @@ function parseText($: cheerio.CheerioAPI, $elem: cheerio.Cheerio<any>): string |
     const text = $link.text().trim()
 
     if (href && text) {
+      // 跳过图片链接
+      if (href.match(/\.(jpg|jpeg|png|gif|webp|bmp|tiff|tif)$/i)) {
+        return;
+      }
+
       let processedHref = href
       if (href.startsWith('//')) {
         processedHref = `https:${href}`

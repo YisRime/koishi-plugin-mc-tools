@@ -5,13 +5,6 @@ import { MinecraftToolsConfig, LangCode } from './index'
 import { buildUrl, fetchContent } from './wiki'
 import { fetchModContent, formatContent } from './mod'
 
-// 添加 Element 接口定义在文件顶部
-interface Element {
-  type: string
-  attrs: Record<string, any>
-  children?: any[]
-}
-
 export interface SearchResult {
   title: string
   url: string
@@ -188,66 +181,29 @@ export async function capture(
 }
 
 /**
- * 发送合并转发消息，或在不支持时分段发送
+ * 发送合并转发消息
  * @param {any} session - 会话对象
  * @param {string} title - 消息标题
- * @param {string|h.Fragment|(string|Element)[]} content - 消息内容，支持文本、h元素或元素数组
+ * @param {string} content - 消息内容
  * @param {string} [url] - 可选的链接URL
- * @returns {Promise<any>} 发送结果或处理状态
+ * @returns {Promise<any>} 发送结果或原始内容字符串（当不支持合并转发时）
  */
-export async function sendForwardMessage(session: any, title: string, content: string | h.Fragment | (string | Element)[], url?: string): Promise<any> {
-  // 检查是否为Telegram平台或其他不支持合并转发的平台
-  const isTelegram = session.platform === 'telegram';
-  const supportForward = session?.onebot?._request && !isTelegram;
-
-  // 将内容转换为统一的消息元素数组格式
-  let contentElements: any[] = [];
-
-  // 处理不同类型的内容输入
-  if (typeof content === 'string') {
-    contentElements = [content];
-  } else if (Array.isArray(content)) {
-    contentElements = content.map(item => {
-      if (typeof item === 'string') return item;
-      // 处理h元素
-      return transformHElement(item);
-    });
-  } else if (content && typeof content === 'object') {
-    // 处理h.Fragment
-    contentElements = [transformHElement(content)];
+export async function sendForwardMessage(session: any, title: string, content: string, url?: string): Promise<any> {
+  if (!session?.onebot?._request) {
+    // 当不支持合并转发时，返回原始内容供直接发送
+    return `${title}\n${content}${url ? `\n详细内容: ${url}` : ''}`;
   }
 
-  if (!supportForward) {
-    // 当不支持合并转发时，分段发送消息
-    try {
-      // 添加标题和URL（如果有）
-      await session.send(`『${title}』`);
-
-      // 发送内容元素
-      for (const element of contentElements) {
-        await session.send(element);
-      }
-
-      // 发送链接（如果有）
-      if (url) {
-        await session.send(`详细内容：${url}`);
-      }
-
-      return;
-    } catch (error) {
-      throw new Error(`分段发送消息失败: ${error.message}`);
-    }
-  }
-
-  // 支持合并转发的平台使用原有逻辑，但支持复杂消息元素
   try {
+    // 准备转发消息节点 - 将title和content合并到一个节点
+    const combinedContent = `${title}\n${content}`;
     const messages = [
       {
         type: 'node',
         data: {
-          name: title,
+          name: 'Minecraft 工具',
           uin: session.bot.selfId,
-          content: contentElements
+          content: combinedContent
         }
       }
     ];
@@ -273,80 +229,6 @@ export async function sendForwardMessage(session: any, title: string, content: s
   } catch (error) {
     throw new Error(`发送合并转发消息失败: ${error.message}`);
   }
-}
-
-/**
- * 将h元素转换为onebot兼容的消息格式
- * @param {any} element - 要转换的h元素
- * @returns {any} onebot兼容的消息元素
- */
-function transformHElement(element: any): any {
-  // 如果是字符串，直接返回
-  if (typeof element === 'string') {
-    return element;
-  }
-
-  // 如果是undefined或null，返回空字符串
-  if (element == null) {
-    return '';
-  }
-
-  // 如果是Fragment，处理其children
-  if (element.type === 'fragment' && Array.isArray(element.children)) {
-    const result = element.children.map(transformHElement).filter(Boolean);
-    return result.length ? result : '';
-  }
-
-  // 处理图片元素
-  if (element.type === 'img' || element.type === 'image') {
-    // 处理Buffer或Base64图片数据
-    if (element.attrs?.src && (Buffer.isBuffer(element.attrs.src) ||
-        (typeof element.attrs.src === 'string' && element.attrs.src.startsWith('data:')))) {
-      return {
-        type: 'image',
-        data: {
-          file: element.attrs.src
-        }
-      };
-    }
-    // 处理URL图片
-    if (element.attrs?.src) {
-      return {
-        type: 'image',
-        data: {
-          file: element.attrs.src
-        }
-      };
-    }
-  }
-
-  // 处理文本元素
-  if (element.type === 'text' && element.attrs?.content) {
-    return element.attrs.content;
-  }
-
-  // 处理其他常见类型的h元素
-  if (element.type === 'at' && element.attrs?.id) {
-    return {
-      type: 'at',
-      data: {
-        qq: element.attrs.id
-      }
-    };
-  }
-
-  // 处理一般文本标签
-  if (element.children && Array.isArray(element.children)) {
-    const processedChildren = element.children.map(transformHElement).filter(Boolean);
-    // 如果结果是字符串数组，拼接它们
-    if (processedChildren.every(item => typeof item === 'string')) {
-      return processedChildren.join('');
-    }
-    return processedChildren.length ? processedChildren : '';
-  }
-
-  // 默认将元素转为字符串
-  return String(element);
 }
 
 /**
