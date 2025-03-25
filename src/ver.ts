@@ -136,7 +136,9 @@ async function readVersionsFromFile(ctx: Context): Promise<{ snapshot: string, r
     const data = await fs.readFile(filePath, 'utf-8')
     return JSON.parse(data)
   } catch (err) {
-    logger.info('读取版本信息失败:', err.message)
+    if (err.code === 'ENOENT') {
+      logger.warn('读取版本信息失败:', err.message)
+    }
     return { snapshot: '', release: '' }
   }
 }
@@ -174,14 +176,18 @@ async function checkUpdate(ctx: Context, config: MinecraftToolsConfig) {
     let versionsChanged = false
 
     for (const { type, version, enabled } of updates) {
+      // 如果本地版本记录存在且与当前版本不同，且该类型版本更新通知已启用，则发送通知
       if (versions[type] && version.id !== versions[type] && enabled) {
         const msg = `Minecraft ${type === 'release' ? '正式版' : '快照版'}更新：${version.id}\n发布时间: ${new Date(version.releaseTime).toLocaleString('zh-CN')}`
         await notifyVersionUpdate(ctx, config.ver.groups, msg)
-        versionsChanged = true
+        versionsChanged = true;
       }
-      versions[type] = version.id
+      // 无论是否发送通知，只要版本记录不同就需要更新文件
+      if (version.id !== versions[type]) {
+        versions[type] = version.id;
+        versionsChanged = true;
+      }
     }
-
     // 如果版本有变化，保存到文件
     if (versionsChanged) {
       await saveVersionsToFile(ctx, versions)
