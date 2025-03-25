@@ -181,29 +181,96 @@ export async function capture(
 }
 
 /**
- * 发送合并转发消息
+ * 发送合并转发消息，或在不支持时分段发送
  * @param {any} session - 会话对象
  * @param {string} title - 消息标题
  * @param {string} content - 消息内容
  * @param {string} [url] - 可选的链接URL
- * @returns {Promise<any>} 发送结果或原始内容字符串（当不支持合并转发时）
+ * @returns {Promise<any>} 发送结果或处理状态
  */
 export async function sendForwardMessage(session: any, title: string, content: string, url?: string): Promise<any> {
-  if (!session?.onebot?._request) {
-    // 当不支持合并转发时，返回原始内容供直接发送
-    return `${title}\n${content}${url ? `\n详细内容: ${url}` : ''}`;
+  // 检查是否为Telegram平台或其他不支持合并转发的平台
+  const isTelegram = session.platform === 'telegram';
+  const supportForward = session?.onebot?._request && !isTelegram;
+
+  if (!supportForward) {
+    // 当不支持合并转发时，分段发送消息
+    try {
+      // 添加标题和URL（如果有）
+      let fullContent = `『${title}』\n${content}`;
+      if (url) {
+        fullContent += `\n详细内容：${url}`;
+      }
+
+      // 分段发送逻辑
+      const maxLength = isTelegram ? 4000 : 4500; // 设置合理的长度限制
+
+      // 如果内容较短，直接发送
+      if (fullContent.length <= maxLength) {
+        await session.send(fullContent);
+        return
+      }
+
+      // 首先发送标题和链接
+      await session.send(`『${title}』${url ? `\n详细内容：${url}` : ''}`);
+
+      // 分段发送长内容
+      const segments = [];
+
+      // 按段落拆分
+      const paragraphs = content.split(/\n{2,}/);
+      let currentSegment = "";
+
+      for (const paragraph of paragraphs) {
+        // 检查当前段落是否可以添加到当前分段
+        if (currentSegment.length + paragraph.length + 2 <= maxLength) {
+          currentSegment += (currentSegment ? "\n" : "") + paragraph;
+        } else {
+          // 当前分段已满，保存并开始新分段
+          if (currentSegment) {
+            segments.push(currentSegment);
+          }
+
+          // 处理特别长的段落
+          if (paragraph.length > maxLength) {
+            // 长段落按句子拆分
+            let remainingPara = paragraph;
+            while (remainingPara.length > 0) {
+              segments.push(remainingPara.substring(0, maxLength));
+              remainingPara = remainingPara.substring(maxLength);
+            }
+            currentSegment = "";
+          } else {
+            currentSegment = paragraph;
+          }
+        }
+      }
+
+      // 添加最后一个分段
+      if (currentSegment) {
+        segments.push(currentSegment);
+      }
+
+      // 发送所有分段
+      for (const segment of segments) {
+        await session.send(segment);
+      }
+
+      return
+    } catch (error) {
+      throw new Error(`分段发送消息失败: ${error.message}`);
+    }
   }
 
+  // 支持合并转发的平台使用原有逻辑
   try {
-    // 准备转发消息节点 - 将title和content合并到一个节点
-    const combinedContent = `${title}\n${content}`;
     const messages = [
       {
         type: 'node',
         data: {
-          name: 'Minecraft 工具',
+          name: title,
           uin: session.bot.selfId,
-          content: combinedContent
+          content: content
         }
       }
     ];
