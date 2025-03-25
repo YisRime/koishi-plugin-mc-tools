@@ -44,6 +44,12 @@ function parseLink($: cheerio.CheerioAPI, $elem: cheerio.Cheerio<any>): string |
     const urlMatch = scriptContent.match(/content:"[^"]*?<strong>([^<]+)/)
     if (urlMatch && urlMatch[1]) {
       const url = urlMatch[1]
+
+      // 跳过图片链接
+      if (url.match(/\.(jpg|jpeg|png|gif|webp|bmp|tiff|tif)$/i)) {
+        return;
+      }
+
       // 获取链接文本描述
       let prefix = ''
       let prevNode = $link[0].previousSibling
