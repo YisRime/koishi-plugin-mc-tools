@@ -387,38 +387,6 @@ async function fetchImage(
 }
 
 /**
- * 发送合并转发消息
- * @param {any} session - 会话对象
- * @param {string[]} contents - 要发送的内容数组
- * @returns {Promise<boolean>} 是否发送成功
- */
-export async function sendForwardMessage(session: any, contents: string[]): Promise<boolean> {
-  if (!session?.onebot) return false;
-
-  try {
-    const messages = contents.map(content => ({
-      type: 'node',
-      data: {
-        name: session.bot.nickname || 'Minecraft Tools',
-        uin: session.bot.selfId,
-        content: content
-      }
-    }));
-
-    await session.onebot._request('send_forward_msg', {
-      message_type: session.isDirect ? 'private' : 'group',
-      user_id: session.isDirect ? session.userId : undefined,
-      group_id: session.isDirect ? undefined : session.guildId,
-      messages: messages
-    });
-
-    return true;
-  } catch (error) {
-    return false;
-  }
-}
-
-/**
  * 获取页面内容
  * @param {SearchResult} result - 搜索结果项
  * @param {('wiki'|'mcmod')} source - 内容源
@@ -437,40 +405,14 @@ async function fetchwikiContent(
   if (source === 'wiki') {
     const pageUrl = buildUrl(result.title, lang, true)
     const displayUrl = buildUrl(result.title, lang)
-    const { title, content, fullContent } = await fetchContent(pageUrl, lang, config, config.common.forward)
-
-    if (config.common.forward) {
-      const wikiContent = fullContent || content;
-      const forwardContents = [
-        `『${title}』\n${wikiContent}\n详细内容：${displayUrl}`
-      ];
-
-      const success = await sendForwardMessage(session, forwardContents);
-      if (success) return '';
-    }
-
-    return `『${title}』${content}\n详细内容：${displayUrl}`;
+    const { title, content } = await fetchContent(pageUrl, lang, config)
+    return `『${title}』${content}\n详细内容：${displayUrl}`
   }
 
-  const content = await fetchModContent(result.url, {
-    ...config.common,
-    totalLength: config.common.forward ? Number.MAX_SAFE_INTEGER : config.common.totalLength
-  });
-
-  if (config.common.forward) {
-    const formattedContent = formatContent(content, result.url, {
-      linkCount: Number.MAX_SAFE_INTEGER,
-      showImages: config.specific.showImages,
-      platform: session?.platform
-    });
-
-    const success = await sendForwardMessage(session, [formattedContent]);
-    if (success) return '';
-  }
-
+  const content = await fetchModContent(result.url, config.common)
   return formatContent(content, result.url, {
     linkCount: config.specific.linkCount,
     showImages: config.specific.showImages,
     platform: session?.platform
-  });
+  }) || `内容获取失败，请访问：${result.url}`
 }

@@ -2,7 +2,7 @@ import { Context } from 'koishi'
 import * as cheerio from 'cheerio'
 import axios from 'axios'
 import { MinecraftToolsConfig, LangCode } from './index'
-import { searchWiki, search, capture, sendForwardMessage } from './wikiservice'
+import { searchWiki, search, capture } from './wikiservice'
 
 /**
  * 构建 Wiki URL
@@ -60,10 +60,9 @@ export function formatTitle(data: any): string {
  * @param {string} articleUrl - 文章URL
  * @param {LangCode} languageCode - 语言代码
  * @param {MinecraftToolsConfig} config - 插件配置
- * @param {boolean} [fullContent=false] - 是否获取完整内容（合并转发模式）
- * @returns {Promise<{title: string, content: string, fullContent?: string, url: string}>}
+ * @returns {Promise<{title: string, content: string, url: string}>}
  */
-export async function fetchContent(articleUrl: string, languageCode: LangCode, config: MinecraftToolsConfig, fullContent: boolean = false) {
+export async function fetchContent(articleUrl: string, languageCode: LangCode, config: MinecraftToolsConfig) {
   try {
     const languageVariant = languageCode.startsWith('zh') ?
       (languageCode === 'zh' ? 'zh-cn' :
@@ -136,17 +135,7 @@ export async function fetchContent(articleUrl: string, languageCode: LangCode, c
       const cleanUrl = articleUrl.split('?')[0];
       return { title, content: `${title}：本页面没有内容。`, url: cleanUrl };
     }
-    // 为合并转发模式准备完整内容
-    const completeContent = sections
-      .map((section) => {
-        const text = section.content.join(' ');
-        if (section.title) {
-          return `『${section.title}』${text}`;
-        }
-        return text;
-      })
-      .join('\n');
-    // 格式化普通模式下的内容
+
     const formattedContent = sections
       .map((section, index) => {
         const sectionText = index === 0
@@ -164,7 +153,6 @@ export async function fetchContent(articleUrl: string, languageCode: LangCode, c
     return {
       title,
       content: formattedContent.length >= config.common.totalLength ? formattedContent + '...' : formattedContent,
-      fullContent: fullContent ? completeContent : undefined,
       url: cleanUrl
     };
   } catch (error) {
@@ -214,8 +202,8 @@ export async function processWikiRequest(keyword: string, userId: string, config
     }
 
     try {
-      const { content, url, fullContent } = await fetchContent(pageUrl, lang, config, config.common.forward);
-      return { content, url, fullContent };
+      const { content, url } = await fetchContent(pageUrl, lang, config);
+      return `${content}\n详细内容：${url}`;
     } catch (error) {
       return `获取"${result.title}"的内容时发生错误: ${error.message}`;
     }
@@ -236,17 +224,8 @@ export function registerWikiCommands(ctx: Context, parent: any, config: Minecraf
     .usage('mc.wiki <关键词> - 查询 Wiki\nmc.wiki.find <关键词> - 搜索 Wiki\nmc.wiki.shot <关键词> - 截图 Wiki 页面')
     .action(async ({ session }, keyword) => {
       try {
-        const result = await processWikiRequest(keyword, session.userId, config, userLangs) as any
-        if (typeof result === 'string') return result
-
-        const { content, url, fullContent } = result
-
-        if (config.common.forward && fullContent) {
-          const success = await sendForwardMessage(session, [`『${result.title || keyword}』\n${fullContent}\n详细内容：${url}`])
-          if (success) return ''
-        }
-
-        return `${content}\n详细内容：${url}`
+        const result = await processWikiRequest(keyword, session.userId, config, userLangs)
+        return result
       } catch (error) {
         return error.message
       }

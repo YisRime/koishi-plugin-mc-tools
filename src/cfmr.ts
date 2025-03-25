@@ -1,7 +1,6 @@
 import axios from 'axios';
 import { TypeMap } from './index'
 import { CommonConfig, MinecraftToolsConfig } from './index'
-import { sendForwardMessage } from './wikiservice'
 
 /**
  * 模组搜索结果的统一接口
@@ -416,21 +415,13 @@ function formatSearchResults(results: SearchModResult[], config: CommonConfig): 
 export function registerModPlatformCommands(mcmod: any, config: MinecraftToolsConfig) {
   mcmod.subcommand('.mr <keyword> [type]', '查询 Modrinth')
     .usage('mc.mod.mr <关键词> [类型] - 查询 Modrinth 内容\n可用类型：mod(模组), resourcepack(资源包), datapack(数据包), shader(光影), modpack(整合包), plugin(插件)')
-    .action(async ({ session }, keyword, type) => {
+    .action(async ({ }, keyword, type) => {
       if (!keyword) return '请输入要搜索的关键词'
 
       try {
         const results = await searchMods(keyword, 'modrinth', config.common, undefined, type)
         if (!results.length) return '未找到相关内容'
-
-        const content = await getModDetails(results[0], config.common, config.specific.cfApi)
-
-        if (config.common.forward) {
-          const success = await sendForwardMessage(session, [content]);
-          if (success) return '';
-        }
-
-        return content
+        return await getModDetails(results[0], config.common, config.specific.cfApi)
       } catch (error) {
         return error.message
       }
@@ -454,14 +445,7 @@ export function registerModPlatformCommands(mcmod: any, config: MinecraftToolsCo
           return '请输入有效的序号'
         }
 
-        const content = await getModDetails(results[index], config.common, config.specific.cfApi)
-
-        if (config.common.forward) {
-          const success = await sendForwardMessage(session, [content]);
-          if (success) return '';
-        }
-
-        return content
+        return await getModDetails(results[index], config.common, config.specific.cfApi)
       } catch (error) {
         return error.message
       }
@@ -469,21 +453,13 @@ export function registerModPlatformCommands(mcmod: any, config: MinecraftToolsCo
 
   mcmod.subcommand('.cf <keyword> [type]', '查询 CurseForge')
     .usage('mc.mod.cf <关键词> [类型] - 查询 CurseForge 内容\n可用类型：mod(模组), resourcepack(资源包), modpack(整合包), shader(光影), datapack(数据包), world(地图), addon(附加包), plugin(插件)')
-    .action(async ({ session }, keyword, type) => {
+    .action(async ({ }, keyword, type) => {
       if (!keyword) return '请输入要搜索的关键词'
 
       try {
         const results = await searchMods(keyword, 'curseforge', config.common, config.specific.cfApi, type)
         if (!results.length) return '未找到相关内容'
-
-        const content = await getModDetails(results[0], config.common, config.specific.cfApi)
-
-        if (config.common.forward) {
-          const success = await sendForwardMessage(session, [content]);
-          if (success) return '';
-        }
-
-        return content
+        return await getModDetails(results[0], config.common, config.specific.cfApi)
       } catch (error) {
         return error.message
       }
@@ -507,14 +483,7 @@ export function registerModPlatformCommands(mcmod: any, config: MinecraftToolsCo
           return '请输入有效的序号'
         }
 
-        const content = await getModDetails(results[index], config.common, config.specific.cfApi)
-
-        if (config.common.forward) {
-          const success = await sendForwardMessage(session, [content]);
-          if (success) return '';
-        }
-
-        return content
+        return await getModDetails(results[index], config.common, config.specific.cfApi)
       } catch (error) {
         return error.message
       }
