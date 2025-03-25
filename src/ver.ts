@@ -1,8 +1,6 @@
 import { Context, Logger } from 'koishi'
 import axios from 'axios'
 import { MinecraftToolsConfig } from './index'
-import * as fs from 'fs'
-import * as path from 'path'
 
 const logger = new Logger('mcver')
 
@@ -11,21 +9,13 @@ const API_SOURCES = {
   BMCLAPI: 'https://bmclapi2.bangbang93.com/mc/game/version_manifest.json',
 }
 
-interface VersionData {
-  latest: {
-    release: string
-    snapshot: string
-  }
-  versions?: any[]
-}
-
 /**
  * 获取 Minecraft 版本信息
  * @param {number} timeout - 请求超时时间(毫秒)
- * @returns {Promise<VersionData>}
+ * @returns {Promise<{latest: MinecraftVersionInfo, release: MinecraftVersionInfo, versions: MinecraftVersionInfo[]}>}
  * @throws {Error} 当所有 API 源都请求失败时抛出错误
  */
-async function fetchVersions(timeout = 10000): Promise<VersionData> {
+async function fetchVersions(timeout = 10000) {
   const apiSources = Object.values(API_SOURCES)
   let lastError = null
 
@@ -33,11 +23,14 @@ async function fetchVersions(timeout = 10000): Promise<VersionData> {
     try {
       const { data } = await axios.get(apiUrl, { timeout })
 
-      if (!data.latest || !data.latest.release || !data.latest.snapshot) {
+      const latest = data.versions[0]
+      const release = data.versions.find(v => v.type === 'release')
+
+      if (!latest || !release) {
         throw new Error('版本数据解析失败')
       }
 
-      return { latest: data.latest, versions: data.versions }
+      return { latest, release, versions: data.versions }
     } catch (error) {
       lastError = error
       logger.warn(`API 源 ${apiUrl} 请求失败:`, error.message || String(error))
@@ -49,52 +42,17 @@ async function fetchVersions(timeout = 10000): Promise<VersionData> {
 }
 
 /**
- * 保存版本信息到本地文件
- * @param {Context} ctx - Koishi 上下文
- * @param {Object} versions - 版本信息对象
- */
-async function saveVersionsToFile(ctx: Context, versions: {release: string, snapshot: string}) {
-  try {
-    const dataDir = path.join(ctx.baseDir, 'data')
-    if (!fs.existsSync(dataDir)) {
-      fs.mkdirSync(dataDir, { recursive: true })
-    }
-    const filePath = path.join(dataDir, 'mcver-latest.json')
-    fs.writeFileSync(filePath, JSON.stringify(versions, null, 2), 'utf-8')
-  } catch (error) {
-    logger.warn('保存版本信息失败:', error)
-  }
-}
-
-/**
- * 从本地文件读取版本信息
- * @param {Context} ctx - Koishi 上下文
- * @returns {Object} 版本信息对象
- */
-function loadVersionsFromFile(ctx: Context): {release: string, snapshot: string} {
-  try {
-    const filePath = path.join(ctx.baseDir, 'data/mcver-latest.json')
-    if (fs.existsSync(filePath)) {
-      const data = fs.readFileSync(filePath, 'utf-8')
-      return JSON.parse(data)
-    }
-  } catch (error) {
-    logger.warn('读取版本信息失败:', error)
-  }
-  return { release: '', snapshot: '' }
-}
-
-/**
  * 获取格式化的 Minecraft 版本信息
  * @returns {Promise<{success: boolean, data?: string, error?: string}>}
  */
 async function getVersionInfo() {
   try {
-    const { latest } = await fetchVersions()
+    const { latest, release } = await fetchVersions()
+    const formatDate = (date: string) => new Date(date).toLocaleDateString('zh-CN')
 
     return {
       success: true,
-      data: `Minecraft 最新版本：\n正式版: ${latest.release}\n快照版: ${latest.snapshot}`
+      data: `Minecraft 最新版本：\n正式版: ${release.id}(${formatDate(release.releaseTime)})\n快照版: ${latest.id}(${formatDate(latest.releaseTime)})`
     }
   } catch (error) {
     return {
@@ -157,31 +115,25 @@ async function notifyVersionUpdate(ctx: any, targets: string[], updateMessage: s
 
 /**
  * 检查 Minecraft 版本更新并发送通知
- * @param {Context} ctx - Koishi 上下文
+ * @param {{snapshot: string, release: string}} versions - 当前版本信息
+ * @param {any} ctx - Koishi 上下文
  * @param {MinecraftToolsConfig} config - 插件配置
  */
-async function checkUpdate(ctx: Context, config: MinecraftToolsConfig) {
+async function checkUpdate(versions: { snapshot: string, release: string }, ctx: any, config: MinecraftToolsConfig) {
   try {
-    // 从本地加载之前的版本信息
-    const savedVersions = loadVersionsFromFile(ctx)
+    const { latest, release } = await fetchVersions()
+    const updates = [
+      { type: 'snapshot', version: latest, enabled: config.ver.snapshot },
+      { type: 'release', version: release, enabled: config.ver.release }
+    ]
 
-    // 获取最新版本信息
-    const { latest } = await fetchVersions()
-
-    // 检查是否有更新
-    if (config.ver.release && latest.release !== savedVersions.release) {
-      const msg = `Minecraft 正式版更新：${latest.release}`
-      await notifyVersionUpdate(ctx, config.ver.groups, msg)
+    for (const { type, version, enabled } of updates) {
+      if (versions[type] && version.id !== versions[type] && enabled) {
+        const msg = `Minecraft ${type === 'release' ? '正式版' : '快照版'}更新：${version.id}\n发布时间: ${new Date(version.releaseTime).toLocaleString('zh-CN')}`
+        await notifyVersionUpdate(ctx, config.ver.groups, msg)
+      }
+      versions[type] = version.id
     }
-
-    if (config.ver.snapshot && latest.snapshot !== savedVersions.snapshot) {
-      const msg = `Minecraft 快照版更新：${latest.snapshot}`
-      await notifyVersionUpdate(ctx, config.ver.groups, msg)
-    }
-
-    // 保存新版本信息到本地
-    await saveVersionsToFile(ctx, latest)
-
   } catch (error) {
     logger.warn('版本检查失败：', error)
   }
@@ -195,6 +147,8 @@ async function checkUpdate(ctx: Context, config: MinecraftToolsConfig) {
  * @returns {NodeJS.Timeout|undefined} - 如果启用了定时检查，返回定时器句柄
  */
 export function registerVersionCommands(ctx: Context, parent: any, config: MinecraftToolsConfig): NodeJS.Timeout | undefined {
+  // 创建一个对象保存版本信息
+  const minecraftVersions = { snapshot: '', release: '' }
   // 注册查询版本信息命令
   parent.subcommand('.ver', '查询 Minecraft 版本信息')
     .usage('mc.ver - 获取 Minecraft 最新版本信息')
@@ -205,10 +159,8 @@ export function registerVersionCommands(ctx: Context, parent: any, config: Minec
 
   // 如果启用了版本更新检查，启动定时任务
   if (config.ver.enabled && config.ver.groups.length) {
-    // 立即检查一次
-    checkUpdate(ctx, config)
-    // 设置定时检查
-    const timer = setInterval(() => checkUpdate(ctx, config), config.ver.interval * 60 * 1000)
+    checkUpdate(minecraftVersions, ctx, config)
+    const timer = setInterval(() => checkUpdate(minecraftVersions, ctx, config), config.ver.interval * 60 * 1000)
     return timer
   }
 }

@@ -5,6 +5,13 @@ import { MinecraftToolsConfig, LangCode } from './index'
 import { buildUrl, fetchContent } from './wiki'
 import { fetchModContent, formatContent } from './mod'
 
+// 添加 Element 接口定义在文件顶部
+interface Element {
+  type: string
+  attrs: Record<string, any>
+  children?: any[]
+}
+
 export interface SearchResult {
   title: string
   url: string
@@ -184,85 +191,55 @@ export async function capture(
  * 发送合并转发消息，或在不支持时分段发送
  * @param {any} session - 会话对象
  * @param {string} title - 消息标题
- * @param {string} content - 消息内容
+ * @param {string|h.Fragment|(string|Element)[]} content - 消息内容，支持文本、h元素或元素数组
  * @param {string} [url] - 可选的链接URL
  * @returns {Promise<any>} 发送结果或处理状态
  */
-export async function sendForwardMessage(session: any, title: string, content: string, url?: string): Promise<any> {
+export async function sendForwardMessage(session: any, title: string, content: string | h.Fragment | (string | Element)[], url?: string): Promise<any> {
   // 检查是否为Telegram平台或其他不支持合并转发的平台
   const isTelegram = session.platform === 'telegram';
   const supportForward = session?.onebot?._request && !isTelegram;
+
+  // 将内容转换为统一的消息元素数组格式
+  let contentElements: any[] = [];
+
+  // 处理不同类型的内容输入
+  if (typeof content === 'string') {
+    contentElements = [content];
+  } else if (Array.isArray(content)) {
+    contentElements = content.map(item => {
+      if (typeof item === 'string') return item;
+      // 处理h元素
+      return transformHElement(item);
+    });
+  } else if (content && typeof content === 'object') {
+    // 处理h.Fragment
+    contentElements = [transformHElement(content)];
+  }
 
   if (!supportForward) {
     // 当不支持合并转发时，分段发送消息
     try {
       // 添加标题和URL（如果有）
-      let fullContent = `『${title}』\n${content}`;
+      await session.send(`『${title}』`);
+
+      // 发送内容元素
+      for (const element of contentElements) {
+        await session.send(element);
+      }
+
+      // 发送链接（如果有）
       if (url) {
-        fullContent += `\n详细内容：${url}`;
+        await session.send(`详细内容：${url}`);
       }
 
-      // 分段发送逻辑
-      const maxLength = isTelegram ? 4000 : 4500; // 设置合理的长度限制
-
-      // 如果内容较短，直接发送
-      if (fullContent.length <= maxLength) {
-        await session.send(fullContent);
-        return
-      }
-
-      // 首先发送标题和链接
-      await session.send(`『${title}』${url ? `\n详细内容：${url}` : ''}`);
-
-      // 分段发送长内容
-      const segments = [];
-
-      // 按段落拆分
-      const paragraphs = content.split(/\n{2,}/);
-      let currentSegment = "";
-
-      for (const paragraph of paragraphs) {
-        // 检查当前段落是否可以添加到当前分段
-        if (currentSegment.length + paragraph.length + 2 <= maxLength) {
-          currentSegment += (currentSegment ? "\n" : "") + paragraph;
-        } else {
-          // 当前分段已满，保存并开始新分段
-          if (currentSegment) {
-            segments.push(currentSegment);
-          }
-
-          // 处理特别长的段落
-          if (paragraph.length > maxLength) {
-            // 长段落按句子拆分
-            let remainingPara = paragraph;
-            while (remainingPara.length > 0) {
-              segments.push(remainingPara.substring(0, maxLength));
-              remainingPara = remainingPara.substring(maxLength);
-            }
-            currentSegment = "";
-          } else {
-            currentSegment = paragraph;
-          }
-        }
-      }
-
-      // 添加最后一个分段
-      if (currentSegment) {
-        segments.push(currentSegment);
-      }
-
-      // 发送所有分段
-      for (const segment of segments) {
-        await session.send(segment);
-      }
-
-      return
+      return;
     } catch (error) {
       throw new Error(`分段发送消息失败: ${error.message}`);
     }
   }
 
-  // 支持合并转发的平台使用原有逻辑
+  // 支持合并转发的平台使用原有逻辑，但支持复杂消息元素
   try {
     const messages = [
       {
@@ -270,7 +247,7 @@ export async function sendForwardMessage(session: any, title: string, content: s
         data: {
           name: title,
           uin: session.bot.selfId,
-          content: content
+          content: contentElements
         }
       }
     ];
@@ -296,6 +273,80 @@ export async function sendForwardMessage(session: any, title: string, content: s
   } catch (error) {
     throw new Error(`发送合并转发消息失败: ${error.message}`);
   }
+}
+
+/**
+ * 将h元素转换为onebot兼容的消息格式
+ * @param {any} element - 要转换的h元素
+ * @returns {any} onebot兼容的消息元素
+ */
+function transformHElement(element: any): any {
+  // 如果是字符串，直接返回
+  if (typeof element === 'string') {
+    return element;
+  }
+
+  // 如果是undefined或null，返回空字符串
+  if (element == null) {
+    return '';
+  }
+
+  // 如果是Fragment，处理其children
+  if (element.type === 'fragment' && Array.isArray(element.children)) {
+    const result = element.children.map(transformHElement).filter(Boolean);
+    return result.length ? result : '';
+  }
+
+  // 处理图片元素
+  if (element.type === 'img' || element.type === 'image') {
+    // 处理Buffer或Base64图片数据
+    if (element.attrs?.src && (Buffer.isBuffer(element.attrs.src) ||
+        (typeof element.attrs.src === 'string' && element.attrs.src.startsWith('data:')))) {
+      return {
+        type: 'image',
+        data: {
+          file: element.attrs.src
+        }
+      };
+    }
+    // 处理URL图片
+    if (element.attrs?.src) {
+      return {
+        type: 'image',
+        data: {
+          file: element.attrs.src
+        }
+      };
+    }
+  }
+
+  // 处理文本元素
+  if (element.type === 'text' && element.attrs?.content) {
+    return element.attrs.content;
+  }
+
+  // 处理其他常见类型的h元素
+  if (element.type === 'at' && element.attrs?.id) {
+    return {
+      type: 'at',
+      data: {
+        qq: element.attrs.id
+      }
+    };
+  }
+
+  // 处理一般文本标签
+  if (element.children && Array.isArray(element.children)) {
+    const processedChildren = element.children.map(transformHElement).filter(Boolean);
+    // 如果结果是字符串数组，拼接它们
+    if (processedChildren.every(item => typeof item === 'string')) {
+      return processedChildren.join('');
+    }
+    return processedChildren.length ? processedChildren : '';
+  }
+
+  // 默认将元素转为字符串
+  return String(element);
 }
 
 /**
