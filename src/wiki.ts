@@ -2,7 +2,7 @@ import { Context } from 'koishi'
 import * as cheerio from 'cheerio'
 import axios from 'axios'
 import { MinecraftToolsConfig, LangCode } from './index'
-import { searchWiki, search, capture } from './wikiservice'
+import { searchWiki, search, capture, sendForwardMessage } from './wikiservice'
 
 /**
  * 构建 Wiki URL
@@ -167,9 +167,17 @@ export async function fetchContent(articleUrl: string, languageCode: LangCode, c
  * @param {MinecraftToolsConfig} config - 插件配置
  * @param {Map<string, LangCode>} userLangs - 用户语言设置
  * @param {'text' | 'image' | 'search'} mode - 请求模式
+ * @param {any} [session] - 会话对象，用于合并转发
  * @returns {Promise<string | {results: SearchResult[], domain: string, lang: string} | {url: string, pageUrl: string}>}
  */
-export async function processWikiRequest(keyword: string, userId: string, config: MinecraftToolsConfig, userLangs: Map<string, LangCode>, mode: 'text' | 'image' | 'search' = 'text') {
+export async function processWikiRequest(
+  keyword: string,
+  userId: string,
+  config: MinecraftToolsConfig,
+  userLangs: Map<string, LangCode>,
+  mode: 'text' | 'image' | 'search' = 'text',
+  session?: any
+) {
   if (!keyword) return '请输入需要查询的关键词';
 
   keyword = keyword.trim().replace(/[\u200B-\u200D\uFEFF]/g, '');
@@ -201,9 +209,31 @@ export async function processWikiRequest(keyword: string, userId: string, config
       };
     }
 
+    // 使用合并转发（如果启用且提供了session）
+    if (config.common.useForwardMsg && session) {
+      try {
+        // 获取完整内容
+        const tempConfig = JSON.parse(JSON.stringify(config));
+        tempConfig.common.totalLength = 10000;
+        tempConfig.specific.sectionLength = 5000;
+
+        const { title, content } = await fetchContent(pageUrl, lang, tempConfig);
+        const response = await sendForwardMessage(session, `『${title}』`, content, displayUrl);
+
+        // 如果返回的是字符串，说明平台不支持合并转发，直接返回内容
+        if (typeof response === 'string') {
+          return response;
+        }
+        return '';
+      } catch (error) {
+        return `获取"${result.title}"的内容时发生错误: ${error.message}`;
+      }
+    }
+
+    // 默认方式获取内容
     try {
-      const { content, url } = await fetchContent(pageUrl, lang, config);
-      return `${content}\n详细内容：${url}`;
+      const { title, content } = await fetchContent(pageUrl, lang, config);
+      return `『${title}』${content}\n详细内容：${displayUrl}`;
     } catch (error) {
       return `获取"${result.title}"的内容时发生错误: ${error.message}`;
     }
@@ -224,7 +254,8 @@ export function registerWikiCommands(ctx: Context, parent: any, config: Minecraf
     .usage('mc.wiki <关键词> - 查询 Wiki\nmc.wiki.find <关键词> - 搜索 Wiki\nmc.wiki.shot <关键词> - 截图 Wiki 页面')
     .action(async ({ session }, keyword) => {
       try {
-        const result = await processWikiRequest(keyword, session.userId, config, userLangs)
+        // 传递session参数以支持合并转发
+        const result = await processWikiRequest(keyword, session.userId, config, userLangs, 'text', session)
         return result
       } catch (error) {
         return error.message

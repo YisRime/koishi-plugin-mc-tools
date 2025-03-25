@@ -424,15 +424,19 @@ export function registerModPlatformCommands(mcmod: any, config: MinecraftToolsCo
         if (!results.length) return '未找到相关内容'
 
         // 检查是否使用合并转发
-        if (config.common.useForwardMsg && session?.onebot?._request) {
+        if (config.common.useForwardMsg) {
           // 获取无长度限制的详细内容
           const tempConfig = { ...config.common, totalLength: 10000 };
           const fullContent = await getModDetails(results[0], tempConfig, config.specific.cfApi);
           const url = `https://modrinth.com/${results[0].type}/${results[0].id}`;
 
           try {
-            await sendForwardMessage(session, results[0].title, fullContent, url);
-            return `已发送 Modrinth 项目: ${results[0].title}`;
+            const response = await sendForwardMessage(session, results[0].title, fullContent, url);
+            // 如果返回字符串，说明平台不支持合并转发，直接返回内容
+            if (typeof response === 'string') {
+              return response;
+            }
+            return '';
           } catch (error) {
             return `合并转发消息发送失败: ${error.message}\n请访问: ${url}`;
           }
@@ -463,15 +467,19 @@ export function registerModPlatformCommands(mcmod: any, config: MinecraftToolsCo
         }
 
         // 检查是否使用合并转发
-        if (config.common.useForwardMsg && session?.onebot?._request) {
+        if (config.common.useForwardMsg) {
           // 获取无长度限制的详细内容
           const tempConfig = { ...config.common, totalLength: 10000 };
           const fullContent = await getModDetails(results[index], tempConfig, config.specific.cfApi);
           const url = `https://modrinth.com/${results[index].type}/${results[index].id}`;
 
           try {
-            await sendForwardMessage(session, results[index].title, fullContent, url);
-            return `已发送 Modrinth 项目: ${results[index].title}`;
+            const response = await sendForwardMessage(session, results[index].title, fullContent, url);
+            // 如果返回字符串，说明平台不支持合并转发，直接返回内容
+            if (typeof response === 'string') {
+              return response;
+            }
+            return '';
           } catch (error) {
             return `合并转发消息发送失败: ${error.message}\n请访问: ${url}`;
           }
@@ -493,7 +501,7 @@ export function registerModPlatformCommands(mcmod: any, config: MinecraftToolsCo
         if (!results.length) return '未找到相关内容'
 
         // 检查是否使用合并转发
-        if (config.common.useForwardMsg && session?.onebot?._request) {
+        if (config.common.useForwardMsg) {
           // 获取无长度限制的详细内容
           const tempConfig = { ...config.common, totalLength: 10000 };
           const fullContent = await getModDetails(results[0], tempConfig, config.specific.cfApi);
@@ -501,8 +509,12 @@ export function registerModPlatformCommands(mcmod: any, config: MinecraftToolsCo
             `https://www.curseforge.com/minecraft/${results[0].type}s/${results[0].title.toLowerCase().replace(/\s+/g, '-')}` : '';
 
           try {
-            await sendForwardMessage(session, results[0].title, fullContent, url);
-            return `已发送 CurseForge 项目: ${results[0].title}`;
+            const response = await sendForwardMessage(session, results[0].title, fullContent, url);
+            // 如果返回字符串，说明平台不支持合并转发，直接返回内容
+            if (typeof response === 'string') {
+              return response;
+            }
+            return '';
           } catch (error) {
             return `合并转发消息发送失败: ${error.message}\n请访问: ${url}`;
           }
@@ -533,7 +545,7 @@ export function registerModPlatformCommands(mcmod: any, config: MinecraftToolsCo
         }
 
         // 检查是否使用合并转发
-        if (config.common.useForwardMsg && session?.onebot?._request) {
+        if (config.common.useForwardMsg) {
           // 获取无长度限制的详细内容
           const tempConfig = { ...config.common, totalLength: 10000 };
           const fullContent = await getModDetails(results[index], tempConfig, config.specific.cfApi);
@@ -541,8 +553,12 @@ export function registerModPlatformCommands(mcmod: any, config: MinecraftToolsCo
             `https://www.curseforge.com/minecraft/${results[index].type}s/${results[index].title.toLowerCase().replace(/\s+/g, '-')}` : '';
 
           try {
-            await sendForwardMessage(session, results[index].title, fullContent, url);
-            return `已发送 CurseForge 项目: ${results[index].title}`;
+            const response = await sendForwardMessage(session, results[index].title, fullContent, url);
+            // 如果返回字符串，说明平台不支持合并转发，直接返回内容
+            if (typeof response === 'string') {
+              return response;
+            }
+            return '';
           } catch (error) {
             return `合并转发消息发送失败: ${error.message}\n请访问: ${url}`;
           }

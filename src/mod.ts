@@ -3,7 +3,7 @@ import axios from 'axios'
 import * as cheerio from 'cheerio'
 import { CommonConfig, MinecraftToolsConfig } from './index'
 import { registerModPlatformCommands } from './cfmr'
-import { searchMod, search, capture } from './wikiservice'
+import { searchMod, search, capture, sendForwardMessage } from './wikiservice'
 
 /**
  * 处理结果接口
@@ -505,6 +505,35 @@ export function registerModCommands(ctx: Context, parent: any, config: Minecraft
         if (!results.length) return '未找到相关内容'
 
         const result = results[0]
+
+        // 使用合并转发功能（如果启用）
+        if (config.common.useForwardMsg) {
+          try {
+            // 获取完整内容，忽略长度限制
+            const tempConfig = JSON.parse(JSON.stringify(config.common));
+            tempConfig.totalLength = 10000;
+
+            const content = await fetchModContent(result.url, tempConfig);
+            const formattedContent = formatContent(content, result.url, {
+              linkCount: 999, // 显示所有链接
+              showImages: config.specific.showImages,
+              platform: session.platform
+            });
+
+            const title = content.sections?.[0] || result.title;
+            const response = await sendForwardMessage(session, title, formattedContent, result.url);
+
+            // 如果返回的是字符串，说明平台不支持合并转发，直接返回内容
+            if (typeof response === 'string') {
+              return response;
+            }
+            return '';
+          } catch (error) {
+            return `合并转发消息发送失败: ${error.message}\n内容请访问: ${result.url}`;
+          }
+        }
+
+        // 默认方式返回内容
         const content = await fetchModContent(result.url, config.common)
         return formatContent(content, result.url, {
           linkCount: config.specific.linkCount,

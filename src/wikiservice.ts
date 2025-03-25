@@ -186,56 +186,27 @@ export async function capture(
  * @param {string} title - 消息标题
  * @param {string} content - 消息内容
  * @param {string} [url] - 可选的链接URL
- * @returns {Promise<any>} 发送结果
- * @throws {Error} 当不支持合并转发或发送失败时抛出错误
+ * @returns {Promise<any>} 发送结果或原始内容字符串（当不支持合并转发时）
  */
 export async function sendForwardMessage(session: any, title: string, content: string, url?: string): Promise<any> {
   if (!session?.onebot?._request) {
-    throw new Error('当前平台不支持合并转发消息');
+    // 当不支持合并转发时，返回原始内容供直接发送
+    return `${title}\n${content}${url ? `\n详细内容: ${url}` : ''}`;
   }
 
   try {
-    // 准备转发消息节点
+    // 准备转发消息节点 - 将title和content合并到一个节点
+    const combinedContent = `${title}\n${content}`;
     const messages = [
       {
         type: 'node',
         data: {
           name: 'Minecraft 工具',
           uin: session.bot.selfId,
-          content: title
+          content: combinedContent
         }
       }
     ];
-
-    // 处理主体内容，切分内容避免超长
-    const maxLength = 1000;
-    let remainingContent = content;
-
-    while (remainingContent.length > 0) {
-      const chunk = remainingContent.substring(0, maxLength);
-      remainingContent = remainingContent.substring(maxLength);
-
-      messages.push({
-        type: 'node',
-        data: {
-          name: 'Minecraft 工具',
-          uin: session.bot.selfId,
-          content: chunk
-        }
-      });
-    }
-
-    // 添加URL链接
-    if (url) {
-      messages.push({
-        type: 'node',
-        data: {
-          name: 'Minecraft 工具',
-          uin: session.bot.selfId,
-          content: `详细内容: ${url}`
-        }
-      });
-    }
 
     // 发送合并转发消息
     const messageType = session.subtype === 'group' ? 'group' : 'private';
@@ -482,8 +453,8 @@ async function fetchwikiContent(
   lang?: LangCode,
   session?: any
 ) {
-  // 当启用合并转发且是QQ平台时
-  const useForwardMsg = config.common.useForwardMsg && session?.onebot?._request;
+  // 当启用合并转发时尝试使用合并转发
+  const useForwardMsg = config.common.useForwardMsg;
 
   if (source === 'wiki') {
     const pageUrl = buildUrl(result.title, lang, true)
@@ -497,8 +468,13 @@ async function fetchwikiContent(
         tempConfig.specific.sectionLength = 5000;
 
         const { title, content } = await fetchContent(pageUrl, lang, tempConfig);
-        await sendForwardMessage(session, `『${title}』`, content, displayUrl);
-        return `已发送 Wiki 条目:『${title}』`;
+        const response = await sendForwardMessage(session, `『${title}』`, content, displayUrl);
+
+        // 如果返回的是字符串，说明平台不支持合并转发，直接返回内容
+        if (typeof response === 'string') {
+          return response;
+        }
+        return '';
       } catch (error) {
         return `合并转发消息发送失败: ${error.message}\n『${result.title}』的内容请访问: ${displayUrl}`;
       }
@@ -522,8 +498,13 @@ async function fetchwikiContent(
       });
 
       const title = content.sections?.[0] || result.title;
-      await sendForwardMessage(session, title, formattedContent, result.url);
-      return `已发送 MCMOD 条目: ${title}`;
+      const response = await sendForwardMessage(session, title, formattedContent, result.url);
+
+      // 如果返回的是字符串，说明平台不支持合并转发，直接返回内容
+      if (typeof response === 'string') {
+        return response;
+      }
+      return '';
     } catch (error) {
       return `合并转发消息发送失败: ${error.message}\n内容请访问: ${result.url}`;
     }

@@ -1,7 +1,7 @@
 {
   "name": "koishi-plugin-mc-tools",
   "description": "我的世界（Minecraft/MC）工具。支持查询MCWiki/MCMod/CurseForge/Modrinth、服务器信息、最新版本和玩家皮肤；推送MC更新通知，运行命令等",
-  "version": "2.1.6",
+  "version": "2.1.7",
   "contributors": [
     "Yis_Rime <yis_rime@outlook.com>"
   ],
