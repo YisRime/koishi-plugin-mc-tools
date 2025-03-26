@@ -264,7 +264,7 @@ async function renderPlayerHead(ctx: Context, skinUrl: string): Promise<string> 
  */
 export function registerSkinCommands(ctx: Context, parent: any, config: MinecraftToolsConfig) {
   parent.subcommand('.skin <username>', '查询 Minecraft 玩家信息')
-    .usage('mc.skin <用户名> [-e] [-c] - 获取玩家信息并生成皮肤预览，可选显示鞘翅或披风')
+    .usage('mc.skin <用户名> [-e/-c] - 获取玩家信息并生成皮肤预览，可选显示鞘翅或披风')
     .option('elytra', '-e 显示鞘翅')
     .option('cape', '-c 显示披风')
     .action(async ({ options }, username) => {

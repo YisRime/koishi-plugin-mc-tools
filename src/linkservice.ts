@@ -315,7 +315,7 @@ export async function sendMinecraftMessage(
   try {
     switch (type) {
       case 'text':
-        apiData.api = 'send_msg'
+        apiData.api = 'broadcast'
         apiData.data.message = Array.isArray(params.message) ?
           params.message : [formatTextWithStyles(params.message)]
         break
