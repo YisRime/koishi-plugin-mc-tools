@@ -11,6 +11,27 @@ import { Rcon } from 'rcon-client'
  */
 export function registerServerCommands(parent: any, config: MinecraftToolsConfig, ctx: Context) {
 
+  /**
+   * 测试RCON连接状态
+   * @param serverConfig 服务器配置
+   * @returns 连接状态字符串
+   */
+  async function testRconConnection(serverConfig) {
+    if (!serverConfig.rcon.password) return 'x'
+    try {
+      const [host, portStr] = serverConfig.rcon.address.split(':')
+      const port = parseInt(portStr)
+      const rcon = await Rcon.connect({
+        host, port, password: serverConfig.rcon.password,
+        timeout: 3000 // 设置较短的超时时间避免长时间等待
+      })
+      await rcon.end()
+      return '√'
+    } catch (error) {
+      return '连接失败'
+    }
+  }
+
   const mcserver = parent.subcommand('.server', '管理 Minecraft 服务器')
     .option('server', '-s <name:string> 指定服务器名称')
     .action(async ({ session, options }) => {
@@ -27,10 +48,24 @@ export function registerServerCommands(parent: any, config: MinecraftToolsConfig
         return config.link.servers.find(server => server.group === channelKey) || null
       })()
 
+      // 测试所有服务器的RCON连接状态并收集结果
+      const rconStatusPromises = config.link.servers.map(async server => {
+        return {
+          serverName: server.name,
+          rconStatus: await testRconConnection(server)
+        }
+      })
+
+      const rconStatusResults = await Promise.all(rconStatusPromises)
+      const rconStatusMap = rconStatusResults.reduce((map, { serverName, rconStatus }) => {
+        map[serverName] = rconStatus
+        return map
+      }, {})
+
       // 显示所有服务器连接状态
       config.link.servers.forEach(server => {
         const serverConn = LinkService.serverConnections.get(server.name)
-        const rconStatus = server.rcon.password ? '√' : 'x'
+        const rconStatus = rconStatusMap[server.name]
         let wsStatus = 'x'
         if (server.websocket.token) {
           const isConnected = serverConn && (

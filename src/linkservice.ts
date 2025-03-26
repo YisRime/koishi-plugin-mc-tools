@@ -7,9 +7,6 @@ import { Rcon } from 'rcon-client'
 // 全局状态和类型定义
 export type ServerType = 'origin' | 'spigot' | 'forge' | 'neoforge' | 'fabric' | 'velocity' | 'unknown'
 
-/**
- * 服务器连接信息接口
- */
 interface ServerConnection {
   ws: WebSocket | null
   wss: WebSocketServer | null
@@ -23,12 +20,8 @@ interface ServerConnection {
   }>
 }
 
-// 服务器连接映射
 export const serverConnections = new Map<string, ServerConnection>()
 
-/**
- * Minecraft 事件枚举
- */
 export enum McEvent {
   '玩家聊天' = 1 << 0,
   '玩家命令' = 1 << 1,
@@ -66,18 +59,14 @@ const subTypeToEventMap = Object.entries(EVENT_TYPE_MAPPING).reduce((map, [flag,
   map[(data as any).subType] = Number(flag)
   return map
 }, {} as Record<string, number>)
+
 const eventMap = Object.entries(EVENT_TYPE_MAPPING).reduce((map, [_, data]) => {
   const { subType, eventNames } = data as any
   eventNames.forEach(name => map[name] = subType)
   return map
 }, {} as Record<string, string>)
 
-/**
- * 发送一条消息并在指定时间后自动撤回
- * @param message 消息内容
- * @param session 会话对象
- * @param timeout 撤回等待时间(毫秒)
- */
+// 工具函数
 export async function autoRecall(message: string, session?: Session, timeout = 10000): Promise<void> {
   if (!session) return
   const msgId = await session.send(message)
@@ -90,37 +79,27 @@ export async function autoRecall(message: string, session?: Session, timeout = 1
   }, timeout)
 }
 
-/**
- * 格式化文本，处理样式标记
- * @param text 输入文本
- * @returns 格式化后的文本对象
- */
 function formatTextWithStyles(text: string): any {
   const regex = /&(\w+)&/
   const match = text.match(regex)
   const output = match ? text.replace(regex, '') : text
   const color = match ? match[1] : ''
   const messageData: any = { text: output, color: color || "white" }
-  // 处理样式标记
+
   if (output.match(/\*([^*]+)\*/)) messageData.bold = true
   if (output.match(/_([^_]+)_/)) messageData.italic = true
   if (output.match(/~([^~]+)~/)) messageData.strikethrough = true
   if (output.match(/__([^_]+)__/)) messageData.underlined = true
-  // 移除样式标记
+
   messageData.text = messageData.text
     .replace(/\*([^*]+)\*/g, '$1')
     .replace(/_([^_]+)_/g, '$1')
     .replace(/~([^~]+)~/g, '$1')
     .replace(/__([^_]+)__/g, '$1')
+
   return { type: "text", data: messageData }
 }
 
-/**
- * 获取玩家详细信息
- * @param player 玩家对象
- * @param serverType 服务器类型
- * @returns 玩家详细信息对象
- */
 export function getPlayerDetails(player: any, serverType: ServerType = 'unknown'): Record<string, any> {
   if (!player || typeof player === 'string') return {}
 
@@ -130,6 +109,7 @@ export function getPlayerDetails(player: any, serverType: ServerType = 'unknown'
   commonProps.forEach(prop => {
     if (player[prop] !== undefined) details[prop] = player[prop]
   })
+
   // 根据服务端类型处理特定属性
   switch (serverType) {
     case 'spigot':
@@ -140,6 +120,7 @@ export function getPlayerDetails(player: any, serverType: ServerType = 'unknown'
         }
       })
       break;
+
     case 'fabric':
       if (player.ip) details.ip = player.ip
       if (player.block_x !== undefined) {
@@ -149,6 +130,7 @@ export function getPlayerDetails(player: any, serverType: ServerType = 'unknown'
       if (player.is_spectator !== undefined && player.is_spectator) details.gamemode = '旁观模式'
       if (player.movement_speed !== undefined) details.speed = player.movement_speed
       break;
+
     case 'forge':
     case 'neoforge':
       if (player.ipAddress) details.ip = player.ipAddress
@@ -179,11 +161,7 @@ export function getPlayerDetails(player: any, serverType: ServerType = 'unknown'
   return details
 }
 
-/**
- * 获取或创建服务器连接
- * @param serverName 服务器名称
- * @returns 服务器连接对象
- */
+// 连接管理
 function getServerConnection(serverName: string): ServerConnection {
   if (!serverConnections.has(serverName)) {
     serverConnections.set(serverName, {
@@ -198,11 +176,6 @@ function getServerConnection(serverName: string): ServerConnection {
   return serverConnections.get(serverName)
 }
 
-/**
- * 发送WebSocket消息
- * @param message 消息内容
- * @param serverName 服务器名称
- */
 export function sendWebSocketMessage(message: string, serverName: string): void {
   const serverConn = serverConnections.get(serverName)
   if (!serverConn) return
@@ -219,13 +192,6 @@ export function sendWebSocketMessage(message: string, serverName: string): void 
   })
 }
 
-/**
- * 发送请求并等待响应
- * @param api API名称
- * @param data 请求数据
- * @param serverName 服务器名称
- * @returns Promise<响应数据>
- */
 export async function sendRequestAndWaitResponse(api: string, data: any = {}, serverName: string): Promise<any> {
   const serverConn = serverConnections.get(serverName)
   if (!serverConn) {
@@ -252,10 +218,6 @@ export async function sendRequestAndWaitResponse(api: string, data: any = {}, se
   })
 }
 
-/**
- * 清理WebSocket连接
- * @param serverName 可选的服务器名称，不提供则清理所有连接
- */
 export function cleanupWebSocket(serverName?: string): void {
   if (serverName) {
     // 清理指定服务器连接
@@ -274,28 +236,15 @@ export function cleanupWebSocket(serverName?: string): void {
   } else {
     // 清理所有服务器连接
     for (const [, conn] of serverConnections.entries()) {
-      if (conn.ws) {
-        try { conn.ws.terminate() } catch {}
-        conn.ws = null
-      }
-      if (conn.wss) {
-        try { conn.wss.close() } catch {}
-        conn.wss = null
-      }
+      if (conn.ws) try { conn.ws.terminate() } catch {}
+      if (conn.wss) try { conn.wss.close() } catch {}
       conn.clients.clear()
     }
     serverConnections.clear()
   }
 }
 
-/**
- * 发送Minecraft消息
- * @param type 消息类型
- * @param params 消息参数
- * @param serverName 服务器名称
- * @param successHint 成功提示
- * @returns 执行结果
- */
+// 消息处理
 export async function sendMinecraftMessage(
   type: string,
   params: any = {},
@@ -358,13 +307,6 @@ export async function sendMinecraftMessage(
   }
 }
 
-/**
- * 通过RCON执行服务器命令
- * @param command 命令内容
- * @param config 插件配置
- * @param session 会话对象
- * @param serverName 服务器名称
- */
 export async function executeRconCommand(
   command: string,
   config: MinecraftToolsConfig,
@@ -395,13 +337,7 @@ export async function executeRconCommand(
   }
 }
 
-/**
- * 处理从Minecraft服务器接收的消息
- * @param ctx Koishi上下文
- * @param config 插件配置
- * @param message 消息内容
- * @param serverName 服务器名称
- */
+// WebSocket 通信
 function handleIncomingMessage(
   ctx: Context,
   config: MinecraftToolsConfig,
@@ -426,10 +362,13 @@ function handleIncomingMessage(
         return
       }
     }
+
     // 非事件消息
     if (!data.post_type && !data.event_name) return
+
     // 处理事件类型
     const subType = data.sub_type || (eventMap[data.event_name || ''] || 'unknown')
+
     // 检查订阅
     const eventFlag = subTypeToEventMap[subType]
     if (!eventFlag || !(config.link.events & eventFlag)) return
@@ -458,6 +397,7 @@ function handleIncomingMessage(
       default:
         return
     }
+
     // 转发消息到该服务器的专属群组
     if (serverConfig.group) {
       const [platform, id] = serverConfig.group.split(':', 2)
@@ -472,12 +412,6 @@ function handleIncomingMessage(
   }
 }
 
-/**
- * 初始化WebSocket服务器
- * @param ctx Koishi上下文
- * @param config 插件配置
- * @param serverConfig 服务器配置
- */
 export function initWebSocketServer(ctx: Context, config: MinecraftToolsConfig, serverConfig: ServerConfig): void {
   if (!serverConfig.websocket.token) return
 
@@ -527,15 +461,10 @@ export function initWebSocketServer(ctx: Context, config: MinecraftToolsConfig, 
       serverConn.clients.delete(ws)
     })
   })
+
   serverConn.wss.on('error', (error) => ctx.logger.error(`[${serverName}] WebSocket 服务器错误: ${error.message}`))
 }
 
-/**
- * 初始化WebSocket客户端
- * @param ctx Koishi上下文
- * @param config 插件配置
- * @param serverConfig 服务器配置
- */
 export function initWebSocketClient(ctx: Context, config: MinecraftToolsConfig, serverConfig: ServerConfig): void {
   if (!serverConfig.websocket.token) return
 
@@ -552,6 +481,7 @@ export function initWebSocketClient(ctx: Context, config: MinecraftToolsConfig, 
       "x-client-origin": "koishi"
     }
   })
+
   serverConn.ws.on('open', () => {
     ctx.logger.info(`[${serverName}] WebSocket 客户端连接成功`)
     serverConn.reconnectCount = 0
@@ -565,8 +495,10 @@ export function initWebSocketClient(ctx: Context, config: MinecraftToolsConfig, 
       }
     }))
   })
+
   serverConn.ws.on('message', (data) => handleIncomingMessage(ctx, config, data.toString(), serverName))
   serverConn.ws.on('error', (error) => ctx.logger.error(`[${serverName}] WebSocket 客户端错误: ${error.message}`))
+
   serverConn.ws.on('close', (code, reason) => {
     ctx.logger.warn(`[${serverName}] WebSocket 客户端连接关闭: ${code} ${reason.toString()}`)
     serverConn.ws = null
@@ -580,14 +512,10 @@ export function initWebSocketClient(ctx: Context, config: MinecraftToolsConfig, 
   })
 }
 
-/**
- * 初始化WebSocket通信
- * @param ctx Koishi上下文
- * @param config 插件配置
- */
 export function initWebSocketCommunication(ctx: Context, config: MinecraftToolsConfig): void {
   // 清理旧连接
   cleanupWebSocket()
+
   // 为每个配置的服务器初始化连接
   config.link.servers.forEach(serverConfig => {
     if (!serverConfig.websocket.token) return
@@ -598,6 +526,7 @@ export function initWebSocketCommunication(ctx: Context, config: MinecraftToolsC
       initWebSocketServer(ctx, config, serverConfig)
     }
   })
+
   // 处理消息转发到Minecraft
   ctx.on('message', (session) => {
     // 如果是命令，则不转发
@@ -609,6 +538,7 @@ export function initWebSocketCommunication(ctx: Context, config: MinecraftToolsC
     const match = session.content.match(regex)
     const output = match ? session.content.replace(regex, '') : session.content
     const color = match ? match[1] : ''
+
     // 为每个服务器检查并转发消息
     config.link.servers.forEach(serverConfig => {
       // 检查这条消息是否应该转发到这个服务器
@@ -634,6 +564,7 @@ export function initWebSocketCommunication(ctx: Context, config: MinecraftToolsC
           }
         }
       }
+
       // 检测并处理图片链接
       const imageMatch = session.content.match(/(https?|file):\/\/.*?\.(jpg|jpeg|webp|ico|gif|jfif|bmp|png)/i)
       if (imageMatch) {
