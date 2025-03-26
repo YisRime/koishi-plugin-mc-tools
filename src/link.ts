@@ -133,7 +133,7 @@ export function registerServerCommands(parent: any, config: MinecraftToolsConfig
   mcserver.subcommand('.title <title:string> [subtitle:string]', '发送标题消息')
     .option('server', '-s <name:string> 指定服务器名称')
     .option('fadein', '-i <seconds:number> 淡入时间(秒)', { fallback: 1 })
-    .option('stay', '-s <seconds:number> 停留时间(秒)', { fallback: 3 })
+    .option('stay', '-t <seconds:number> 停留时间(秒)', { fallback: 3 })
     .option('fadeout', '-o <seconds:number> 淡出时间(秒)', { fallback: 1 })
     .before(autoCheckServerPermission)
     .action(async ({ options, session }, title, subtitle = '') => {
