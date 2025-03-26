@@ -106,18 +106,12 @@ function parseText($: cheerio.CheerioAPI, $elem: cheerio.Cheerio<any>): string |
     const text = $link.text().trim()
 
     if (href && text) {
-      // 跳过图片链接
-      if (href.match(/\.(jpg|jpeg|png|gif|webp|bmp|tiff|tif)$/i)) {
-        return;
-      }
-
       let processedHref = href
       if (href.startsWith('//')) {
         processedHref = `https:${href}`
       } else if (href.startsWith('/')) {
         processedHref = `https://www.mcmod.cn${href}`
       }
-
       // 忽略 javascript 和锚点链接
       if (!href.includes('javascript:') && !href.startsWith('#')) {
         let prefix = ''

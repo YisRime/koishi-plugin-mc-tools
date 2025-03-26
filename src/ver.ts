@@ -1,8 +1,6 @@
 import { Context, Logger } from 'koishi'
 import axios from 'axios'
 import { MinecraftToolsConfig } from './index'
-import { promises as fs } from 'fs'
-import path from 'path'
 
 const logger = new Logger('mcver')
 
@@ -116,81 +114,25 @@ async function notifyVersionUpdate(ctx: any, targets: string[], updateMessage: s
 }
 
 /**
- * 获取版本信息存储文件的路径
- * @param ctx Koishi 上下文
- * @returns 文件路径
- */
-async function getVersionFilePath(ctx: Context): Promise<string> {
-  const dataDir = path.join(ctx.baseDir, 'data')
-  return path.join(dataDir, 'mcver-latest.json')
-}
-
-/**
- * 从文件读取版本信息
- * @param ctx Koishi 上下文
- * @returns 版本信息对象
- */
-async function readVersionsFromFile(ctx: Context): Promise<{ snapshot: string, release: string }> {
-  const filePath = await getVersionFilePath(ctx)
-  try {
-    const data = await fs.readFile(filePath, 'utf-8')
-    return JSON.parse(data)
-  } catch (err) {
-    if (err.code === 'ENOENT') {
-      logger.warn('读取版本信息失败:', err.message)
-    }
-    return { snapshot: '', release: '' }
-  }
-}
-
-/**
- * 将版本信息保存到文件
- * @param ctx Koishi 上下文
- * @param versions 版本信息对象
- */
-async function saveVersionsToFile(ctx: Context, versions: { snapshot: string, release: string }): Promise<void> {
-  const filePath = await getVersionFilePath(ctx)
-  try {
-    await fs.writeFile(filePath, JSON.stringify(versions, null, 2), 'utf-8')
-  } catch (err) {
-    logger.warn('保存版本信息失败:', err)
-  }
-}
-
-/**
  * 检查 Minecraft 版本更新并发送通知
- * @param {Context} ctx - Koishi 上下文
+ * @param {{snapshot: string, release: string}} versions - 当前版本信息
+ * @param {any} ctx - Koishi 上下文
  * @param {MinecraftToolsConfig} config - 插件配置
  */
-async function checkUpdate(ctx: Context, config: MinecraftToolsConfig) {
+async function checkUpdate(versions: { snapshot: string, release: string }, ctx: any, config: MinecraftToolsConfig) {
   try {
-    // 从文件读取当前版本信息
-    const versions = await readVersionsFromFile(ctx)
-
     const { latest, release } = await fetchVersions()
     const updates = [
       { type: 'snapshot', version: latest, enabled: config.ver.snapshot },
       { type: 'release', version: release, enabled: config.ver.release }
     ]
 
-    let versionsChanged = false
-
     for (const { type, version, enabled } of updates) {
-      // 如果本地版本记录存在且与当前版本不同，且该类型版本更新通知已启用，则发送通知
       if (versions[type] && version.id !== versions[type] && enabled) {
         const msg = `Minecraft ${type === 'release' ? '正式版' : '快照版'}更新：${version.id}\n发布时间: ${new Date(version.releaseTime).toLocaleString('zh-CN')}`
         await notifyVersionUpdate(ctx, config.ver.groups, msg)
-        versionsChanged = true;
       }
-      // 无论是否发送通知，只要版本记录不同就需要更新文件
-      if (version.id !== versions[type]) {
-        versions[type] = version.id;
-        versionsChanged = true;
-      }
-    }
-    // 如果版本有变化，保存到文件
-    if (versionsChanged) {
-      await saveVersionsToFile(ctx, versions)
+      versions[type] = version.id
     }
   } catch (error) {
     logger.warn('版本检查失败：', error)
@@ -205,6 +147,8 @@ async function checkUpdate(ctx: Context, config: MinecraftToolsConfig) {
  * @returns {NodeJS.Timeout|undefined} - 如果启用了定时检查，返回定时器句柄
  */
 export function registerVersionCommands(ctx: Context, parent: any, config: MinecraftToolsConfig): NodeJS.Timeout | undefined {
+  // 创建一个对象保存版本信息
+  const minecraftVersions = { snapshot: '', release: '' }
   // 注册查询版本信息命令
   parent.subcommand('.ver', '查询 Minecraft 版本信息')
     .usage('mc.ver - 获取 Minecraft 最新版本信息')
@@ -215,10 +159,8 @@ export function registerVersionCommands(ctx: Context, parent: any, config: Minec
 
   // 如果启用了版本更新检查，启动定时任务
   if (config.ver.enabled && config.ver.groups.length) {
-    // 初始检查
-    checkUpdate(ctx, config)
-    // 设置定时任务
-    const timer = setInterval(() => checkUpdate(ctx, config), config.ver.interval * 60 * 1000)
+    checkUpdate(minecraftVersions, ctx, config)
+    const timer = setInterval(() => checkUpdate(minecraftVersions, ctx, config), config.ver.interval * 60 * 1000)
     return timer
   }
 }

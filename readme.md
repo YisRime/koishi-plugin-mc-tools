@@ -71,6 +71,7 @@
 
 ```yaml
 common:
+  useForwardMsg: false   # 启用合并转发
   totalLength: 400       # 总预览字数
   descLength: 20         # 搜索列表描述字数
   Timeout: 15            # 搜索超时时间（秒）
