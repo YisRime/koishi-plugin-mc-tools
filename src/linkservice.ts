@@ -67,16 +67,17 @@ const eventMap = Object.entries(EVENT_TYPE_MAPPING).reduce((map, [_, data]) => {
 }, {} as Record<string, string>)
 
 // 工具函数
-export async function autoRecall(message: string, session?: Session, timeout = 10000): Promise<void> {
-  if (!session) return
+export async function autoRecall(message: string, session?: Session, timeout = 10000): Promise<string> {
+  if (!session) return message
   const msgId = await session.send(message)
-  if (!msgId) return
+  if (!msgId) return message
   setTimeout(() => {
     try {
       const ids = Array.isArray(msgId) ? msgId : [msgId]
       ids.forEach(id => session.bot?.deleteMessage(session.channelId, String(id)))
     } catch {}
   }, timeout)
+  return message
 }
 
 function formatTextWithStyles(text: string): any {
@@ -312,13 +313,17 @@ export async function executeRconCommand(
   config: MinecraftToolsConfig,
   session?: Session,
   serverName?: string
-): Promise<void> {
-  if (!command || !serverName)
-    return autoRecall(!command ? '请输入要执行的命令' : '请输入服务器名称', session)
+): Promise<string> {
+  if (!command) return '请输入要执行的命令'
+  if (!serverName) return '请输入服务器名称'
 
   const serverConfig = config.link.servers.find(server => server.name === serverName)
-  if (!serverConfig)
-    return autoRecall(`找不到服务器配置: ${serverName}`, session)
+  if (!serverConfig) return `找不到服务器配置: ${serverName}`
+
+  // 确保RCON配置存在
+  if (!serverConfig.rcon || !serverConfig.rcon.password) {
+    return `服务器 ${serverName} 未配置RCON，无法执行命令`
+  }
 
   const [serverHost, portStr] = serverConfig.rcon.address.split(':')
   const port = parseInt(portStr)
@@ -331,9 +336,16 @@ export async function executeRconCommand(
     const result = await rcon.send(command)
     await rcon.end()
 
-    return autoRecall(`[${serverConfig.name}] 命令执行成功${result}`, session)
+    if (session) {
+      return await autoRecall(`[${serverConfig.name}] 命令执行成功${result}`, session)
+    }
+    return `[${serverConfig.name}] 命令执行成功${result}`
   } catch (error) {
-    return autoRecall(`[${serverConfig.name}] RCON连接失败: ${error.message}`, session)
+    const errorMsg = `[${serverConfig.name}] RCON连接失败: ${error.message}`
+    if (session) {
+      return await autoRecall(errorMsg, session)
+    }
+    return errorMsg
   }
 }
 

@@ -521,7 +521,7 @@ export function registerModCommands(ctx: Context, parent: any, config: Minecraft
             });
 
             const title = content.sections?.[0] || result.title;
-            const response = await sendForwardMessage(session, title, formattedContent, result.url);
+            const response = await sendForwardMessage(session, title, formattedContent, null);
 
             // 如果返回的是字符串，说明平台不支持合并转发，直接返回内容
             if (typeof response === 'string') {

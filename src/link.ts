@@ -298,7 +298,7 @@ export function registerServerCommands(parent: any, config: MinecraftToolsConfig
   mcserver.subcommand('.say <message:text>', '发送消息')
     .option('server', '-s <name:string> 指定服务器名称')
     .action(async ({ session }, message) => {
-      return tryWithFallback(
+      return await tryWithFallback(
         session,
         async () => {
           if (session.connectionType === 'ws') {
@@ -322,14 +322,14 @@ export function registerServerCommands(parent: any, config: MinecraftToolsConfig
           )
         }
       ).catch(error => {
-        return LinkService.autoRecall(`消息发送失败: ${error.message}`, session)
+        return `消息发送失败: ${error.message}`
       })
     })
 
   mcserver.subcommand('.tell <player:string> <message:text>', '向指定玩家发送私聊消息')
     .option('server', '-s <name:string> 指定服务器名称')
     .action(async ({ session }, player, message) => {
-      return tryWithFallback(
+      return await tryWithFallback(
         session,
         async () => {
           if (session.connectionType === 'ws') {
@@ -354,7 +354,7 @@ export function registerServerCommands(parent: any, config: MinecraftToolsConfig
           )
         }
       ).catch(error => {
-        return LinkService.autoRecall(`私聊消息发送失败: ${error.message}`, session)
+        return `私聊消息发送失败: ${error.message}`
       })
     })
 
@@ -365,7 +365,7 @@ export function registerServerCommands(parent: any, config: MinecraftToolsConfig
     .option('italic', '-i 斜体显示')
     .option('underline', '-u 下划线显示')
     .action(async ({ session, options }, message) => {
-      return tryWithFallback(
+      return await tryWithFallback(
         session,
         async () => {
           if (session.connectionType === 'ws') {
@@ -395,7 +395,7 @@ export function registerServerCommands(parent: any, config: MinecraftToolsConfig
           return await LinkService.executeRconCommand(command, config, session, session.serverConfig.name);
         }
       ).catch(error => {
-        return LinkService.autoRecall(`广播消息失败: ${error.message}`, session);
+        return `广播消息失败: ${error.message}`
       })
     });
 
@@ -407,7 +407,7 @@ export function registerServerCommands(parent: any, config: MinecraftToolsConfig
     .option('color', '-c <color:string> 标题颜色', { fallback: 'white' })
     .option('subcolor', '-C <color:string> 副标题颜色', { fallback: 'white' })
     .action(async ({ options, session }, title, subtitle = '') => {
-      return tryWithFallback(
+      return await tryWithFallback(
         session,
         async () => {
           if (session.connectionType === 'ws') {
@@ -455,7 +455,7 @@ export function registerServerCommands(parent: any, config: MinecraftToolsConfig
           return await LinkService.executeRconCommand(cmd, config, session, session.serverConfig.name)
         }
       ).catch(error => {
-        return LinkService.autoRecall(`标题发送失败: ${error.message}`, session);
+        return `标题发送失败: ${error.message}`
       })
     })
 
@@ -464,7 +464,7 @@ export function registerServerCommands(parent: any, config: MinecraftToolsConfig
     .option('color', '-c <color:string> 消息颜色', { fallback: 'white' })
     .option('bold', '-b 粗体显示')
     .action(async ({ session, options }, message) => {
-      return tryWithFallback(
+      return await tryWithFallback(
         session,
         async () => {
           if (session.connectionType === 'ws') {
@@ -492,14 +492,14 @@ export function registerServerCommands(parent: any, config: MinecraftToolsConfig
           return await LinkService.executeRconCommand(cmd, config, session, session.serverConfig.name)
         }
       ).catch(error => {
-        return LinkService.autoRecall(`动作栏消息发送失败: ${error.message}`, session);
+        return `动作栏消息发送失败: ${error.message}`
       })
     })
 
   mcserver.subcommand('.player', '获取服务器在线玩家信息')
     .option('server', '-s <name:string> 指定服务器名称')
     .action(async ({ session }) => {
-      return tryWithFallback(
+      return await tryWithFallback(
         session,
         async () => {
           if (session.connectionType === 'ws') {
@@ -532,7 +532,7 @@ export function registerServerCommands(parent: any, config: MinecraftToolsConfig
           return await LinkService.executeRconCommand('list', config, session, session.serverConfig.name)
         }
       ).catch(error => {
-        return LinkService.autoRecall(`获取玩家信息失败: ${error.message}`, session)
+        return `获取玩家信息失败: ${error.message}`
       })
     })
 
@@ -550,7 +550,7 @@ export function registerServerCommands(parent: any, config: MinecraftToolsConfig
       try {
         return await LinkService.executeRconCommand(command, config, session, serverConfig.name)
       } catch (error) {
-        return LinkService.autoRecall(`命令执行失败: ${error.message}`, session)
+        return `命令执行失败: ${error.message}`
       }
     })
 }

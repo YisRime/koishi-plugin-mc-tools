@@ -196,7 +196,7 @@ export async function sendForwardMessage(session: any, title: string, content: s
 
   try {
     // 准备转发消息节点 - 将title和content合并到一个节点
-    const combinedContent = `${title}\n${content}`;
+    const combinedContent = `${title}\n${content}${url ? `\n详细内容: ${url}` : ''}`;
     const messages = [
       {
         type: 'node',
@@ -359,8 +359,7 @@ export function formatSearchResults(
     return `${base}${desc}`
   })
 
-  return `${results[0].source === 'wiki' ? 'Wiki' : 'MCMOD'} 搜索结果：\n${items.join('\n')}
-输入序号查看详情（添加 -i 获取页面截图）`
+  return `${results[0].source === 'wiki' ? 'Wiki' : 'MCMOD'} 搜索结果：\n${items.join('\n')}输入序号查看详情（添加 -i 获取页面截图）`
 }
 
 /**

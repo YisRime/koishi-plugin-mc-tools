@@ -209,31 +209,36 @@ export async function processWikiRequest(
       };
     }
 
-    // 使用合并转发（如果启用且提供了session）
-    if (config.common.useForwardMsg && session) {
-      try {
-        // 获取完整内容
-        const tempConfig = JSON.parse(JSON.stringify(config));
-        tempConfig.common.totalLength = 10000;
-        tempConfig.specific.sectionLength = 5000;
-
-        const { title, content } = await fetchContent(pageUrl, lang, tempConfig);
-        const response = await sendForwardMessage(session, `『${title}』`, content, displayUrl);
-
-        // 如果返回的是字符串，说明平台不支持合并转发，直接返回内容
-        if (typeof response === 'string') {
-          return response;
-        }
-        return '';
-      } catch (error) {
-        return `获取"${result.title}"的内容时发生错误: ${error.message}`;
-      }
-    }
-
-    // 默认方式获取内容
     try {
-      const { title, content } = await fetchContent(pageUrl, lang, config);
-      return `『${title}』${content}\n详细内容：${displayUrl}`;
+      // 先获取内容和标题
+      const tempConfig = JSON.parse(JSON.stringify(config));
+      tempConfig.common.totalLength = 10000;
+      tempConfig.specific.sectionLength = 5000;
+
+      const { title, content } = await fetchContent(pageUrl, lang, tempConfig);
+
+      // 检查标题是否只包含数字和点
+      const isNumberAndDot = /^[\d.]+$/.test(title);
+
+      // 使用合并转发（如果启用且提供了session且标题不是纯数字和点组合）
+      if (config.common.useForwardMsg && session && !isNumberAndDot) {
+        try {
+          const response = await sendForwardMessage(session, `『${title}』`, content, displayUrl);
+
+          // 如果返回的是字符串，说明平台不支持合并转发，直接返回内容
+          if (typeof response === 'string') {
+            return response;
+          }
+          return '';
+        } catch (error) {
+          return `获取"${title}"的内容时发生错误: ${error.message}`;
+        }
+      }
+
+      // 如果不使用合并转发，或者标题是纯数字和点组合，则使用默认方式返回
+      const contentSliced = content.slice(0, config.common.totalLength);
+      return `『${title}』${contentSliced}${contentSliced.length >= config.common.totalLength ? '...' : ''}\n详细内容：${displayUrl}`;
+
     } catch (error) {
       return `获取"${result.title}"的内容时发生错误: ${error.message}`;
     }
