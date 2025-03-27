@@ -32,80 +32,174 @@ export function registerServerCommands(parent: any, config: MinecraftToolsConfig
     }
   }
 
+  /**
+   * 自动检查服务器权限和连接方式
+   * 1. 检查是否指定服务器或在关联群组中
+   * 2. 检查服务器配置是否有效
+   * 3. 检查连接方式(WebSocket或RCON)
+   */
+  const checkServerAndConnection = async ({ session, options }) => {
+    // 1. 确定要操作的服务器
+    let serverConfig = null
+
+    if (options.server) {
+      // 优先使用-s选项指定的服务器
+      serverConfig = config.link.servers.find(s => s.name === options.server)
+      if (!serverConfig) {
+        return { pass: false, message: `找不到服务器: ${options.server}` }
+      }
+    } else if (session?.channelId) {
+      // 其次使用群组绑定的服务器
+      const channelKey = `${session.platform}:${session.channelId}`
+      serverConfig = config.link.servers.find(server => server.group === channelKey)
+      if (!serverConfig) {
+        return { pass: false, message: `当前会话未关联任何Minecraft服务器` }
+      }
+    } else {
+      return { pass: false, message: `无法确定目标服务器` }
+    }
+
+    // 2. 保存服务器配置到会话中
+    session.serverConfig = serverConfig
+
+    // 3. 确定连接方式 - 优先WebSocket，如不可用则尝试RCON
+    let connectionTypes = []
+
+    if (serverConfig.websocket && serverConfig.websocket.token) {
+      // 检查WebSocket连接状态
+      const serverConn = LinkService.serverConnections.get(serverConfig.name)
+      const isConnected = serverConn && (
+        (serverConn.ws && serverConn.ws.readyState === 1) ||
+        serverConn.clients.size > 0
+      )
+
+      if (isConnected) {
+        connectionTypes.push('ws')
+      }
+    }
+
+    if (serverConfig.rcon && serverConfig.rcon.password) {
+      connectionTypes.push('rcon')
+    }
+
+    if (connectionTypes.length === 0) {
+      return {
+        pass: false,
+        message: `服务器 ${serverConfig.name} 未配置可用的连接方式或连接未建立`
+      }
+    }
+
+    // 保存所有可用连接类型到会话，优先使用WebSocket
+    session.connectionTypes = connectionTypes
+    session.connectionType = connectionTypes[0]
+
+    return { pass: true }
+  }
+
+  /**
+   * 在WebSocket失败时尝试回退到RCON
+   * @param session 当前会话
+   * @param operation WebSocket操作失败时的回调
+   * @param fallback RCON回退操作的回调
+   */
+  async function tryWithFallback(session, operation, fallback) {
+    const { serverConfig, connectionTypes } = session
+
+    // 首先尝试主要连接方式
+    try {
+      return await operation()
+    } catch (error) {
+      ctx.logger.warn(`[${serverConfig.name}] 主要连接方式失败: ${error.message}, 尝试回退方式`)
+
+      // 尝试回退到RCON (如果可用且不是当前连接方式)
+      if (connectionTypes.includes('rcon') && session.connectionType !== 'rcon') {
+        session.connectionType = 'rcon'
+        try {
+          return await fallback()
+        } catch (fallbackError) {
+          throw new Error(`所有连接方式都失败: ${error.message}, 回退方式: ${fallbackError.message}`)
+        }
+      }
+
+      // 如果没有回退方式或回退方式也失败
+      throw error
+    }
+  }
+
   const mcserver = parent.subcommand('.server', '管理 Minecraft 服务器')
     .option('server', '-s <name:string> 指定服务器名称')
+    .before(checkServerAndConnection)
     .action(async ({ session, options }) => {
-      // 获取基础状态信息
-      const statusMessage = ['Minecraft 服务器状态:']
+      // 如果是通过 .server 命令查询状态，跳过连接检查
+      if (!session.serverConfig) {
+        // 获取基础状态信息
+        const statusMessage = ['Minecraft 服务器状态:']
 
-      // 获取当前群组关联的服务器或指定的服务器
-      const currentServer = (() => {
-        if (options.server) {
-          return config.link.servers.find(s => s.name === options.server) || null
-        }
-        if (!session?.channelId) return null
-        const channelKey = `${session.platform}:${session.channelId}`
-        return config.link.servers.find(server => server.group === channelKey) || null
-      })()
+        // 获取当前群组关联的服务器或指定的服务器
+        const currentServer = (() => {
+          if (options.server) {
+            return config.link.servers.find(s => s.name === options.server) || null
+          }
+          if (!session?.channelId) return null
+          const channelKey = `${session.platform}:${session.channelId}`
+          return config.link.servers.find(server => server.group === channelKey) || null
+        })()
 
-      // 测试所有服务器的RCON连接状态并收集结果
-      const rconStatusPromises = config.link.servers.map(async server => {
-        return {
-          serverName: server.name,
-          rconStatus: await testRconConnection(server)
-        }
-      })
+        // 测试所有服务器的RCON连接状态并收集结果
+        const rconStatusPromises = config.link.servers.map(async server => {
+          return {
+            serverName: server.name,
+            rconStatus: await testRconConnection(server)
+          }
+        })
 
-      const rconStatusResults = await Promise.all(rconStatusPromises)
-      const rconStatusMap = rconStatusResults.reduce((map, { serverName, rconStatus }) => {
-        map[serverName] = rconStatus
-        return map
-      }, {})
+        const rconStatusResults = await Promise.all(rconStatusPromises)
+        const rconStatusMap = rconStatusResults.reduce((map, { serverName, rconStatus }) => {
+          map[serverName] = rconStatus
+          return map
+        }, {})
 
-      // 显示所有服务器连接状态
-      config.link.servers.forEach(server => {
-        const serverConn = LinkService.serverConnections.get(server.name)
-        const rconStatus = rconStatusMap[server.name]
-        let wsStatus = 'x'
-        if (server.websocket.token) {
+        // 显示所有服务器连接状态
+        config.link.servers.forEach(server => {
+          const serverConn = LinkService.serverConnections.get(server.name)
+          const rconStatus = rconStatusMap[server.name]
+          let wsStatus = 'x'
+          if (server.websocket.token) {
+            const isConnected = serverConn && (
+              (serverConn.ws && serverConn.ws.readyState === 1) ||
+              serverConn.clients.size > 0
+            )
+            wsStatus = isConnected ? server.websocket.mode : 'Connecting'
+          }
+          // 显示当前群组的服务器标识
+          const isCurrentGroup = currentServer && currentServer.name === server.name ? '[√]' : ''
+          statusMessage.push(`${server.name}${isCurrentGroup} RCON:${rconStatus} WebSocket:${wsStatus}`)
+        })
+
+        // 尝试重连未连接的WebSocket
+        config.link.servers.forEach(server => {
+          if (!server.websocket.token) return
+          const serverConn = LinkService.serverConnections.get(server.name)
           const isConnected = serverConn && (
             (serverConn.ws && serverConn.ws.readyState === 1) ||
             serverConn.clients.size > 0
           )
-          wsStatus = isConnected ? server.websocket.mode : 'Connecting'
-        }
-        // 显示当前群组的服务器标识
-        const isCurrentGroup = currentServer && currentServer.name === server.name ? '[√]' : ''
-        statusMessage.push(`${server.name}${isCurrentGroup} RCON:${rconStatus} WebSocket:${wsStatus}`)
-      })
+          if (!serverConn || !isConnected) {
+            statusMessage.push(`\n正在重新连接服务器 [${server.name}]...`)
+            LinkService.cleanupWebSocket(server.name)
 
-      // 尝试重连未连接的WebSocket
-      config.link.servers.forEach(server => {
-        if (!server.websocket.token) return
-        const serverConn = LinkService.serverConnections.get(server.name)
-        const isConnected = serverConn && (
-          (serverConn.ws && serverConn.ws.readyState === 1) ||
-          serverConn.clients.size > 0
-        )
-        if (!serverConn || !isConnected) {
-          statusMessage.push(`\n正在重新连接服务器 [${server.name}]...`)
-          LinkService.cleanupWebSocket(server.name)
-
-          if (server.websocket.mode === 'client') {
-            LinkService.initWebSocketClient(ctx, config, server)
-          } else {
-            LinkService.initWebSocketServer(ctx, config, server)
+            if (server.websocket.mode === 'client') {
+              LinkService.initWebSocketClient(ctx, config, server)
+            } else {
+              LinkService.initWebSocketServer(ctx, config, server)
+            }
           }
-        }
-      })
+        })
 
-      // 如果有当前服务器，则获取其详细状态
-      if (currentServer) {
-        statusMessage.push('') // 空行
-
-        try {
-          // 为当前或指定服务器显示详细状态
-          session.serverConfig = currentServer
+        // 如果有当前服务器，则获取其详细状态
+        if (currentServer) {
+          statusMessage.push('') // 空行
+          session.serverConfig = currentServer // 临时设置用于获取详细信息
 
           // 获取具体的服务器状态
           if (currentServer.websocket.token) {
@@ -192,102 +286,75 @@ export function registerServerCommands(parent: any, config: MinecraftToolsConfig
               statusMessage.push(`[${currentServer.name}] RCON连接失败: ${rconError.message}`)
             }
           }
-        } catch (error) {
-          statusMessage.push(`获取服务器状态失败: ${error.message}`)
         }
-      }
 
-      return statusMessage.join('\n')
-    })
-
-  /**
-   * 自动检查服务器权限和获取服务器配置
-   * 优先使用-s选项指定的服务器，其次使用群组绑定的服务器
-   */
-  const autoCheckServerPermission = ({ session, options }) => {
-    if (options.server) {
-      const serverConfig = config.link.servers.find(s => s.name === options.server)
-      if (!serverConfig) {
-        return LinkService.autoRecall(`找不到服务器: ${options.server}`, session)
-      }
-      session.serverConfig = serverConfig
-      return
-    }
-
-    const serverConfig = (() => {
-      if (!session?.channelId) return null
-      const channelKey = `${session.platform}:${session.channelId}`
-      return config.link.servers.find(server => server.group === channelKey)
-    })()
-
-    session.serverConfig = serverConfig
-  }
-
-  /**
-   * 执行与连接相关的操作
-   */
-  const executeWithConnection = async (session, callback) => {
-    try {
-      const serverConfig = session.serverConfig
-      if (serverConfig.websocket.token) {
-        return await callback('ws')
-      } else if (serverConfig.rcon.password) {
-        return await callback('rcon')
+        return statusMessage.join('\n')
       } else {
-        return LinkService.autoRecall(`服务器 ${serverConfig.name} 未配置可用的连接方式`, session)
+        return '使用子命令操作服务器，例如: .server say 你好'
       }
-    } catch (error) {
-      return LinkService.autoRecall(`命令执行出错: ${error.message}`, session)
-    }
-  }
+    })
 
   // 定义消息发送相关命令
   mcserver.subcommand('.say <message:text>', '发送消息')
     .option('server', '-s <name:string> 指定服务器名称')
-    .before(autoCheckServerPermission)
     .action(async ({ session }, message) => {
-      return executeWithConnection(session, async (type) => {
-        const serverConfig = session.serverConfig
-        if (type === 'ws') {
-          try {
+      return tryWithFallback(
+        session,
+        async () => {
+          if (session.connectionType === 'ws') {
             const userIdentifier = session.username || session.userId
             const formattedMsg = `${userIdentifier}: ${message}`
-            const result = await LinkService.sendMinecraftMessage('text', {
+            return await LinkService.sendMinecraftMessage('text', {
               message: formattedMsg
-            }, serverConfig.name, `[${serverConfig.name}] 消息已发送`)
-            return result
-          } catch (error) {
-            return LinkService.autoRecall(`消息发送失败: ${error.message}`, session)
+            }, session.serverConfig.name, `[${session.serverConfig.name}] 消息已发送`)
+          } else {
+            throw new Error('跳过WebSocket尝试')
           }
-        } else {
+        },
+        async () => {
+          // RCON回退方式
           const userIdentifier = session.username || session.userId
-          return LinkService.executeRconCommand(`say ${userIdentifier}: ${message}`, config, session, serverConfig.name)
+          return await LinkService.executeRconCommand(
+            `say ${userIdentifier}: ${message}`,
+            config,
+            session,
+            session.serverConfig.name
+          )
         }
+      ).catch(error => {
+        return LinkService.autoRecall(`消息发送失败: ${error.message}`, session)
       })
     })
 
   mcserver.subcommand('.tell <player:string> <message:text>', '向指定玩家发送私聊消息')
     .option('server', '-s <name:string> 指定服务器名称')
-    .before(autoCheckServerPermission)
     .action(async ({ session }, player, message) => {
-      return executeWithConnection(session, async (type) => {
-        const serverConfig = session.serverConfig
-        if (type === 'ws') {
-          try {
+      return tryWithFallback(
+        session,
+        async () => {
+          if (session.connectionType === 'ws') {
             const userIdentifier = session.username || session.userId
             const formattedMsg = `${userIdentifier}: ${message}`
-            const result = await LinkService.sendMinecraftMessage('private', {
+            return await LinkService.sendMinecraftMessage('private', {
               player,
               message: formattedMsg
-            }, serverConfig.name, `[${serverConfig.name}] 私聊消息已发送给 ${player}`)
-            return result
-          } catch (error) {
-            return LinkService.autoRecall(`私聊消息发送失败: ${error.message}`, session)
+            }, session.serverConfig.name, `[${session.serverConfig.name}] 私聊消息已发送给 ${player}`)
+          } else {
+            throw new Error('跳过WebSocket尝试')
           }
-        } else {
+        },
+        async () => {
+          // RCON回退方式
           const userIdentifier = session.username || session.userId
-          return LinkService.executeRconCommand(`tell ${player} ${userIdentifier}: ${message}`, config, session, serverConfig.name)
+          return await LinkService.executeRconCommand(
+            `tell ${player} ${userIdentifier}: ${message}`,
+            config,
+            session,
+            session.serverConfig.name
+          )
         }
+      ).catch(error => {
+        return LinkService.autoRecall(`私聊消息发送失败: ${error.message}`, session)
       })
     })
 
@@ -297,12 +364,11 @@ export function registerServerCommands(parent: any, config: MinecraftToolsConfig
     .option('bold', '-b 粗体显示')
     .option('italic', '-i 斜体显示')
     .option('underline', '-u 下划线显示')
-    .before(autoCheckServerPermission)
     .action(async ({ session, options }, message) => {
-      return executeWithConnection(session, async (type) => {
-        const serverConfig = session.serverConfig;
-        if (type === 'ws') {
-          try {
+      return tryWithFallback(
+        session,
+        async () => {
+          if (session.connectionType === 'ws') {
             const messageObj = {
               type: "text",
               data: {
@@ -316,20 +382,21 @@ export function registerServerCommands(parent: any, config: MinecraftToolsConfig
 
             await LinkService.sendRequestAndWaitResponse('broadcast', {
               message: [messageObj]
-            }, serverConfig.name);
+            }, session.serverConfig.name);
 
-            return LinkService.autoRecall(`[${serverConfig.name}] 消息已广播`, session);
-          } catch (error) {
-            return LinkService.autoRecall(`广播消息失败: ${error.message}`, session);
+            return await LinkService.autoRecall(`[${session.serverConfig.name}] 消息已广播`, session);
+          } else {
+            throw new Error('跳过WebSocket尝试')
           }
-        } else {
-          if (!serverConfig.rcon.password) {
-            return LinkService.autoRecall(`服务器 ${serverConfig.name} 未配置RCON`, session);
-          }
+        },
+        async () => {
+          // RCON回退方式 - 只能发送基本消息，不支持样式
           const command = `say ${message}`;
-          return LinkService.executeRconCommand(command, config, session, serverConfig.name);
+          return await LinkService.executeRconCommand(command, config, session, session.serverConfig.name);
         }
-      });
+      ).catch(error => {
+        return LinkService.autoRecall(`广播消息失败: ${error.message}`, session);
+      })
     });
 
   mcserver.subcommand('.title <title:string> [subtitle:string]', '发送标题消息')
@@ -339,12 +406,11 @@ export function registerServerCommands(parent: any, config: MinecraftToolsConfig
     .option('fadeout', '-o <seconds:number> 淡出时间(秒)', { fallback: 1 })
     .option('color', '-c <color:string> 标题颜色', { fallback: 'white' })
     .option('subcolor', '-C <color:string> 副标题颜色', { fallback: 'white' })
-    .before(autoCheckServerPermission)
     .action(async ({ options, session }, title, subtitle = '') => {
-      return executeWithConnection(session, async (type) => {
-        const serverConfig = session.serverConfig
-        if (type === 'ws') {
-          try {
+      return tryWithFallback(
+        session,
+        async () => {
+          if (session.connectionType === 'ws') {
             const titleObj = {
               type: "text",
               data: {
@@ -371,21 +437,25 @@ export function registerServerCommands(parent: any, config: MinecraftToolsConfig
               requestData.subtitle = [subtitleObj];
             }
 
-            await LinkService.sendRequestAndWaitResponse('send_title', requestData, serverConfig.name);
-            return LinkService.autoRecall(`[${serverConfig.name}] 标题已发送`, session);
-          } catch (error) {
-            return LinkService.autoRecall(`标题发送失败: ${error.message}`, session);
+            await LinkService.sendRequestAndWaitResponse('send_title', requestData, session.serverConfig.name);
+            return await LinkService.autoRecall(`[${session.serverConfig.name}] 标题已发送`, session);
+          } else {
+            throw new Error('跳过WebSocket尝试')
           }
-        } else {
+        },
+        async () => {
+          // RCON回退方式
           let cmd = `title @a title {"text":"${title}"}`
-          await LinkService.executeRconCommand(cmd, config, session, serverConfig.name)
+          await LinkService.executeRconCommand(cmd, config, session, session.serverConfig.name)
           if (subtitle) {
             cmd = `title @a subtitle {"text":"${subtitle}"}`
-            await LinkService.executeRconCommand(cmd, config, session, serverConfig.name)
+            await LinkService.executeRconCommand(cmd, config, session, session.serverConfig.name)
           }
           cmd = `title @a times ${options.fadein * 20} ${options.stay * 20} ${options.fadeout * 20}`
-          return LinkService.executeRconCommand(cmd, config, session, serverConfig.name)
+          return await LinkService.executeRconCommand(cmd, config, session, session.serverConfig.name)
         }
+      ).catch(error => {
+        return LinkService.autoRecall(`标题发送失败: ${error.message}`, session);
       })
     })
 
@@ -393,12 +463,11 @@ export function registerServerCommands(parent: any, config: MinecraftToolsConfig
     .option('server', '-s <name:string> 指定服务器名称')
     .option('color', '-c <color:string> 消息颜色', { fallback: 'white' })
     .option('bold', '-b 粗体显示')
-    .before(autoCheckServerPermission)
     .action(async ({ session, options }, message) => {
-      return executeWithConnection(session, async (type) => {
-        const serverConfig = session.serverConfig
-        if (type === 'ws') {
-          try {
+      return tryWithFallback(
+        session,
+        async () => {
+          if (session.connectionType === 'ws') {
             const messageObj = {
               type: "text",
               data: {
@@ -410,32 +479,35 @@ export function registerServerCommands(parent: any, config: MinecraftToolsConfig
 
             await LinkService.sendRequestAndWaitResponse('send_actionbar', {
               message: [messageObj]
-            }, serverConfig.name);
+            }, session.serverConfig.name);
 
-            return LinkService.autoRecall(`[${serverConfig.name}] 动作栏消息已发送`, session);
-          } catch (error) {
-            return LinkService.autoRecall(`动作栏消息发送失败: ${error.message}`, session);
+            return await LinkService.autoRecall(`[${session.serverConfig.name}] 动作栏消息已发送`, session);
+          } else {
+            throw new Error('跳过WebSocket尝试')
           }
-        } else {
+        },
+        async () => {
+          // RCON回退方式
           const cmd = `title @a actionbar {"text":"${message}"}`
-          return LinkService.executeRconCommand(cmd, config, session, serverConfig.name)
+          return await LinkService.executeRconCommand(cmd, config, session, session.serverConfig.name)
         }
+      ).catch(error => {
+        return LinkService.autoRecall(`动作栏消息发送失败: ${error.message}`, session);
       })
     })
 
   mcserver.subcommand('.player', '获取服务器在线玩家信息')
     .option('server', '-s <name:string> 指定服务器名称')
-    .before(autoCheckServerPermission)
     .action(async ({ session }) => {
-      return executeWithConnection(session, async (type) => {
-        const serverConfig = session.serverConfig
-        if (type === 'ws') {
-          try {
-            const response = await LinkService.sendRequestAndWaitResponse('get_players', {}, serverConfig.name)
+      return tryWithFallback(
+        session,
+        async () => {
+          if (session.connectionType === 'ws') {
+            const response = await LinkService.sendRequestAndWaitResponse('get_players', {}, session.serverConfig.name)
             if (!response.data || !response.data.players) {
-              return LinkService.autoRecall('无法获取玩家信息', session)
+              throw new Error('无法获取玩家信息')
             }
-            const { players, server_name = serverConfig.name, server_type, max_players = '?' } = response.data
+            const { players, server_name = session.serverConfig.name, server_type, max_players = '?' } = response.data
             let message = `[${server_name}] 在线玩家(${players.length}/${max_players}):\n`
             message += players.map((player: any) => {
               const name = player.nickname || player.display_name || player.name
@@ -451,28 +523,34 @@ export function registerServerCommands(parent: any, config: MinecraftToolsConfig
               return extras.length > 0 ? `${name} (${extras.join(', ')})` : name
             }).join('\n')
             return message
-          } catch (error) {
-            if (serverConfig.rcon.password) {
-              return LinkService.executeRconCommand('list', config, session, serverConfig.name)
-            }
-            return LinkService.autoRecall(`获取信息失败: ${error.message}`, session)
+          } else {
+            throw new Error('跳过WebSocket尝试')
           }
-        } else {
-          return LinkService.executeRconCommand('list', config, session, serverConfig.name)
+        },
+        async () => {
+          // RCON回退方式
+          return await LinkService.executeRconCommand('list', config, session, session.serverConfig.name)
         }
+      ).catch(error => {
+        return LinkService.autoRecall(`获取玩家信息失败: ${error.message}`, session)
       })
     })
 
   mcserver.subcommand('.run <command:text>', '执行自定义命令', { authority: 3 })
     .option('server', '-s <name:string> 指定服务器名称')
-    .before(autoCheckServerPermission)
     .action(async ({ session }, command) => {
       if (!command) return LinkService.autoRecall('请输入要执行的命令', session)
 
-      const serverConfig = session.serverConfig
-      if (!serverConfig.rcon.password) {
-        return LinkService.autoRecall(`服务器 ${serverConfig.name} 未配置RCON`, session)
+      // RCON命令必须通过RCON执行
+      const { serverConfig } = session
+      if (!serverConfig.rcon?.password) {
+        return LinkService.autoRecall(`服务器 ${serverConfig.name} 未配置RCON，无法执行自定义命令`, session)
       }
-      return LinkService.executeRconCommand(command, config, session, serverConfig.name)
+
+      try {
+        return await LinkService.executeRconCommand(command, config, session, serverConfig.name)
+      } catch (error) {
+        return LinkService.autoRecall(`命令执行失败: ${error.message}`, session)
+      }
     })
 }
