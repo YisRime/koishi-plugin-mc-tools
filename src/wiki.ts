@@ -217,11 +217,8 @@ export async function processWikiRequest(
 
       const { title, content } = await fetchContent(pageUrl, lang, tempConfig);
 
-      // 检查标题是否只包含数字和点
-      const isNumberAndDot = /^[\d.]+$/.test(title);
-
-      // 使用合并转发（如果启用且提供了session且标题不是纯数字和点组合）
-      if (config.common.useForwardMsg && session && !isNumberAndDot) {
+      // 使用合并转发（如果启用且提供了session）
+      if (config.common.useForwardMsg && session) {
         try {
           const response = await sendForwardMessage(session, `『${title}』`, content, displayUrl);
 

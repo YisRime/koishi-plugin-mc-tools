@@ -1,4 +1,4 @@
-import { Context, Schema } from 'koishi'
+import { Context, Schema, Logger } from 'koishi'
 import {} from 'koishi-plugin-puppeteer'
 import { registerWikiCommands } from './wiki'
 import { registerModCommands } from './mod'
@@ -6,8 +6,7 @@ import { registerVersionCommands } from './ver'
 import { registerSkinCommands } from './skin'
 import { registerInfoCommands } from './info'
 import { registerServerCommands } from './link'
-import { initWebSocketCommunication, McEvent, cleanupWebSocket } from './linkservice'
-
+import { WebSocket, WebSocketServer } from 'ws'
 /**
  * Minecraft 工具箱插件
  * @module mc-tools
@@ -18,6 +17,12 @@ export const usage = '注意：使用 Docker 部署产生的问题请前往插�
 
 // 版本检查定时器
 let versionCheckTimer: NodeJS.Timeout
+
+// 全局WebSocket相关变量
+let wsConnection: WebSocket | null = null
+let wsServer: WebSocketServer | null = null
+let reconnectTimer: NodeJS.Timeout | null = null
+let reconnectAttempts = 0
 
 export type LangCode = keyof typeof MINECRAFT_LANGUAGES
 
@@ -114,8 +119,11 @@ export interface CommonConfig {
 export interface ServerConfig {
   name: string
   group: string
-  rcon: { address: string, password: string }
-  websocket: { mode: 'client' | 'server', address: string, token: string }
+  rconAddress: string
+  rconPassword: string
+  websocketMode: 'client' | 'server'
+  websocketAddress: string
+  websocketToken: string
 }
 
 /**
@@ -151,13 +159,15 @@ export interface MinecraftToolsConfig {
     snapshot: boolean
   }
   link: {
-    events: number
     enableRcon: boolean
+    rconAddress: string
+    rconPassword: string
+    websocketMode: 'client' | 'server'
+    websocketAddress: string
+    websocketToken: string
     enableWebSocket: boolean
     name: string
     group: string
-    rcon: { address: string, password: string }
-    websocket: { mode: 'client' | 'server', address: string, token: string }
   }
 }
 
@@ -267,43 +277,282 @@ export const Config: Schema<MinecraftToolsConfig> = Schema.object({
   }).description('查询配置'),
 
   link: Schema.object({
-    events: Schema.bitset(McEvent)
-      .default(McEvent.玩家聊天 | McEvent.玩家命令 | McEvent.玩家加入 | McEvent.玩家退出)
-      .description('监听事件类型'),
+    group: Schema.string()
+      .default('onebot:123456789')
+      .description('互联群组ID'),
     enableRcon: Schema.boolean()
       .default(false)
-      .description('启用RCON连接'),
+      .description('启用 RCON'),
+    rconAddress: Schema.string()
+      .default('localhost:25575')
+      .description('RCON 地址'),
+    rconPassword: Schema.string()
+      .role('secret')
+      .description('RCON 密码'),
     enableWebSocket: Schema.boolean()
       .default(false)
-      .description('启用WebSocket连接'),
+      .description('启用 WebSocket'),
+    websocketMode: Schema.union(['client', 'server'])
+      .default('client')
+      .description('WebSocket 模式'),
+    websocketAddress: Schema.string()
+      .default('localhost:8080')
+      .description('WebSocket 地址'),
+    websocketToken: Schema.string()
+      .role('secret')
+      .description('WebSocket 密码'),
     name: Schema.string()
       .required()
       .pattern(/^[a-zA-Z0-9_]+$/)
       .default('mcserver')
-      .description('服务器名称'),
-    group: Schema.string()
-      .description('互联群组 ID'),
-    rcon: Schema.object({
-      address: Schema.string()
-        .default('localhost:25575')
-        .description('RCON 地址'),
-      password: Schema.string()
-        .role('secret')
-        .description('RCON 密码')
-    }),
-    websocket: Schema.object({
-      mode: Schema.union(['client', 'server'])
-        .default('client')
-        .description('WebSocket 模式'),
-      address: Schema.string()
-        .default('localhost:8080')
-        .description('WebSocket 地址'),
-      token: Schema.string()
-        .role('secret')
-        .description('WebSocket 令牌')
-    }),
+      .description('服务器名称')
   }).description('互联配置'),
 })
+
+/**
+ * 初始化WebSocket通信
+ */
+function initWebSocketCommunication(ctx: Context, config: MinecraftToolsConfig) {
+  if (!config.link.enableWebSocket) return
+
+  if (config.link.websocketMode === 'client') {
+    connectAsClient(ctx, config)
+  } else {
+    startWebSocketServer(ctx, config)
+  }
+}
+
+/**
+ * 作为客户端连接到WebSocket服务器
+ */
+function connectAsClient(ctx: Context, config: MinecraftToolsConfig) {
+  const logger = ctx.logger('mc-tools:ws')
+  const [host, portStr] = config.link.websocketAddress.split(':')
+  const port = portStr ? parseInt(portStr) : 8080
+  const url = `ws://${host}:${port}/minecraft/ws`
+
+  const headers = {
+    'Authorization': `Bearer ${config.link.websocketToken}`,
+    'x-self-name': config.link.name,
+    'x-client-origin': 'koishi'
+  }
+
+  try {
+    wsConnection = new WebSocket(url, { headers })
+
+    wsConnection.on('open', () => {
+      logger.info(`成功连接到WebSocket服务器: ${url}`)
+      reconnectAttempts = 0
+
+      // 发送连接成功消息
+      if (config.link.group) {
+        const [platform, channelId] = config.link.group.split(':')
+        ctx.bots.filter(bot => bot.platform === platform)
+          .forEach(bot => bot.sendMessage(channelId, `✅ 已连接到Minecraft服务器 ${config.link.name}`))
+      }
+    })
+
+    wsConnection.on('message', (data) => {
+      try {
+        const message = JSON.parse(data.toString())
+        if (message.event_name && config.link.group) {
+          handleMinecraftEvent(ctx, message, config)
+        }
+      } catch (err) {
+        logger.error('无法解析收到的WebSocket消息:', err)
+      }
+    })
+
+    wsConnection.on('error', (err) => {
+      logger.error('WebSocket连接错误:', err)
+    })
+
+    wsConnection.on('close', () => {
+      logger.warn('WebSocket连接已关闭，尝试重新连接...')
+
+      if (reconnectAttempts < 10) {
+        if (reconnectTimer) clearTimeout(reconnectTimer)
+        reconnectTimer = setTimeout(() => {
+          reconnectAttempts++
+          connectAsClient(ctx, config)
+        }, 5000 * Math.min(reconnectAttempts + 1, 5))
+      } else {
+        logger.error('重连次数过多，停止尝试')
+        if (config.link.group) {
+          const [platform, channelId] = config.link.group.split(':')
+          ctx.bots.filter(bot => bot.platform === platform)
+            .forEach(bot => bot.sendMessage(channelId, `❌ 无法连接到Minecraft服务器，已停止尝试`))
+        }
+      }
+    })
+  } catch (err) {
+    logger.error('创建WebSocket连接失败:', err)
+
+    // 尝试重连
+    if (reconnectAttempts < 10) {
+      if (reconnectTimer) clearTimeout(reconnectTimer)
+      reconnectTimer = setTimeout(() => {
+        reconnectAttempts++
+        connectAsClient(ctx, config)
+      }, 5000 * Math.min(reconnectAttempts + 1, 5))
+    }
+  }
+}
+
+/**
+ * 启动WebSocket服务器
+ */
+function startWebSocketServer(ctx: Context, config: MinecraftToolsConfig) {
+  const logger = ctx.logger('mc-tools:ws')
+  const [host, portStr] = config.link.websocketAddress.split(':')
+  const port = portStr ? parseInt(portStr) : 8080
+
+  try {
+    wsServer = new WebSocketServer({ host, port })
+    logger.info(`WebSocket服务器已启动: ws://${host}:${port}`)
+
+    wsServer.on('connection', (ws, req) => {
+      const auth = req.headers.authorization
+      const selfName = req.headers['x-self-name']
+
+      // 验证Token和服务器名称
+      if (!auth || auth !== `Bearer ${config.link.websocketToken}` ||
+          !selfName || selfName !== config.link.name) {
+        logger.warn('WebSocket连接验证失败')
+        ws.close(1008, 'Authorization failed')
+        return
+      }
+
+      logger.info('Minecraft服务器已连接')
+      wsConnection = ws
+
+      // 通知群组
+      if (config.link.group) {
+        const [platform, channelId] = config.link.group.split(':')
+        ctx.bots.filter(bot => bot.platform === platform)
+          .forEach(bot => bot.sendMessage(channelId, `✅ Minecraft服务器 ${config.link.name} 已连接`))
+      }
+
+      ws.on('message', (data) => {
+        try {
+          const message = JSON.parse(data.toString())
+          if (message.event_name && config.link.group) {
+            handleMinecraftEvent(ctx, message, config)
+          }
+        } catch (err) {
+          logger.error('无法解析收到的WebSocket消息:', err)
+        }
+      })
+
+      ws.on('close', () => {
+        logger.warn('Minecraft服务器断开连接')
+        wsConnection = null
+
+        // 通知群组
+        if (config.link.group) {
+          const [platform, channelId] = config.link.group.split(':')
+          ctx.bots.filter(bot => bot.platform === platform)
+            .forEach(bot => bot.sendMessage(channelId, `❌ Minecraft服务器 ${config.link.name} 已断开连接`))
+        }
+      })
+
+      ws.on('error', (err) => {
+        logger.error('WebSocket连接错误:', err)
+      })
+    })
+
+    wsServer.on('error', (err) => {
+      logger.error('WebSocket服务器错误:', err)
+    })
+  } catch (err) {
+    logger.error('启动WebSocket服务器失败:', err)
+  }
+}
+
+/**
+ * 处理来自Minecraft的事件
+ */
+function handleMinecraftEvent(ctx: Context, message: any, config: MinecraftToolsConfig) {
+  const logger = ctx.logger('mc-tools:ws')
+  const [platform, channelId] = config.link.group.split(':')
+
+  try {
+    const serverName = message.server_name || config.link.name
+    let content = ''
+
+    // 根据事件类型构建消息
+    switch (message.event_name) {
+      case 'AsyncPlayerChatEvent':
+      case 'ServerMessageEvent':
+      case 'ServerChatEvent':
+      case 'NeoServerChatEvent':
+      case 'MinecraftPlayerChatEvent':
+      case 'BaseChatEvent':
+      case 'VelocityPlayerChatEvent':
+        content = `[${serverName}] ${message.player?.nickname || '服务器'}: ${message.message || ''}`
+        break
+
+      case 'PlayerJoinEvent':
+      case 'ServerPlayConnectionJoinEvent':
+      case 'PlayerLoggedInEvent':
+      case 'NeoPlayerLoggedInEvent':
+      case 'MinecraftPlayerJoinEvent':
+      case 'BaseJoinEvent':
+      case 'VelocityLoginEvent':
+        content = `[${serverName}] ${message.player?.nickname || '玩家'} 加入了游戏`
+        break
+
+      case 'PlayerQuitEvent':
+      case 'ServerPlayConnectionDisconnectEvent':
+      case 'PlayerLoggedOutEvent':
+      case 'NeoPlayerLoggedOutEvent':
+      case 'MinecraftPlayerQuitEvent':
+      case 'BaseQuitEvent':
+      case 'VelocityDisconnectEvent':
+        content = `[${serverName}] ${message.player?.nickname || '玩家'} 离开了游戏`
+        break
+
+      case 'PlayerDeathEvent':
+      case 'NeoPlayerDeathEvent':
+      case 'ServerLivingEntityAfterDeathEvent':
+      case 'BaseDeathEvent':
+        content = `[${serverName}] ${message.message || `${message.player?.nickname || '玩家'} 死亡了`}`
+        break
+
+      default:
+        if (message.message) {
+          content = `[${serverName}] ${message.message}`
+        }
+    }
+
+    if (content) {
+      ctx.bots.filter(bot => bot.platform === platform)
+        .forEach(bot => bot.sendMessage(channelId, content))
+    }
+  } catch (err) {
+    logger.error('处理Minecraft事件失败:', err)
+  }
+}
+
+/**
+ * 清理WebSocket连接
+ */
+function cleanupWebSocket() {
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer)
+    reconnectTimer = null
+  }
+
+  if (wsConnection) {
+    wsConnection.close()
+    wsConnection = null
+  }
+
+  if (wsServer) {
+    wsServer.close()
+    wsServer = null
+  }
+}
 
 /**
  * 插件主函数
@@ -319,10 +568,8 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
   registerVersionCommands(ctx, mcCommand, pluginConfig)
   registerSkinCommands(ctx, mcCommand, pluginConfig)
   registerInfoCommands(mcCommand, pluginConfig)
-  // 判断是否启用服务器连接功能
-  const hasServerConfig = pluginConfig.link.enableRcon || pluginConfig.link.enableWebSocket;
   // 如果启用了服务器连接功能，则注册服务器管理命令
-  if (hasServerConfig) {
+  if (pluginConfig.link.enableRcon || pluginConfig.link.enableWebSocket) {
     registerServerCommands(mcCommand, pluginConfig, ctx)
     if (pluginConfig.link.enableWebSocket) {
       initWebSocketCommunication(ctx, pluginConfig)
