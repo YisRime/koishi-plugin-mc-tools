@@ -151,8 +151,13 @@ export interface MinecraftToolsConfig {
     snapshot: boolean
   }
   link: {
-    servers: ServerConfig[]
     events: number
+    enableRcon: boolean
+    enableWebSocket: boolean
+    name: string
+    group: string
+    rcon: { address: string, password: string }
+    websocket: { mode: 'client' | 'server', address: string, token: string }
   }
 }
 
@@ -265,45 +270,38 @@ export const Config: Schema<MinecraftToolsConfig> = Schema.object({
     events: Schema.bitset(McEvent)
       .default(McEvent.玩家聊天 | McEvent.玩家命令 | McEvent.玩家加入 | McEvent.玩家退出)
       .description('监听事件类型'),
-    servers: Schema.array(Schema.object({
-      name: Schema.string()
-        .required()
-        .pattern(/^[a-zA-Z0-9_]+$/)
-        .description('服务器名称'),
-      group: Schema.string()
-        .description('互联群组 ID'),
-      rcon: Schema.object({
-        address: Schema.string()
-          .default('localhost:25575')
-          .description('RCON 地址'),
-        password: Schema.string()
-          .role('secret')
-          .description('RCON 密码')
-      }),
-      websocket: Schema.object({
-        mode: Schema.union(['client', 'server'])
-          .default('client')
-          .description('WebSocket 模式'),
-        address: Schema.string()
-          .default('localhost:8080')
-          .description('WebSocket 地址'),
-        token: Schema.string()
-          .role('secret')
-          .description('WebSocket 令牌')
-      })
-    })).default([{
-      name: 'default',
-      group: 'sandbox:default',
-      rcon: {
-        address: 'localhost:25575',
-        password: ''
-      },
-      websocket: {
-        mode: 'client',
-        address: 'localhost:8080',
-        token: ''
-      }
-    }]),
+    enableRcon: Schema.boolean()
+      .default(false)
+      .description('启用RCON连接'),
+    enableWebSocket: Schema.boolean()
+      .default(false)
+      .description('启用WebSocket连接'),
+    name: Schema.string()
+      .required()
+      .pattern(/^[a-zA-Z0-9_]+$/)
+      .default('mcserver')
+      .description('服务器名称'),
+    group: Schema.string()
+      .description('互联群组 ID'),
+    rcon: Schema.object({
+      address: Schema.string()
+        .default('localhost:25575')
+        .description('RCON 地址'),
+      password: Schema.string()
+        .role('secret')
+        .description('RCON 密码')
+    }),
+    websocket: Schema.object({
+      mode: Schema.union(['client', 'server'])
+        .default('client')
+        .description('WebSocket 模式'),
+      address: Schema.string()
+        .default('localhost:8080')
+        .description('WebSocket 地址'),
+      token: Schema.string()
+        .role('secret')
+        .description('WebSocket 令牌')
+    }),
   }).description('互联配置'),
 })
 
@@ -322,13 +320,13 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
   registerSkinCommands(ctx, mcCommand, pluginConfig)
   registerInfoCommands(mcCommand, pluginConfig)
   // 判断是否启用服务器连接功能
-  const hasServerConfig = pluginConfig.link.servers.some(server =>
-    server.rcon.password || server.websocket.token
-  )
-  // 如果配置了服务器，则注册服务器管理命令
+  const hasServerConfig = pluginConfig.link.enableRcon || pluginConfig.link.enableWebSocket;
+  // 如果启用了服务器连接功能，则注册服务器管理命令
   if (hasServerConfig) {
     registerServerCommands(mcCommand, pluginConfig, ctx)
-    initWebSocketCommunication(ctx, pluginConfig)
+    if (pluginConfig.link.enableWebSocket) {
+      initWebSocketCommunication(ctx, pluginConfig)
+    }
   }
 }
 
