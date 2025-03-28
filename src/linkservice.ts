@@ -95,7 +95,7 @@ function connectAsClient(ctx: Context, config: MinecraftToolsConfig) {
   const headers = {
     'Authorization': `${config.link.websocketToken}`,
     'x-self-name': config.link.name,
-    'x-client-origin': 'minecraft'
+    'x-client-origin': 'koishi'
   }
 
   try {
