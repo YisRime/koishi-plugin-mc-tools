@@ -93,9 +93,9 @@ function connectAsClient(ctx: Context, config: MinecraftToolsConfig) {
   const url = `ws://${host}:${port}/minecraft/ws`
 
   const headers = {
-    'Authorization': `Bearer ${config.link.websocketToken}`,
+    'Authorization': `${config.link.websocketToken}`,
     'x-self-name': config.link.name,
-    'x-client-origin': 'koishi'
+    'x-client-origin': 'minecraft'
   }
 
   try {
@@ -111,6 +111,21 @@ function connectAsClient(ctx: Context, config: MinecraftToolsConfig) {
         ctx.bots.filter(bot => bot.platform === platform)
           .forEach(bot => bot.sendMessage(channelId, `✅ 已连接到Minecraft服务器 ${config.link.name}`))
       }
+
+      // 发送加入消息，兼容minecraft-sync-msg协议
+      let joinMsg = {
+        "api": "send_msg",
+        data: {
+          "message": {
+            type: "text",
+            data: {
+              text: `[Koishi] 连接成功！`,
+              color: "gold"
+            }
+          }
+        }
+      }
+      minecraftSocket.send(JSON.stringify(joinMsg))
     })
 
     minecraftSocket.on('message', (data) => {
@@ -175,16 +190,17 @@ function startWebSocketServer(ctx: Context, config: MinecraftToolsConfig) {
     wsServer.on('connection', (ws, req) => {
       const auth = req.headers.authorization
       const selfName = req.headers['x-self-name']
+      const clientOrigin = req.headers['x-client-origin']
 
       // 验证Token和服务器名称
-      if (!auth || auth !== `Bearer ${config.link.websocketToken}` ||
+      if (!auth || auth !== `${config.link.websocketToken}` ||
           !selfName || selfName !== config.link.name) {
         logger.warn('WebSocket连接验证失败')
         ws.close(1008, 'Authorization failed')
         return
       }
 
-      logger.info('Minecraft服务器已连接')
+      logger.info(`Minecraft客户端已连接，客户端类型: ${clientOrigin || '未知'}`)
       minecraftSocket = ws
 
       // 通知群组
@@ -193,6 +209,21 @@ function startWebSocketServer(ctx: Context, config: MinecraftToolsConfig) {
         ctx.bots.filter(bot => bot.platform === platform)
           .forEach(bot => bot.sendMessage(channelId, `✅ Minecraft服务器 ${config.link.name} 已连接`))
       }
+
+      // 发送连接成功消息
+      let joinMsg = {
+        "api": "send_msg",
+        data: {
+          "message": {
+            type: "text",
+            data: {
+              text: `[Koishi] 连接成功！`,
+              color: "gold"
+            }
+          }
+        }
+      }
+      ws.send(JSON.stringify(joinMsg))
 
       ws.on('message', (data) => {
         try {
@@ -239,7 +270,7 @@ function handleMinecraftEvent(ctx: Context, message: any, config: MinecraftTools
 
   try {
     const serverName = message.server_name || config.link.name
-    const serverType = message.server_type || '未知'
+    const eventName = message.event_name || ''
     let content = ''
 
     // 获取玩家位置信息（如果有）
@@ -255,18 +286,16 @@ function handleMinecraftEvent(ctx: Context, message: any, config: MinecraftTools
     let gameModeInfo = ''
     if (message.player) {
       if (message.player.game_mode) {
-        // Forge/NeoForge格式
         gameModeInfo = ` [模式: ${message.player.game_mode}]`
       } else if (message.player.is_creative !== undefined) {
-        // Fabric格式
         let mode = message.player.is_spectator ? '旁观者' :
                    message.player.is_creative ? '创造' : '生存'
         gameModeInfo = ` [模式: ${mode}]`
       }
     }
 
-    // 根据事件类型构建消息
-    switch (message.event_name) {
+    // 兼容 minecraft-sync-msg 的事件类型
+    switch (eventName) {
       // ============= 聊天事件 =============
       case 'AsyncPlayerChatEvent':         // Spigot
       case 'ServerMessageEvent':           // Fabric
@@ -283,6 +312,7 @@ function handleMinecraftEvent(ctx: Context, message: any, config: MinecraftTools
       case 'ServerCommandMessageEvent':     // Fabric
       case 'CommandEvent':                  // Forge
       case 'NeoCommandEvent':               // NeoForge
+      case 'VelocityCommandExecuteEvent':   // Velocity
         const cmd = message.message?.trim() || ''
         content = `[${serverName}] ${message.player?.nickname || '玩家'} 执行命令: ${cmd}${locationInfo}`
         break
@@ -296,22 +326,12 @@ function handleMinecraftEvent(ctx: Context, message: any, config: MinecraftTools
       case 'BaseJoinEvent':                       // 其他
       case 'VelocityLoginEvent':                  // Velocity
         content = `[${serverName}] ${message.player?.nickname || '玩家'} 加入了游戏`
-
-        // 添加玩家详细信息
         if (message.player) {
-          // 添加显示名称（如果与昵称不同）
           if (message.player.display_name &&
               message.player.display_name !== message.player.nickname) {
             content += ` (显示名: ${message.player.display_name})`
           }
-
-          // 添加游戏模式信息
-          content += gameModeInfo
-
-          // 添加位置信息
-          content += locationInfo
-
-          // 添加IP信息
+          content += gameModeInfo + locationInfo
           if (message.player.ip || message.player.ipAddress || message.player.address) {
             const ip = message.player.ip || message.player.ipAddress || message.player.address
             content += ` [IP: ${ip}]`
@@ -342,13 +362,12 @@ function handleMinecraftEvent(ctx: Context, message: any, config: MinecraftTools
         }
         break
 
-      // 其他事件类型
+      // 其他事件或API响应
       default:
         if (message.message) {
           content = `[${serverName}] ${message.message}`
         } else if (message.event_name) {
-          // 记录未知事件以便调试
-          logger.debug(`收到未处理的事件类型: ${message.event_name}, 服务端类型: ${serverType}`)
+          logger.debug(`收到未处理的事件类型: ${message.event_name}`)
         }
     }
 
@@ -497,7 +516,7 @@ export async function sendMinecraftMessage(
   // 消息始终确保是数组格式
   const msgArray = ensureArray(message);
 
-  // 根据消息类型构建不同的API请求
+  // 兼容minecraft-sync-msg的API格式
   switch (messageType) {
     case 'chat':
       api = 'send_msg';

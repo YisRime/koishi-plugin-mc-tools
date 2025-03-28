@@ -30,7 +30,7 @@ export function registerServerCommands(parent: any, config: MinecraftToolsConfig
       // 获取用户昵称或ID
       const sender = session.username || session.userId
 
-      // 如果启用WebSocket，则使用WebSocket发送
+      // 使用与minecraft-sync-msg兼容的消息格式
       if (config.link.enableWebSocket) {
         const formattedMessage = createMcText(`${sender}: ${message}`)
         const success = await sendMinecraftMessage('chat', formattedMessage, { session, feedback: false })
