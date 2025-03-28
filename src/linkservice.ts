@@ -93,7 +93,7 @@ function connectAsClient(ctx: Context, config: MinecraftToolsConfig) {
   const url = `ws://${host}:${port}/minecraft/ws`
 
   const headers = {
-    'Authorization': `${config.link.websocketToken}`,
+    'Authorization': `Bearer ${config.link.websocketToken}`,
     'x-self-name': config.link.name,
     'x-client-origin': 'koishi'
   }
@@ -193,7 +193,7 @@ function startWebSocketServer(ctx: Context, config: MinecraftToolsConfig) {
       const clientOrigin = req.headers['x-client-origin']
 
       // 验证Token和服务器名称
-      if (!auth || auth !== `${config.link.websocketToken}` ||
+      if (!auth || auth !== `Bearer ${config.link.websocketToken}` ||
           !selfName || selfName !== config.link.name) {
         logger.warn('WebSocket连接验证失败')
         ws.close(1008, 'Authorization failed')
