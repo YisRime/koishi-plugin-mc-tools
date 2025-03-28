@@ -4,12 +4,8 @@ import {
   sendTempMessage,
   executeRconCommand,
   hasGroupPermission,
-  sendChatMessage,
-  broadcastToServer,
-  whisperToPlayer,
-  sendTitle,
-  sendActionbar,
-  createMcText
+  createMcText,
+  sendMinecraftMessage
 } from './linkservice'
 
 /**
@@ -37,18 +33,28 @@ export function registerServerCommands(parent: any, config: MinecraftToolsConfig
       // 如果启用WebSocket，则使用WebSocket发送
       if (config.link.enableWebSocket) {
         const formattedMessage = createMcText(`${sender}: ${message}`)
-        return sendChatMessage(formattedMessage, session)
+        const success = await sendMinecraftMessage('chat', formattedMessage, { session, feedback: false })
+
+        // 如果WebSocket发送失败且RCON可用，尝试使用RCON
+        if (!success && config.link.enableRcon) {
+          await executeRconCommand(`say ${sender}: ${message}`, config, session)
+        } else if (!success) {
+          await sendTempMessage('消息发送失败', session)
+        } else {
+          await sendTempMessage('消息已发送', session)
+        }
+      } else {
+        // 直接使用RCON
+        await executeRconCommand(`say ${sender}: ${message}`, config, session)
       }
-      // 否则使用RCON
-      return executeRconCommand(`say ${sender}: ${message}`, config, session)
     })
 
   // 执行自定义命令
   mcserver.subcommand('.run <command:text>', '执行自定义命令')
     .usage('mc.server.run <命令> - 执行自定义 Minecraft 命令')
     .action(({ session }, command) => {
-      return command ? executeRconCommand(command, config, session) :
-                     sendTempMessage('请输入要执行的命令', session)
+      if (!command) return sendTempMessage('请输入要执行的命令', session)
+      executeRconCommand(command, config, session)
     })
 
   // 如果启用了WebSocket，添加更多命令
@@ -71,7 +77,17 @@ export function registerServerCommands(parent: any, config: MinecraftToolsConfig
           underlined: options.underlined
         })
 
-        return broadcastToServer(formattedMessage, session)
+        const success = await sendMinecraftMessage('broadcast', formattedMessage, { session, feedback: false })
+
+        // 如果WebSocket发送失败且RCON可用，尝试使用RCON
+        if (!success && config.link.enableRcon) {
+          // 在RCON中模拟广播（不同服务端可能有不同实现）
+          await executeRconCommand(`broadcast ${message}`, config, session)
+        } else if (!success) {
+          await sendTempMessage('广播发送失败', session)
+        } else {
+          await sendTempMessage('广播已发送', session)
+        }
       })
 
     // 私聊命令
@@ -91,7 +107,16 @@ export function registerServerCommands(parent: any, config: MinecraftToolsConfig
           italic: options.italic
         })
 
-        return whisperToPlayer(player, formattedMsg, session)
+        const success = await sendMinecraftMessage('whisper', formattedMsg, { player, session, feedback: false })
+
+        // 如果WebSocket发送失败且RCON可用，尝试使用RCON
+        if (!success && config.link.enableRcon) {
+          await executeRconCommand(`tell ${player} ${sender}: ${message}`, config, session)
+        } else if (!success) {
+          await sendTempMessage('私聊消息发送失败', session)
+        } else {
+          await sendTempMessage('私聊消息已发送', session)
+        }
       })
 
     // 标题命令
@@ -108,9 +133,29 @@ export function registerServerCommands(parent: any, config: MinecraftToolsConfig
         const titleText = createMcText(title, { color: options.color })
         const subtitleText = subtitle ? createMcText(subtitle, { color: options.subcolor }) : ''
 
-        return sendTitle(
-          titleText, subtitleText, options.fadein, options.stay, options.fadeout, session
-        )
+        const success = await sendMinecraftMessage('title', titleText, {
+          subtitle: subtitleText,
+          fadein: options.fadein,
+          stay: options.stay,
+          fadeout: options.fadeout,
+          session,
+          feedback: false
+        })
+
+        // 如果WebSocket发送失败且RCON可用，尝试使用RCON
+        if (!success && config.link.enableRcon) {
+          // 使用原版命令发送标题
+          await executeRconCommand(`title @a title {"text":"${title}","color":"${options.color}"}`, config, session)
+          if (subtitle) {
+            await executeRconCommand(`title @a subtitle {"text":"${subtitle}","color":"${options.subcolor}"}`, config, session)
+          }
+          await executeRconCommand(`title @a times ${options.fadein} ${options.stay} ${options.fadeout}`, config, session)
+          await sendTempMessage('标题已发送', session)
+        } else if (!success) {
+          await sendTempMessage('标题发送失败', session)
+        } else {
+          await sendTempMessage('标题已发送', session)
+        }
       })
 
     // 动作栏命令
@@ -127,7 +172,18 @@ export function registerServerCommands(parent: any, config: MinecraftToolsConfig
           bold: options.bold
         })
 
-        return sendActionbar(actionbarText, session)
+        const success = await sendMinecraftMessage('actionbar', actionbarText, { session, feedback: false })
+
+        // 如果WebSocket发送失败且RCON可用，尝试使用RCON
+        if (!success && config.link.enableRcon) {
+          // 使用原版命令发送动作栏消息
+          await executeRconCommand(`title @a actionbar {"text":"${message}","color":"${options.color}","bold":${options.bold}}`, config, session)
+          await sendTempMessage('动作栏消息已发送', session)
+        } else if (!success) {
+          await sendTempMessage('动作栏消息发送失败', session)
+        } else {
+          await sendTempMessage('动作栏消息已发送', session)
+        }
       })
   }
 }

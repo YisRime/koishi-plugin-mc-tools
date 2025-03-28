@@ -239,50 +239,116 @@ function handleMinecraftEvent(ctx: Context, message: any, config: MinecraftTools
 
   try {
     const serverName = message.server_name || config.link.name
+    const serverType = message.server_type || '未知'
     let content = ''
+
+    // 获取玩家位置信息（如果有）
+    let locationInfo = ''
+    if (message.player) {
+      const player = message.player
+      if (player.block_x !== undefined && player.block_y !== undefined && player.block_z !== undefined) {
+        locationInfo = ` [位置: ${player.block_x}, ${player.block_y}, ${player.block_z}]`
+      }
+    }
+
+    // 获取玩家游戏模式（如果有）
+    let gameModeInfo = ''
+    if (message.player) {
+      if (message.player.game_mode) {
+        // Forge/NeoForge格式
+        gameModeInfo = ` [模式: ${message.player.game_mode}]`
+      } else if (message.player.is_creative !== undefined) {
+        // Fabric格式
+        let mode = message.player.is_spectator ? '旁观者' :
+                   message.player.is_creative ? '创造' : '生存'
+        gameModeInfo = ` [模式: ${mode}]`
+      }
+    }
 
     // 根据事件类型构建消息
     switch (message.event_name) {
-      case 'AsyncPlayerChatEvent':
-      case 'ServerMessageEvent':
-      case 'ServerChatEvent':
-      case 'NeoServerChatEvent':
-      case 'MinecraftPlayerChatEvent':
-      case 'BaseChatEvent':
-      case 'VelocityPlayerChatEvent':
+      // ============= 聊天事件 =============
+      case 'AsyncPlayerChatEvent':         // Spigot
+      case 'ServerMessageEvent':           // Fabric
+      case 'ServerChatEvent':              // Forge
+      case 'NeoServerChatEvent':           // NeoForge
+      case 'MinecraftPlayerChatEvent':     // 原版
+      case 'BaseChatEvent':                // 其他
+      case 'VelocityPlayerChatEvent':      // Velocity
         content = `[${serverName}] ${message.player?.nickname || '服务器'}: ${message.message || ''}`
         break
 
-      case 'PlayerJoinEvent':
-      case 'ServerPlayConnectionJoinEvent':
-      case 'PlayerLoggedInEvent':
-      case 'NeoPlayerLoggedInEvent':
-      case 'MinecraftPlayerJoinEvent':
-      case 'BaseJoinEvent':
-      case 'VelocityLoginEvent':
+      // ============= 命令事件 =============
+      case 'PlayerCommandPreprocessEvent':  // Spigot
+      case 'ServerCommandMessageEvent':     // Fabric
+      case 'CommandEvent':                  // Forge
+      case 'NeoCommandEvent':               // NeoForge
+        const cmd = message.message?.trim() || ''
+        content = `[${serverName}] ${message.player?.nickname || '玩家'} 执行命令: ${cmd}${locationInfo}`
+        break
+
+      // ============= 加入事件 =============
+      case 'PlayerJoinEvent':                     // Spigot
+      case 'ServerPlayConnectionJoinEvent':       // Fabric
+      case 'PlayerLoggedInEvent':                 // Forge
+      case 'NeoPlayerLoggedInEvent':              // NeoForge
+      case 'MinecraftPlayerJoinEvent':            // 原版
+      case 'BaseJoinEvent':                       // 其他
+      case 'VelocityLoginEvent':                  // Velocity
         content = `[${serverName}] ${message.player?.nickname || '玩家'} 加入了游戏`
+
+        // 添加玩家详细信息
+        if (message.player) {
+          // 添加显示名称（如果与昵称不同）
+          if (message.player.display_name &&
+              message.player.display_name !== message.player.nickname) {
+            content += ` (显示名: ${message.player.display_name})`
+          }
+
+          // 添加游戏模式信息
+          content += gameModeInfo
+
+          // 添加位置信息
+          content += locationInfo
+
+          // 添加IP信息
+          if (message.player.ip || message.player.ipAddress || message.player.address) {
+            const ip = message.player.ip || message.player.ipAddress || message.player.address
+            content += ` [IP: ${ip}]`
+          }
+        }
         break
 
-      case 'PlayerQuitEvent':
-      case 'ServerPlayConnectionDisconnectEvent':
-      case 'PlayerLoggedOutEvent':
-      case 'NeoPlayerLoggedOutEvent':
-      case 'MinecraftPlayerQuitEvent':
-      case 'BaseQuitEvent':
-      case 'VelocityDisconnectEvent':
-        content = `[${serverName}] ${message.player?.nickname || '玩家'} 离开了游戏`
+      // ============= 离开事件 =============
+      case 'PlayerQuitEvent':                     // Spigot
+      case 'ServerPlayConnectionDisconnectEvent': // Fabric
+      case 'PlayerLoggedOutEvent':                // Forge
+      case 'NeoPlayerLoggedOutEvent':             // NeoForge
+      case 'MinecraftPlayerQuitEvent':            // 原版
+      case 'BaseQuitEvent':                       // 其他
+      case 'VelocityDisconnectEvent':             // Velocity
+        content = `[${serverName}] ${message.player?.nickname || '玩家'} 离开了游戏${locationInfo}`
         break
 
-      case 'PlayerDeathEvent':
-      case 'NeoPlayerDeathEvent':
-      case 'ServerLivingEntityAfterDeathEvent':
-      case 'BaseDeathEvent':
-        content = `[${serverName}] ${message.message || `${message.player?.nickname || '玩家'} 死亡了`}`
+      // ============= 死亡事件 =============
+      case 'PlayerDeathEvent':                     // Spigot/Forge
+      case 'NeoPlayerDeathEvent':                  // NeoForge
+      case 'ServerLivingEntityAfterDeathEvent':    // Fabric
+      case 'BaseDeathEvent':                       // 其他
+        if (message.message) {
+          content = `[${serverName}] ${message.message}`
+        } else {
+          content = `[${serverName}] ${message.player?.nickname || '玩家'} 死亡了${locationInfo}`
+        }
         break
 
+      // 其他事件类型
       default:
         if (message.message) {
           content = `[${serverName}] ${message.message}`
+        } else if (message.event_name) {
+          // 记录未知事件以便调试
+          logger.debug(`收到未处理的事件类型: ${message.event_name}, 服务端类型: ${serverType}`)
         }
     }
 
@@ -397,132 +463,107 @@ export async function sendToMinecraft(
 }
 
 /**
- * 发送普通消息到Minecraft服务器
- * API: send_msg
+ * 通用发送消息到Minecraft服务器函数
+ * 整合了所有消息发送功能
  */
-export async function sendChatMessage(
+export async function sendMinecraftMessage(
+  messageType: 'chat' | 'broadcast' | 'whisper' | 'title' | 'actionbar',
   message: any,
-  session?: Session,
-  feedback: boolean = true
+  options: {
+    player?: string,                  // 玩家名称或UUID (whisper用)
+    subtitle?: any,                   // 副标题 (title用)
+    fadein?: number,                  // 淡入时间 (title用)
+    stay?: number,                    // 停留时间 (title用)
+    fadeout?: number,                 // 淡出时间 (title用)
+    session?: Session,                // 会话对象
+    feedback?: boolean                // 是否需要反馈
+  } = {}
 ): Promise<boolean> {
-  const messageData = {
-    message: ensureArray(message)
+  const {
+    player = '',
+    subtitle = '',
+    fadein = 10,
+    stay = 70,
+    fadeout = 20,
+    session,
+    feedback = true
+  } = options;
+
+  let api: string;
+  let messageData: any;
+  let successMsg: string;
+  let failMsg: string;
+
+  // 消息始终确保是数组格式
+  const msgArray = ensureArray(message);
+
+  // 根据消息类型构建不同的API请求
+  switch (messageType) {
+    case 'chat':
+      api = 'send_msg';
+      messageData = { message: msgArray };
+      successMsg = '消息已发送';
+      failMsg = '消息发送失败';
+      break;
+
+    case 'broadcast':
+      api = 'broadcast';
+      messageData = { message: msgArray };
+      successMsg = '广播已发送';
+      failMsg = '广播发送失败';
+      break;
+
+    case 'whisper':
+      if (!player) {
+        await sendTempMessage('未指定玩家', session);
+        return false;
+      }
+      api = 'send_private_msg';
+      const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(player);
+      messageData = {
+        uuid: isUUID ? player : '',
+        nickname: isUUID ? '' : player,
+        message: msgArray
+      };
+      successMsg = '私聊消息已发送';
+      failMsg = '私聊消息发送失败';
+      break;
+
+    case 'title':
+      api = 'send_title';
+      messageData = {
+        title: msgArray,
+        subtitle: subtitle ? ensureArray(subtitle) : '',
+        fadein,
+        stay,
+        fadeout
+      };
+      successMsg = '标题已发送';
+      failMsg = '标题发送失败';
+      break;
+
+    case 'actionbar':
+      api = 'send_actionbar';
+      messageData = { message: msgArray };
+      successMsg = '动作栏消息已发送';
+      failMsg = '动作栏消息发送失败';
+      break;
+
+    default:
+      await sendTempMessage('不支持的消息类型', session);
+      return false;
   }
 
-  if (!feedback) return sendApiRequest('send_msg', messageData, session);
+  // 发送消息并处理反馈
+  if (!feedback) {
+    return sendApiRequest(api, messageData, session);
+  }
 
   return sendToMinecraft({
-    api: 'send_msg',
+    api,
     data: messageData,
     session,
-    successMsg: '消息已发送',
-    failMsg: '消息发送失败'
-  });
-}
-
-/**
- * 发送广播消息到Minecraft服务器
- * API: broadcast
- */
-export async function broadcastToServer(
-  message: any,
-  session?: Session,
-  feedback: boolean = true
-): Promise<boolean> {
-  const messageData = {
-    message: ensureArray(message)
-  }
-
-  if (!feedback) return sendApiRequest('broadcast', messageData, session);
-
-  return sendToMinecraft({
-    api: 'broadcast',
-    data: messageData,
-    session,
-    successMsg: '广播已发送',
-    failMsg: '广播发送失败'
-  });
-}
-
-/**
- * 发送私聊消息到Minecraft玩家
- */
-export async function whisperToPlayer(
-  player: string,
-  message: any,
-  session?: Session,
-  feedback: boolean = true
-): Promise<boolean> {
-  // 判断player是否为UUID格式
-  const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(player)
-
-  const messageData = {
-    uuid: isUUID ? player : '',
-    nickname: isUUID ? '' : player,
-    message: ensureArray(message)
-  }
-
-  if (!feedback) return sendApiRequest('send_private_msg', messageData, session);
-
-  return sendToMinecraft({
-    api: 'send_private_msg',
-    data: messageData,
-    session,
-    successMsg: '私聊消息已发送',
-    failMsg: '私聊消息发送失败'
-  });
-}
-
-/**
- * 发送标题到Minecraft服务器
- */
-export async function sendTitle(
-  title: any,
-  subtitle: any = '',
-  fadein: number = 10,
-  stay: number = 70,
-  fadeout: number = 20,
-  session?: Session,
-  feedback: boolean = true
-): Promise<boolean> {
-  const titleData = {
-    title: ensureArray(title),
-    subtitle: subtitle ? ensureArray(subtitle) : '',
-    fadein,
-    stay,
-    fadeout
-  }
-
-  if (!feedback) return sendApiRequest('send_title', titleData, session);
-
-  return sendToMinecraft({
-    api: 'send_title',
-    data: titleData,
-    session,
-    successMsg: '标题已发送',
-    failMsg: '标题发送失败'
-  });
-}
-
-/**
- * 发送动作栏消息到Minecraft服务器
- */
-export async function sendActionbar(
-  message: any,
-  session?: Session,
-  feedback: boolean = true
-): Promise<boolean> {
-  const actionbarData = {
-    message: ensureArray(message)
-  }
-
-  if (!feedback) return sendApiRequest('send_actionbar', actionbarData, session);
-
-  return sendToMinecraft({
-    api: 'send_actionbar',
-    data: actionbarData,
-    session,
-    successMsg: '动作栏消息已发送',
-    failMsg: '动作栏消息发送失败'
+    successMsg,
+    failMsg
   });
 }
