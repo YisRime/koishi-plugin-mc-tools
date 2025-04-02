@@ -2,9 +2,7 @@ import { Context, Schema } from 'koishi'
 import {} from 'koishi-plugin-puppeteer'
 import { registerWikiCommands } from './wiki'
 import { registerModCommands } from './mod'
-import { registerVersionCommands } from './ver'
-import { registerSkinCommands } from './skin'
-import { registerInfoCommands } from './info'
+import { registerInfoCommands } from './tool'
 import { registerServerCommands } from './link'
 import { initWebSocket, cleanupWebSocket } from './linkservice'
 
@@ -125,30 +123,26 @@ export interface ServerConfig {
  * 插件完整配置接口
  */
 export interface MTConfig {
-  common: CommonConfig & {
+  wiki: CommonConfig & {
     maxHeight: number
     waitUntil: 'load' | 'domcontentloaded' | 'networkidle0' | 'networkidle2'
     captureTimeout: number
-  }
-  specific: {
     Language: LangCode
     sectionLength: number
     linkCount: number
     cfApi: string
-    showSkull: boolean
     showImages: 'always' | 'noqq' | 'never'
   }
-  info: {
+  tool: {
     default: string
     showIP: boolean
     showIcon: boolean
     maxNumberDisplay: number
     javaApis: string[]
     bedrockApis: string[]
-  }
-  ver: {
-    enabled: boolean
-    groups: string[]
+    showSkull: boolean
+    versionCheck: boolean
+    guilds: string[]
     interval: number
     release: boolean
     snapshot: boolean
@@ -170,11 +164,15 @@ export interface MTConfig {
  * 插件配置模式
  */
 export const Config: Schema<MTConfig> = Schema.object({
-  common: Schema.object({
+  wiki: Schema.object({
     useForwardMsg: Schema.boolean()
       .description('启用合并转发').default(false),
     totalLength: Schema.number()
       .description('总预览字数').default(400),
+    sectionLength: Schema.number()
+      .description('Wiki 每段预览字数').default(50),
+    linkCount: Schema.number()
+      .description('MCMod 相关链接个数').default(4),
     descLength: Schema.number()
       .description('搜索列表描述字数').default(20),
     Timeout: Schema.number()
@@ -185,25 +183,16 @@ export const Config: Schema<MTConfig> = Schema.object({
       .description('截图最大高度（像素）').default(4096),
     waitUntil: Schema.union(['load', 'domcontentloaded', 'networkidle0', 'networkidle2'])
       .description('截图等待条件').default('domcontentloaded'),
-  }).description('查询配置'),
-
-  specific: Schema.object({
-    sectionLength: Schema.number()
-      .description('Wiki 每段预览字数').default(50),
-    linkCount: Schema.number()
-      .description('MCMod 相关链接显示个数').default(4),
     Language: Schema.union(Object.keys(MINECRAFT_LANGUAGES) as LangCode[])
       .description('Wiki 显示语言').default('zh'),
     showImages: Schema.union(['always', 'noqq', 'never' ])
       .description('MCMod 简介图片展示平台').default('noqq'),
     cfApi: Schema.string()
       .description('CurseForge API Key').role('secret'),
-    showSkull: Schema.boolean()
-      .description('显示如何获取玩家头颅').default(true),
-  }).description('特定配置'),
+  }).description('查询配置'),
 
-  ver: Schema.object({
-    enabled: Schema.boolean()
+  tool: Schema.object({
+    versionCheck: Schema.boolean()
       .description('启用更新检查').default(false),
     release: Schema.boolean()
       .description('正式版本通知').default(true),
@@ -211,12 +200,11 @@ export const Config: Schema<MTConfig> = Schema.object({
       .description('快照版本通知').default(true),
     interval: Schema.number()
       .description('检查间隔时间（分钟）').default(5),
-    groups: Schema.array(String)
-      .description('更新通知目标')
-      .default(['onebot:private:123456789', 'onebot:group:123456789']),
-  }).description('更新检测配置'),
-
-  info: Schema.object({
+    guilds: Schema.array(String)
+      .description('更新通知目标(platform:guild/private:target)')
+      .default(['onebot:private:123456789', 'onebot:guild:123456789']),
+    showSkull: Schema.boolean()
+      .description('显示如何获取玩家头颅').default(true),
     showIP: Schema.boolean()
       .description('显示服务器地址').default(false),
     showIcon: Schema.boolean()
@@ -233,7 +221,7 @@ export const Config: Schema<MTConfig> = Schema.object({
       .description('Bedrock 查询 API')
       .default(['https://api.mcstatus.io/v2/status/bedrock/${address}',
         'https://api.mcsrvstat.us/bedrock/3/${address}']),
-  }).description('查询配置'),
+  }).description('工具配置'),
 
   link: Schema.object({
     group: Schema.string()
@@ -246,14 +234,14 @@ export const Config: Schema<MTConfig> = Schema.object({
       .description('RCON 密码').role('secret'),
     enableWebSocket: Schema.boolean()
       .description('启用 WebSocket').default(false),
+    name: Schema.string()
+      .description('服务器名称').default('Server'),
     websocketMode: Schema.union(['client', 'server'])
       .description('WebSocket 模式'),
     websocketAddress: Schema.string()
       .description('WebSocket 地址').default('localhost:8080'),
     websocketToken: Schema.string()
       .description('WebSocket 密码').role('secret'),
-    name: Schema.string()
-      .description('服务器名称').default('Server'),
   }).description('互联配置'),
 })
 
@@ -268,9 +256,8 @@ export function apply(ctx: Context, pluginConfig: MTConfig) {
   // 注册各功能子命令
   registerWikiCommands(ctx, mcCommand, pluginConfig, userLanguageSettings)
   registerModCommands(ctx, mcCommand, pluginConfig)
-  registerVersionCommands(ctx, mcCommand, pluginConfig)
-  registerSkinCommands(ctx, mcCommand, pluginConfig)
-  registerInfoCommands(mcCommand, pluginConfig)
+  // 注册服务器信息和版本查询命令
+  versionCheckTimer = registerInfoCommands(ctx, mcCommand, pluginConfig)
   // 注册服务器管理命令
   if (pluginConfig.link.enableRcon || pluginConfig.link.enableWebSocket) {
     registerServerCommands(mcCommand, pluginConfig)
