@@ -1,7 +1,7 @@
 import { Context, h } from 'koishi'
 import axios from 'axios'
 import * as cheerio from 'cheerio'
-import { CommonConfig, MinecraftToolsConfig } from './index'
+import { CommonConfig, MTConfig } from './index'
 import { registerModPlatformCommands } from './cfmr'
 import { searchMod, search, capture, sendForwardMessage } from './wikiservice'
 
@@ -492,9 +492,9 @@ export async function fetchModContent(url: string, config: CommonConfig): Promis
  * 注册 MCMOD 相关命令
  * @param {Context} ctx - Koishi 上下文
  * @param {Command} parent - 父命令
- * @param {MinecraftToolsConfig} config - 插件配置
+ * @param {MTConfig} config - 插件配置
  */
-export function registerModCommands(ctx: Context, parent: any, config: MinecraftToolsConfig) {
+export function registerModCommands(ctx: Context, parent: any, config: MTConfig) {
   const mcmod = parent.subcommand('.mod <keyword:text>', '查询 Minecraft 相关资源')
     .usage('mc.mod <关键词> - 查询 MCMod\nmc.mod.find <关键词> - 搜索 MCMod\nmc.mod.shot <关键词> - 截图 MCMod 页面\nmc.mod.(find)mr <关键词> [类型] - 搜索 Modrinth\nmc.mod.(find)cf <关键词> [类型] - 搜索 CurseForge')
     .action(async ({ session }, keyword) => {

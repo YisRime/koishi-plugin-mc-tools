@@ -1,6 +1,6 @@
 import { Context, Logger } from 'koishi'
 import axios from 'axios'
-import { MinecraftToolsConfig } from './index'
+import { MTConfig } from './index'
 
 const logger = new Logger('mcver')
 
@@ -117,9 +117,9 @@ async function notifyVersionUpdate(ctx: any, targets: string[], updateMessage: s
  * 检查 Minecraft 版本更新并发送通知
  * @param {{snapshot: string, release: string}} versions - 当前版本信息
  * @param {any} ctx - Koishi 上下文
- * @param {MinecraftToolsConfig} config - 插件配置
+ * @param {MTConfig} config - 插件配置
  */
-async function checkUpdate(versions: { snapshot: string, release: string }, ctx: any, config: MinecraftToolsConfig) {
+async function checkUpdate(versions: { snapshot: string, release: string }, ctx: any, config: MTConfig) {
   try {
     const { latest, release } = await fetchVersions()
     const updates = [
@@ -143,10 +143,10 @@ async function checkUpdate(versions: { snapshot: string, release: string }, ctx:
  * 注册 Minecraft 版本相关命令
  * @param {Context} ctx - Koishi 上下文
  * @param {Command} parent - 父命令
- * @param {MinecraftToolsConfig} config - 插件配置
+ * @param {MTConfig} config - 插件配置
  * @returns {NodeJS.Timeout|undefined} - 如果启用了定时检查，返回定时器句柄
  */
-export function registerVersionCommands(ctx: Context, parent: any, config: MinecraftToolsConfig): NodeJS.Timeout | undefined {
+export function registerVersionCommands(ctx: Context, parent: any, config: MTConfig): NodeJS.Timeout | undefined {
   // 创建一个对象保存版本信息
   const minecraftVersions = { snapshot: '', release: '' }
   // 注册查询版本信息命令

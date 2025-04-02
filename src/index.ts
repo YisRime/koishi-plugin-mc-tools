@@ -124,7 +124,7 @@ export interface ServerConfig {
 /**
  * 插件完整配置接口
  */
-export interface MinecraftToolsConfig {
+export interface MTConfig {
   common: CommonConfig & {
     maxHeight: number
     waitUntil: 'load' | 'domcontentloaded' | 'networkidle0' | 'networkidle2'
@@ -169,145 +169,98 @@ export interface MinecraftToolsConfig {
 /**
  * 插件配置模式
  */
-export const Config: Schema<MinecraftToolsConfig> = Schema.object({
+export const Config: Schema<MTConfig> = Schema.object({
   common: Schema.object({
     useForwardMsg: Schema.boolean()
-      .default(false)
-      .description('启用合并转发'),
+      .description('启用合并转发').default(false),
     totalLength: Schema.number()
-      .default(400)
-      .description('总预览字数'),
+      .description('总预览字数').default(400),
     descLength: Schema.number()
-      .default(20)
-      .description('搜索列表描述字数'),
+      .description('搜索列表描述字数').default(20),
     Timeout: Schema.number()
-      .default(15)
-      .description('搜索超时时间（秒）'),
+      .description('搜索超时时间（秒）').default(15),
     captureTimeout: Schema.number()
-      .default(3)
-      .description('截图超时时间（秒）'),
+      .description('截图超时时间（秒）').default(3),
     maxHeight: Schema.number()
-      .default(4096)
-      .min(0)
-      .description('截图最大高度（像素）'),
-    waitUntil: Schema.union([
-      'load',
-      'domcontentloaded',
-      'networkidle0',
-      'networkidle2'
-    ]).default('domcontentloaded')
-      .description('截图等待条件')
+      .description('截图最大高度（像素）').default(4096),
+    waitUntil: Schema.union(['load', 'domcontentloaded', 'networkidle0', 'networkidle2'])
+      .description('截图等待条件').default('domcontentloaded'),
   }).description('查询配置'),
 
   specific: Schema.object({
     sectionLength: Schema.number()
-      .default(50)
-      .description('Wiki 每段预览字数'),
+      .description('Wiki 每段预览字数').default(50),
     linkCount: Schema.number()
-      .default(4)
-      .description('MCMod 相关链接显示个数'),
+      .description('MCMod 相关链接显示个数').default(4),
     Language: Schema.union(Object.keys(MINECRAFT_LANGUAGES) as LangCode[])
-      .default('zh')
-      .description('Wiki 显示语言'),
-    showImages: Schema.union([
-      'always',
-      'noqq',
-      'never'
-    ]).default('noqq')
-      .description('MCMod 简介图片展示平台'),
+      .description('Wiki 显示语言').default('zh'),
+    showImages: Schema.union(['always', 'noqq', 'never' ])
+      .description('MCMod 简介图片展示平台').default('noqq'),
     cfApi: Schema.string()
-      .role('secret')
-      .description('CurseForge API Key'),
+      .description('CurseForge API Key').role('secret'),
     showSkull: Schema.boolean()
-      .default(true)
-      .description('显示如何获取玩家头颅')
+      .description('显示如何获取玩家头颅').default(true),
   }).description('特定配置'),
 
   ver: Schema.object({
     enabled: Schema.boolean()
-      .default(false)
-      .description('启用更新检查'),
+      .description('启用更新检查').default(false),
     release: Schema.boolean()
-      .default(true)
-      .description('正式版本通知'),
+      .description('正式版本通知').default(true),
     snapshot: Schema.boolean()
-      .default(true)
-      .description('快照版本通知'),
+      .description('快照版本通知').default(true),
     interval: Schema.number()
-      .default(20)
-      .description('检查间隔时间（分钟）'),
+      .description('检查间隔时间（分钟）').default(5),
     groups: Schema.array(String)
-      .default([
-        'onebot:private:123456789',
-        'discord:group:987654321'
-      ])
       .description('更新通知目标')
+      .default(['onebot:private:123456789', 'onebot:group:123456789']),
   }).description('更新检测配置'),
 
   info: Schema.object({
     showIP: Schema.boolean()
-      .default(false)
-      .description('显示服务器地址'),
+      .description('显示服务器地址').default(false),
     showIcon: Schema.boolean()
-      .default(true)
-      .description('显示服务器图标'),
+      .description('显示服务器图标').default(true),
     maxNumberDisplay: Schema.number()
-      .default(8)
-      .description('列表最大显示个数'),
+      .description('列表最大显示个数').default(8),
     default: Schema.string()
-      .default('hypixel.net')
-      .description('默认 INFO 地址'),
+      .description('默认 INFO 地址').default('hypixel.net'),
     javaApis: Schema.array(String)
-      .default([
-        'https://api.mcstatus.io/v2/status/java/${address}',
-        'https://api.mcsrvstat.us/3/${address}'
-      ])
-      .description('Java 查询 API'),
+      .description('Java 查询 API')
+      .default(['https://api.mcstatus.io/v2/status/java/${address}',
+        'https://api.mcsrvstat.us/3/${address}']),
     bedrockApis: Schema.array(String)
-      .default([
-        'https://api.mcstatus.io/v2/status/bedrock/${address}',
-        'https://api.mcsrvstat.us/bedrock/3/${address}'
-      ])
       .description('Bedrock 查询 API')
+      .default(['https://api.mcstatus.io/v2/status/bedrock/${address}',
+        'https://api.mcsrvstat.us/bedrock/3/${address}']),
   }).description('查询配置'),
 
   link: Schema.object({
     group: Schema.string()
-      .default('onebot:123456789')
-      .description('互联群组ID'),
+      .description('互联群组ID').default('onebot:123456789'),
     enableRcon: Schema.boolean()
-      .default(false)
-      .description('启用 RCON'),
+      .description('启用 RCON').default(false),
     rconAddress: Schema.string()
-      .default('localhost:25575')
-      .description('RCON 地址'),
+      .description('RCON 地址').default('localhost:25575'),
     rconPassword: Schema.string()
-      .role('secret')
-      .description('RCON 密码'),
+      .description('RCON 密码').role('secret'),
     enableWebSocket: Schema.boolean()
-      .default(false)
-      .description('启用 WebSocket'),
+      .description('启用 WebSocket').default(false),
     websocketMode: Schema.union(['client', 'server'])
-      .default('client')
       .description('WebSocket 模式'),
     websocketAddress: Schema.string()
-      .default('localhost:8080')
-      .description('WebSocket 地址'),
+      .description('WebSocket 地址').default('localhost:8080'),
     websocketToken: Schema.string()
-      .role('secret')
-      .description('WebSocket 密码'),
+      .description('WebSocket 密码').role('secret'),
     name: Schema.string()
-      .required()
-      .pattern(/^[a-zA-Z0-9_]+$/)
-      .default('mcserver')
-      .description('服务器名称')
+      .description('服务器名称').default('Server'),
   }).description('互联配置'),
 })
 
 /**
  * 插件主函数
  */
-export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
+export function apply(ctx: Context, pluginConfig: MTConfig) {
   // 用户语言设置
   const userLanguageSettings = new Map<string, LangCode>()
   // 创建 mc 主命令
@@ -318,9 +271,9 @@ export function apply(ctx: Context, pluginConfig: MinecraftToolsConfig) {
   registerVersionCommands(ctx, mcCommand, pluginConfig)
   registerSkinCommands(ctx, mcCommand, pluginConfig)
   registerInfoCommands(mcCommand, pluginConfig)
-  // 如果启用了服务器连接功能，则注册服务器管理命令
+  // 注册服务器管理命令
   if (pluginConfig.link.enableRcon || pluginConfig.link.enableWebSocket) {
-    registerServerCommands(mcCommand, pluginConfig, ctx)
+    registerServerCommands(mcCommand, pluginConfig)
     if (pluginConfig.link.enableWebSocket) {
       initWebSocket(ctx, pluginConfig)
     }

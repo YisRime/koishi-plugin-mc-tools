@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { TypeMap } from './index'
-import { CommonConfig, MinecraftToolsConfig } from './index'
+import { CommonConfig, MTConfig } from './index'
 import { sendForwardMessage } from './wikiservice';
 
 /**
@@ -411,9 +411,9 @@ function formatSearchResults(results: SearchModResult[], config: CommonConfig): 
 /**
  * 注册Modrinth和CurseForge相关命令
  * @param {any} mcmod - MCMOD命令对象
- * @param {MinecraftToolsConfig} config - 插件配置
+ * @param {MTConfig} config - 插件配置
  */
-export function registerModPlatformCommands(mcmod: any, config: MinecraftToolsConfig) {
+export function registerModPlatformCommands(mcmod: any, config: MTConfig) {
   mcmod.subcommand('.mr <keyword> [type]', '查询 Modrinth')
     .usage('mc.mod.mr <关键词> [类型] - 查询 Modrinth 内容\n可用类型：mod(模组), resourcepack(资源包), datapack(数据包), shader(光影), modpack(整合包), plugin(插件)')
     .action(async ({ session }, keyword, type) => {

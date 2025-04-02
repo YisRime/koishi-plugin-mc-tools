@@ -1,7 +1,7 @@
 import { h } from 'koishi'
 import axios from 'axios'
 import * as cheerio from 'cheerio'
-import { MinecraftToolsConfig, LangCode } from './index'
+import { MTConfig, LangCode } from './index'
 import { buildUrl, fetchContent } from './wiki'
 import { fetchModContent, formatContent } from './mod'
 
@@ -38,7 +38,7 @@ const CLEANUP_SELECTORS = [
  * @param {Object} options - 截图配置选项
  * @param {('wiki'|'mcmod')} options.type - 页面类型,支持wiki或mcmod
  * @param {LangCode} [options.lang] - 可选的语言代码,仅wiki类型需要
- * @param {MinecraftToolsConfig} config - Minecraft工具配置对象,包含截图相关设置
+ * @param {MTConfig} config - Minecraft工具配置对象,包含截图相关设置
  * @returns {Promise<{url: string, image: h.Fragment}>} 返回包含截图URL和图片数据的对象
  * @throws {Error} 当截图功能未启用、网络错误或截图失败时抛出错误
  */
@@ -46,7 +46,7 @@ export async function capture(
   url: string,
   ctx: any,
   options: { type: 'wiki' | 'mcmod', lang?: LangCode },
-  config: MinecraftToolsConfig
+  config: MTConfig
 ) {
   const context = await ctx.puppeteer.browser.createBrowserContext()
   const page = await context.newPage()
@@ -237,7 +237,7 @@ export async function sendForwardMessage(session: any, title: string, content: s
  * @param {string} params.keyword - 搜索关键词
  * @param {('wiki'|'mcmod')} params.source - 搜索源
  * @param {any} params.session - 会话对象
- * @param {MinecraftToolsConfig} params.config - Minecraft工具配置
+ * @param {MTConfig} params.config - Minecraft工具配置
  * @param {any} [params.ctx] - Koishi上下文对象
  * @param {LangCode} [params.lang] - 语言代码
  * @returns {Promise<string>} 搜索结果或错误信息
@@ -246,7 +246,7 @@ export async function search(params: {
   keyword: string
   source: 'wiki' | 'mcmod'
   session: any
-  config: MinecraftToolsConfig
+  config: MTConfig
   ctx?: any
   lang?: LangCode
 }) {
@@ -298,11 +298,11 @@ export async function searchWiki(keyword: string, _config?: any): Promise<Search
 /**
  * MCMOD 搜索
  * @param {string} keyword - 搜索关键词
- * @param {MinecraftToolsConfig} config - Minecraft工具配置
+ * @param {MTConfig} config - Minecraft工具配置
  * @returns {Promise<SearchResult[]>} 搜索结果列表
  * @throws {Error} 搜索失败时抛出错误
  */
-export async function searchMod(keyword: string, config: MinecraftToolsConfig): Promise<SearchResult[]> {
+export async function searchMod(keyword: string, config: MTConfig): Promise<SearchResult[]> {
   try {
     const response = await axios.get(
       `https://search.mcmod.cn/s?key=${encodeURIComponent(keyword)}`,
@@ -344,13 +344,13 @@ export async function searchMod(keyword: string, config: MinecraftToolsConfig): 
  * 格式化搜索结果
  * @param {SearchResult[]} results - 搜索结果列表
  * @param {('wiki'|'mcmod')} source - 搜索源
- * @param {MinecraftToolsConfig} config - Minecraft工具配置
+ * @param {MTConfig} config - Minecraft工具配置
  * @returns {string} 格式化后的搜索结果文本
  */
 export function formatSearchResults(
   results: SearchResult[],
   source: 'wiki' | 'mcmod',
-  config: MinecraftToolsConfig
+  config: MTConfig
 ): string {
   const items = results.map((r, i) => {
     const base = `${i + 1}. ${r.title}`
@@ -368,7 +368,7 @@ export function formatSearchResults(
  * @param {string} params.response - 用户响应
  * @param {SearchResult[]} params.results - 搜索结果列表
  * @param {('wiki'|'mcmod')} params.source - 搜索源
- * @param {MinecraftToolsConfig} params.config - Minecraft工具配置
+ * @param {MTConfig} params.config - Minecraft工具配置
  * @param {any} [params.ctx] - Koishi上下文对象
  * @param {LangCode} [params.lang] - 语言代码
  * @param {any} [params.session] - 会话对象，用于获取平台信息
@@ -378,7 +378,7 @@ export async function processSelection(params: {
   response: string
   results: SearchResult[]
   source: 'wiki' | 'mcmod'
-  config: MinecraftToolsConfig
+  config: MTConfig
   ctx?: any
   lang?: LangCode
   session?: any
@@ -409,7 +409,7 @@ export async function processSelection(params: {
  * @param {SearchResult} result - 搜索结果项
  * @param {('wiki'|'mcmod')} source - 内容源
  * @param {any} ctx - Koishi上下文对象
- * @param {MinecraftToolsConfig} config - Minecraft工具配置
+ * @param {MTConfig} config - Minecraft工具配置
  * @param {LangCode} [lang] - 语言代码
  * @returns {Promise<string>} 截图结果或错误信息
  */
@@ -417,7 +417,7 @@ async function fetchImage(
   result: SearchResult,
   source: 'wiki' | 'mcmod',
   ctx: any,
-  config: MinecraftToolsConfig,
+  config: MTConfig,
   lang?: LangCode
 ) {
   if (!ctx?.puppeteer) return '截图功能未启用'
@@ -440,7 +440,7 @@ async function fetchImage(
  * 获取页面内容
  * @param {SearchResult} result - 搜索结果项
  * @param {('wiki'|'mcmod')} source - 内容源
- * @param {MinecraftToolsConfig} config - Minecraft工具配置
+ * @param {MTConfig} config - Minecraft工具配置
  * @param {LangCode} [lang] - 语言代码
  * @param {any} [session] - 会话对象，用于获取平台信息
  * @returns {Promise<string>} 页面内容或错误信息
@@ -448,7 +448,7 @@ async function fetchImage(
 async function fetchwikiContent(
   result: SearchResult,
   source: 'wiki' | 'mcmod',
-  config: MinecraftToolsConfig,
+  config: MTConfig,
   lang?: LangCode,
   session?: any
 ) {

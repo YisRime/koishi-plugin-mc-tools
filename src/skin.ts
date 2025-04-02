@@ -1,5 +1,5 @@
 import { Context, h } from 'koishi'
-import { MinecraftToolsConfig } from './index'
+import { MTConfig } from './index'
 import axios from 'axios'
 
 interface TexturesData {
@@ -260,9 +260,9 @@ async function renderPlayerHead(ctx: Context, skinUrl: string): Promise<string> 
  * 注册 Minecraft 皮肤查询命令
  * @param {Context} ctx - Koishi 上下文
  * @param {Command} parent - 父命令
- * @param {MinecraftToolsConfig} config - Minecraft 工具配置
+ * @param {MTConfig} config - Minecraft 工具配置
  */
-export function registerSkinCommands(ctx: Context, parent: any, config: MinecraftToolsConfig) {
+export function registerSkinCommands(ctx: Context, parent: any, config: MTConfig) {
   parent.subcommand('.skin <username>', '查询 Minecraft 玩家信息')
     .usage('mc.skin <用户名> [-e/-c] - 获取玩家信息并生成皮肤预览，可选显示鞘翅或披风')
     .option('elytra', '-e 显示鞘翅')

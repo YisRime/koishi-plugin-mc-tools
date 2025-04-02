@@ -1,6 +1,6 @@
 import { h } from 'koishi'
 import axios from 'axios'
-import { MinecraftToolsConfig } from './index'
+import { MTConfig } from './index'
 
 /**
  * 表示 Minecraft 服务器状态的接口
@@ -129,13 +129,13 @@ function parseServerAddress(
  * 检查 Minecraft 服务器状态
  * @param {string} [server] - 服务器地址
  * @param {'java' | 'bedrock'} [forceType] - 强制指定服务器类型
- * @param {MinecraftToolsConfig} [config] - 配置选项
+ * @param {MTConfig} [config] - 配置选项
  * @returns {Promise<ServerStatus>} 服务器状态信息
  */
 export async function checkServerStatus(
   server?: string,
   forceType?: 'java' | 'bedrock',
-  config?: MinecraftToolsConfig
+  config?: MTConfig
 ): Promise<ServerStatus> {
   try {
     const parsed = parseServerAddress(server, config?.info.default)
@@ -259,10 +259,10 @@ async function transformMcsrvstatResponse(data: any): Promise<ServerStatus> {
 /**
  * 格式化服务器状态信息为可读文本
  * @param {ServerStatus} status - 服务器状态对象
- * @param {MinecraftToolsConfig['info']} config - 信息显示配置
+ * @param {MTConfig['info']} config - 信息显示配置
  * @returns {string} 格式化后的状态信息
  */
-export function formatServerStatus(status: ServerStatus, config: MinecraftToolsConfig['info']) {
+export function formatServerStatus(status: ServerStatus, config: MTConfig['info']) {
   if (!status.online) {
     return status.error || '服务器离线 - 连接失败'
   }
@@ -333,9 +333,9 @@ export function formatServerStatus(status: ServerStatus, config: MinecraftToolsC
  * 注册 Minecraft 服务器信息查询命令
  * @param {Context} ctx - Koishi 上下文
  * @param {Command} parent - 父命令
- * @param {MinecraftToolsConfig} config - 插件配置
+ * @param {MTConfig} config - 插件配置
  */
-export function registerInfoCommands(parent: any, config: MinecraftToolsConfig) {
+export function registerInfoCommands(parent: any, config: MTConfig) {
   const mcinfo = parent.subcommand('.info [server]', '查询 Minecraft 服务器信息')
     .usage(`mc.info [地址[:端口]] - 查询 Java 版服务器\nmc.info.be [地址[:端口]] - 查询 Bedrock 版服务器`)
     .action(async ({ }, server) => {

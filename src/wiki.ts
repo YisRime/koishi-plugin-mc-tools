@@ -1,7 +1,7 @@
 import { Context } from 'koishi'
 import * as cheerio from 'cheerio'
 import axios from 'axios'
-import { MinecraftToolsConfig, LangCode } from './index'
+import { MTConfig, LangCode } from './index'
 import { searchWiki, search, capture, sendForwardMessage } from './wikiservice'
 
 /**
@@ -59,10 +59,10 @@ export function formatTitle(data: any): string {
  * 获取 Wiki 文章内容
  * @param {string} articleUrl - 文章URL
  * @param {LangCode} languageCode - 语言代码
- * @param {MinecraftToolsConfig} config - 插件配置
+ * @param {MTConfig} config - 插件配置
  * @returns {Promise<{title: string, content: string, url: string}>}
  */
-export async function fetchContent(articleUrl: string, languageCode: LangCode, config: MinecraftToolsConfig) {
+export async function fetchContent(articleUrl: string, languageCode: LangCode, config: MTConfig) {
   try {
     const languageVariant = languageCode.startsWith('zh') ?
       (languageCode === 'zh' ? 'zh-cn' :
@@ -164,7 +164,7 @@ export async function fetchContent(articleUrl: string, languageCode: LangCode, c
  * 处理 Wiki 请求
  * @param {string} keyword - 搜索关键词
  * @param {string} userId - 用户ID
- * @param {MinecraftToolsConfig} config - 插件配置
+ * @param {MTConfig} config - 插件配置
  * @param {Map<string, LangCode>} userLangs - 用户语言设置
  * @param {'text' | 'image' | 'search'} mode - 请求模式
  * @param {any} [session] - 会话对象，用于合并转发
@@ -173,7 +173,7 @@ export async function fetchContent(articleUrl: string, languageCode: LangCode, c
 export async function processWikiRequest(
   keyword: string,
   userId: string,
-  config: MinecraftToolsConfig,
+  config: MTConfig,
   userLangs: Map<string, LangCode>,
   mode: 'text' | 'image' | 'search' = 'text',
   session?: any
@@ -248,10 +248,10 @@ export async function processWikiRequest(
  * 注册 Minecraft Wiki 相关命令
  * @param {Context} ctx - Koishi 上下文
  * @param {Command} parent - 父命令
- * @param {MinecraftToolsConfig} config - 插件配置
+ * @param {MTConfig} config - 插件配置
  * @param {Map<string, LangCode>} userLangs - 用户语言设置
  */
-export function registerWikiCommands(ctx: Context, parent: any, config: MinecraftToolsConfig, userLangs: Map<string, LangCode>) {
+export function registerWikiCommands(ctx: Context, parent: any, config: MTConfig, userLangs: Map<string, LangCode>) {
   const mcwiki = parent.subcommand('.wiki <keyword:text>', '查询 Minecraft Wiki')
     .usage('mc.wiki <关键词> - 查询 Wiki\nmc.wiki.find <关键词> - 搜索 Wiki\nmc.wiki.shot <关键词> - 截图 Wiki 页面')
     .action(async ({ session }, keyword) => {
