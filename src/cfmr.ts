@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { TypeMap } from './index'
-import { CommonConfig, MTConfig } from './index'
+import { MTConfig } from './index'
 import { sendForwardMessage } from './wikiservice';
 
 /**
@@ -80,11 +80,11 @@ interface CurseForgeProject {
 /**
  * 在Modrinth平台搜索项目
  * @param {string} keyword - 搜索关键词
- * @param {CommonConfig} config - 通用配置
+ * @param {MTConfig} config - 通用配置
  * @param {string[]} [facets] - 搜索过滤条件
  * @returns {Promise<ModrinthProject[]>} 搜索结果列表
  */
-export async function searchModrinth(keyword: string, config: CommonConfig, facets?: string[]): Promise<ModrinthProject[]> {
+export async function searchModrinth(keyword: string, config: MTConfig, facets?: string[]): Promise<ModrinthProject[]> {
   const response = await axios.get('https://api.modrinth.com/v2/search', {
     params: {
       query: keyword,
@@ -177,10 +177,10 @@ export async function getModrinthDetails(slug: string): Promise<ModrinthProject>
 /**
  * 格式化Modrinth项目的完整结果为可读文本
  * @param {ModrinthProject} project - Modrinth项目信息
- * @param {CommonConfig} config - 通用配置
+ * @param {MTConfig} config - 通用配置
  * @returns {string} 格式化后的项目信息文本
  */
-export function formatFullModrinthResult(project: ModrinthProject, config: CommonConfig): string {
+export function formatFullModrinthResult(project: ModrinthProject, config: MTConfig): string {
   const clientSide = project.client_side === 'required' ? '必需' : project.client_side === 'optional' ? '可选' : '无需';
   const serverSide = project.server_side === 'required' ? '必需' : project.server_side === 'optional' ? '可选' : '无需';
   const requirements = [];
@@ -206,11 +206,11 @@ export function formatFullModrinthResult(project: ModrinthProject, config: Commo
  * 在CurseForge平台搜索项目
  * @param {string} keyword - 搜索关键词
  * @param {string} cfApiKey - CurseForge API密钥
- * @param {CommonConfig} config - 通用配置
+ * @param {MTConfig} config - 通用配置
  * @param {number} [classId] - 项目类别ID
  * @returns {Promise<CurseForgeProject[]>} 搜索结果列表
  */
-export async function searchCurseforge(keyword: string, cfApiKey: string, config: CommonConfig, classId?: number): Promise<CurseForgeProject[]> {
+export async function searchCurseforge(keyword: string, cfApiKey: string, config: MTConfig, classId?: number): Promise<CurseForgeProject[]> {
   const response = await axios.get('https://api.curseforge.com/v1/mods/search', {
     headers: {
       'x-api-key': cfApiKey
@@ -259,10 +259,10 @@ export async function getCurseforgeDetails(modId: number, cfApiKey: string): Pro
 /**
  * 格式化CurseForge项目的完整结果为可读文本
  * @param {CurseForgeProject} project - CurseForge项目信息
- * @param {CommonConfig} config - 通用配置
+ * @param {MTConfig} config - 通用配置
  * @returns {string} 格式化后的项目信息文本
  */
-function formatFullCurseforgeResult(project: CurseForgeProject, config: CommonConfig): string {
+function formatFullCurseforgeResult(project: CurseForgeProject, config: MTConfig): string {
   const typeInChinese = TypeMap.curseforgeTypeNames[TypeMap.curseforgeTypes[project.classId]] || '未知'
 
   let description = project.description || project.summary;
@@ -325,7 +325,7 @@ function getModrinthFacets(type: string): string[] | undefined {
  * 统一搜索函数，可搜索Modrinth或CurseForge平台
  * @param {string} keyword - 搜索关键词
  * @param {('modrinth'|'curseforge')} source - 搜索平台
- * @param {CommonConfig} config - 通用配置
+ * @param {MTConfig} config - 通用配置
  * @param {string} [cfApiKey] - CurseForge API密钥
  * @param {string} [type] - 项目类型
  * @returns {Promise<SearchModResult[]>} 统一格式的搜索结果列表
@@ -334,7 +334,7 @@ function getModrinthFacets(type: string): string[] | undefined {
 async function searchMods(
   keyword: string,
   source: 'modrinth' | 'curseforge',
-  config: CommonConfig,
+  config: MTConfig,
   cfApiKey?: string,
   type?: string
 ): Promise<SearchModResult[]> {
@@ -370,13 +370,13 @@ async function searchMods(
 /**
  * 统一获取项目详情
  * @param {SearchModResult} result - 搜索结果项
- * @param {CommonConfig} config - 通用配置
+ * @param {MTConfig} config - 通用配置
  * @param {string} [cfApiKey] - CurseForge API密钥
  * @returns {Promise<string>} 格式化后的项目详情文本
  */
 async function getModDetails(
   result: SearchModResult,
-  config: CommonConfig,
+  config: MTConfig,
   cfApiKey?: string
 ) {
   if (result.source === 'modrinth') {
@@ -391,10 +391,10 @@ async function getModDetails(
 /**
  * 格式化搜索结果列表为可读文本
  * @param {SearchModResult[]} results - 搜索结果列表
- * @param {CommonConfig} config - 通用配置
+ * @param {MTConfig} config - 通用配置
  * @returns {string} 格式化后的结果列表文本
  */
-function formatSearchResults(results: SearchModResult[], config: CommonConfig): string {
+function formatSearchResults(results: SearchModResult[], config: MTConfig): string {
   return results.map((r, i) => {
     let description = r.description;
     if (description.length > config.descLength) {

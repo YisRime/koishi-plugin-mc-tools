@@ -1,7 +1,7 @@
 import { Context, h } from 'koishi'
 import axios from 'axios'
 import * as cheerio from 'cheerio'
-import { CommonConfig, MTConfig } from './index'
+import { MTConfig } from './index'
 import { registerModPlatformCommands } from './cfmr'
 import { searchMod, search, capture, sendForwardMessage } from './wikiservice'
 
@@ -447,11 +447,11 @@ export function formatContent(result: ProcessResult, url: string, options: {
 /**
  * 获取MCMOD内容
  * @param {string} url MCMOD.CN页面URL
- * @param {CommonConfig} config 配置项
+ * @param {MTConfig} config 配置项
  * @returns {Promise<ProcessResult>} 处理结果Promise
  * @throws {Error} 当请求失败或页面不存在时抛出错误
  */
-export async function fetchModContent(url: string, config: CommonConfig): Promise<ProcessResult> {
+export async function fetchModContent(url: string, config: MTConfig): Promise<ProcessResult> {
   try {
     const response = await axios.get(url, {
       timeout: 30000,

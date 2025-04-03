@@ -94,19 +94,6 @@ export const TypeMap = {
 }
 
 /**
- * 通用配置接口
- */
-export interface CommonConfig {
-  Timeout: number
-  totalLength: number
-  descLength: number
-  maxHeight?: number
-  waitUntil?: 'load' | 'domcontentloaded' | 'networkidle0' | 'networkidle2'
-  captureTimeout?: number
-  useForward?: boolean
-}
-
-/**
  * 服务器配置接口
  */
 export interface ServerConfig {
