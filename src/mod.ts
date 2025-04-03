@@ -507,16 +507,16 @@ export function registerModCommands(ctx: Context, parent: any, config: MTConfig)
         const result = results[0]
 
         // 使用合并转发功能（如果启用）
-        if (config.wiki.useForwardMsg) {
+        if (config.useForward) {
           try {
             // 获取完整内容，忽略长度限制
-            const tempConfig = JSON.parse(JSON.stringify(config.wiki));
+            const tempConfig = JSON.parse(JSON.stringify(config));
             tempConfig.totalLength = 10000;
 
             const content = await fetchModContent(result.url, tempConfig);
             const formattedContent = formatContent(content, result.url, {
               linkCount: 999, // 显示所有链接
-              showImages: config.wiki.showImages,
+              showImages: config.showImages,
               platform: session.platform
             });
 
@@ -534,10 +534,10 @@ export function registerModCommands(ctx: Context, parent: any, config: MTConfig)
         }
 
         // 默认方式返回内容
-        const content = await fetchModContent(result.url, config.wiki)
+        const content = await fetchModContent(result.url, config)
         return formatContent(content, result.url, {
-          linkCount: config.wiki.linkCount,
-          showImages: config.wiki.showImages,
+          linkCount: config.linkCount,
+          showImages: config.showImages,
           platform: session.platform
         })
       } catch (error) {

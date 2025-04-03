@@ -93,8 +93,8 @@ export async function capture(
     while (retries > 0) {
       try {
         await page.goto(url, {
-          waitUntil: config.wiki.waitUntil,
-          timeout: config.wiki.captureTimeout * 1000
+          waitUntil: config.waitUntil,
+          timeout: config.captureTimeout * 1000
         })
         break
       } catch (err) {
@@ -149,7 +149,7 @@ export async function capture(
         width: 1080,
         height: maxHeight === 0 ? Math.ceil(rect.height) : Math.min(maxHeight, Math.ceil(rect.height))
       }
-    }, { type: options.type, url, maxHeight: config.wiki.maxHeight })
+    }, { type: options.type, url, maxHeight: config.maxHeight })
 
     await page.setViewport({
       width: clipData.width,
@@ -263,7 +263,7 @@ export async function search(params: {
     const message = formatSearchResults(results, source, config)
     await session.send(message)
 
-    const response = await session.prompt(config.wiki.Timeout * 1000)
+    const response = await session.prompt(config.Timeout * 1000)
     if (!response) return '等待超时，已取消操作'
 
     return await processSelection({ response, results, source, config, ctx, lang, session })
@@ -306,7 +306,7 @@ export async function searchMod(keyword: string, config: MTConfig): Promise<Sear
   try {
     const response = await axios.get(
       `https://search.mcmod.cn/s?key=${encodeURIComponent(keyword)}`,
-      {         timeout: config.wiki.Timeout * 1000       }
+      {         timeout: config.Timeout * 1000       }
     );
     const $ = cheerio.load(response.data);
 
@@ -316,11 +316,11 @@ export async function searchMod(keyword: string, config: MTConfig): Promise<Sear
       const titleEl = $item.find('.head a').last()
       const title = titleEl.text().trim()
       const url = titleEl.attr('href') || ''
-      const desc = config.wiki.descLength > 0
+      const desc = config.descLength > 0
         ? $item.find('.body').text().trim().replace(/\[.*?\]/g, '').trim()
         : ''
-      const normalizedDesc = desc && desc.length > config.wiki.descLength
-        ? desc.slice(0, config.wiki.descLength) + '...'
+      const normalizedDesc = desc && desc.length > config.descLength
+        ? desc.slice(0, config.descLength) + '...'
         : desc
 
       const normalizedUrl = url.startsWith('http') ? url : `https://www.mcmod.cn${url}`
@@ -354,7 +354,7 @@ export function formatSearchResults(
 ): string {
   const items = results.map((r, i) => {
     const base = `${i + 1}. ${r.title}`
-    const desc = source === 'mcmod' && config.wiki.descLength > 0 && r.desc
+    const desc = source === 'mcmod' && config.descLength > 0 && r.desc
       ? `\n    ${r.desc}` : ''
     return `${base}${desc}`
   })
@@ -453,13 +453,13 @@ async function fetchwikiContent(
   session?: any
 ) {
   // 当启用合并转发时尝试使用合并转发
-  const useForwardMsg = config.wiki.useForwardMsg;
+  const useForward = config.useForward;
 
   if (source === 'wiki') {
     const pageUrl = buildUrl(result.title, lang, true)
     const displayUrl = buildUrl(result.title, lang)
 
-    if (useForwardMsg) {
+    if (useForward) {
       try {
         // 获取完整内容，忽略长度限制
         const tempConfig = JSON.parse(JSON.stringify(config));
@@ -483,16 +483,16 @@ async function fetchwikiContent(
     return `『${title}』${content}\n详细内容：${displayUrl}`
   }
 
-  if (useForwardMsg) {
+  if (useForward) {
     try {
       // 获取完整内容，忽略长度限制
-      const tempConfig = JSON.parse(JSON.stringify(config.wiki));
+      const tempConfig = JSON.parse(JSON.stringify(config));
       tempConfig.totalLength = 10000;
 
       const content = await fetchModContent(result.url, tempConfig);
       const formattedContent = formatContent(content, result.url, {
         linkCount: 999, // 显示所有链接
-        showImages: config.wiki.showImages,
+        showImages: config.showImages,
         platform: session.platform
       });
 
@@ -509,10 +509,10 @@ async function fetchwikiContent(
     }
   }
 
-  const content = await fetchModContent(result.url, config.wiki)
+  const content = await fetchModContent(result.url, config)
   return formatContent(content, result.url, {
-    linkCount: config.wiki.linkCount,
-    showImages: config.wiki.showImages,
+    linkCount: config.linkCount,
+    showImages: config.showImages,
     platform: session.platform
   }) || `内容获取失败，请访问：${result.url}`
 }

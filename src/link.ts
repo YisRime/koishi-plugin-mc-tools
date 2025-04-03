@@ -19,9 +19,9 @@ export function registerServerCommands(parent: any, config: MTConfig) {
   const mcserver = parent.subcommand('.server', 'Minecraft 服务器管理')
     .usage('mc.server - Minecraft 服务器相关命令')
     .before(({ session }) => {
-      if (!config.link.group || !session) return false
+      if (!config.connect || !session) return false
       const currentGroup = `${session.platform}:${session.guildId}`
-      if (currentGroup !== config.link.group) return false
+      if (currentGroup !== config.connect) return false
     })
 
   /**
@@ -32,10 +32,10 @@ export function registerServerCommands(parent: any, config: MTConfig) {
     .action(async ({ session }, message) => {
       if (!message) return sendTempMessage('请输入消息', session)
       const sender = session.username || session.userId
-      if (config.link.enableWebSocket) {
+      if (config.enableWebSocket) {
         const formattedMessage = createMcText(`${sender}: ${message}`)
         const success = await sendMinecraftMessage('chat', formattedMessage, { session, feedback: false })
-        if (!success && config.link.enableRcon) {
+        if (!success && config.enableRcon) {
           await executeRconCommand(`say ${sender}: ${message}`, config, session)
         } else if (!success) {
           await sendTempMessage('消息发送失败', session)
@@ -57,7 +57,7 @@ export function registerServerCommands(parent: any, config: MTConfig) {
       executeRconCommand(command, config, session)
     })
 
-  if (config.link.enableWebSocket) {
+  if (config.enableWebSocket) {
     /**
      * 广播消息到服务器
      * 支持文本样式和交互功能
@@ -119,7 +119,7 @@ export function registerServerCommands(parent: any, config: MTConfig) {
         const hasStyles = Object.keys(styles).length > 0;
         const formattedMessage = hasStyles ? createMcText(message, styles) : message;
         const success = await sendMinecraftMessage('broadcast', formattedMessage, { session, feedback: false })
-        if (!success && config.link.enableRcon) {
+        if (!success && config.enableRcon) {
           await executeRconCommand(`broadcast ${message}`, config, session)
         } else if (!success) {
           await sendTempMessage('广播发送失败', session)
@@ -181,7 +181,7 @@ export function registerServerCommands(parent: any, config: MTConfig) {
           session,
           feedback: false
         })
-        if (!success && config.link.enableRcon) {
+        if (!success && config.enableRcon) {
           await executeRconCommand(`tell ${player} ${sender}: ${message}`, config, session)
         } else if (!success) {
           await sendTempMessage('私聊消息发送失败', session)
@@ -234,7 +234,7 @@ export function registerServerCommands(parent: any, config: MTConfig) {
           session,
           feedback: false
         })
-        if (!success && config.link.enableRcon) {
+        if (!success && config.enableRcon) {
           const titleColor = options.color || 'gold';
           const subtitleColor = options.subcolor || 'yellow';
           await executeRconCommand(`title @a title {"text":"${title}","color":"${titleColor}"}`, config, session)
@@ -275,7 +275,7 @@ export function registerServerCommands(parent: any, config: MTConfig) {
         const hasStyles = Object.keys(styles).length > 0;
         const actionbarText = hasStyles ? createMcText(message, styles) : message;
         const success = await sendMinecraftMessage('actionbar', actionbarText, { session, feedback: false })
-        if (!success && config.link.enableRcon) {
+        if (!success && config.enableRcon) {
           const color = options.color || 'white';
           const bold = options.bold || false;
           await executeRconCommand(`title @a actionbar {"text":"${message}","color":"${color}","bold":${bold}}`, config, session)

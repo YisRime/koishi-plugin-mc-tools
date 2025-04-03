@@ -15,7 +15,7 @@ export const inject = {optional: ['puppeteer']}
 export const usage = '注意：使用 Docker 部署产生的问题请前往插件主页查看解决方案'
 
 // 版本检查定时器
-let versionCheckTimer: NodeJS.Timeout
+let verCheckTimer: NodeJS.Timeout
 
 export type LangCode = keyof typeof MINECRAFT_LANGUAGES
 
@@ -103,7 +103,7 @@ export interface CommonConfig {
   maxHeight?: number
   waitUntil?: 'load' | 'domcontentloaded' | 'networkidle0' | 'networkidle2'
   captureTimeout?: number
-  useForwardMsg?: boolean
+  useForward?: boolean
 }
 
 /**
@@ -111,7 +111,7 @@ export interface CommonConfig {
  */
 export interface ServerConfig {
   name: string
-  group: string
+  connect: string
   rconAddress: string
   rconPassword: string
   websocketMode: 'client' | 'server'
@@ -123,31 +123,30 @@ export interface ServerConfig {
  * 插件完整配置接口
  */
 export interface MTConfig {
-  wiki: CommonConfig & {
-    maxHeight: number
-    waitUntil: 'load' | 'domcontentloaded' | 'networkidle0' | 'networkidle2'
-    captureTimeout: number
+    Timeout: number
+    totalLength: number
+    descLength: number
+    maxHeight?: number
+    waitUntil?: 'load' | 'domcontentloaded' | 'networkidle0' | 'networkidle2'
+    captureTimeout?: number
+    useForward?: boolean
     Language: LangCode
     sectionLength: number
     linkCount: number
     cfApi: string
     showImages: 'always' | 'noqq' | 'never'
-  }
-  tool: {
     default: string
     showIP: boolean
     showIcon: boolean
-    maxNumberDisplay: number
+    maxNumber: number
     javaApis: string[]
     bedrockApis: string[]
     showSkull: boolean
-    versionCheck: boolean
+    verCheck: boolean
     guilds: string[]
     interval: number
     release: boolean
     snapshot: boolean
-  }
-  link: {
     enableRcon: boolean
     rconAddress: string
     rconPassword: string
@@ -156,25 +155,24 @@ export interface MTConfig {
     websocketToken: string
     enableWebSocket: boolean
     name: string
-    group: string
-  }
+    connect: string
 }
 
 /**
  * 插件配置模式
  */
-export const Config: Schema<MTConfig> = Schema.object({
-  wiki: Schema.object({
-    useForwardMsg: Schema.boolean()
+export const Config: Schema<MTConfig> = Schema.intersect([
+  Schema.object({
+    useForward: Schema.boolean()
       .description('启用合并转发').default(false),
     totalLength: Schema.number()
       .description('总预览字数').default(400),
     sectionLength: Schema.number()
       .description('Wiki 每段预览字数').default(50),
-    linkCount: Schema.number()
-      .description('MCMod 相关链接个数').default(4),
     descLength: Schema.number()
       .description('搜索列表描述字数').default(20),
+    linkCount: Schema.number()
+      .description('MCMod 相关链接个数').default(4),
     Timeout: Schema.number()
       .description('搜索超时时间（秒）').default(15),
     captureTimeout: Schema.number()
@@ -191,8 +189,8 @@ export const Config: Schema<MTConfig> = Schema.object({
       .description('CurseForge API Key').role('secret'),
   }).description('查询配置'),
 
-  tool: Schema.object({
-    versionCheck: Schema.boolean()
+  Schema.object({
+    verCheck: Schema.boolean()
       .description('启用更新检查').default(false),
     release: Schema.boolean()
       .description('正式版本通知').default(true),
@@ -209,7 +207,7 @@ export const Config: Schema<MTConfig> = Schema.object({
       .description('显示服务器地址').default(false),
     showIcon: Schema.boolean()
       .description('显示服务器图标').default(true),
-    maxNumberDisplay: Schema.number()
+    maxNumber: Schema.number()
       .description('列表最大显示个数').default(8),
     default: Schema.string()
       .description('默认 INFO 地址').default('hypixel.net'),
@@ -223,8 +221,8 @@ export const Config: Schema<MTConfig> = Schema.object({
         'https://api.mcsrvstat.us/bedrock/3/${address}']),
   }).description('工具配置'),
 
-  link: Schema.object({
-    group: Schema.string()
+  Schema.object({
+    connect: Schema.string()
       .description('互联群组ID').default('onebot:123456789'),
     enableRcon: Schema.boolean()
       .description('启用 RCON').default(false),
@@ -242,27 +240,27 @@ export const Config: Schema<MTConfig> = Schema.object({
       .description('WebSocket 地址').default('localhost:8080'),
     websocketToken: Schema.string()
       .description('WebSocket 密码').role('secret'),
-  }).description('互联配置'),
-})
+  }).description('鹊桥互联配置'),
+])
 
 /**
  * 插件主函数
  */
-export function apply(ctx: Context, pluginConfig: MTConfig) {
+export function apply(ctx: Context, config: MTConfig) {
   // 用户语言设置
   const userLanguageSettings = new Map<string, LangCode>()
   // 创建 mc 主命令
   const mcCommand = ctx.command('mc', 'Minecraft 工具')
   // 注册各功能子命令
-  registerWikiCommands(ctx, mcCommand, pluginConfig, userLanguageSettings)
-  registerModCommands(ctx, mcCommand, pluginConfig)
+  registerWikiCommands(ctx, mcCommand, config, userLanguageSettings)
+  registerModCommands(ctx, mcCommand, config)
   // 注册服务器信息和版本查询命令
-  versionCheckTimer = registerInfoCommands(ctx, mcCommand, pluginConfig)
+  verCheckTimer = registerInfoCommands(ctx, mcCommand, config)
   // 注册服务器管理命令
-  if (pluginConfig.link.enableRcon || pluginConfig.link.enableWebSocket) {
-    registerServerCommands(mcCommand, pluginConfig)
-    if (pluginConfig.link.enableWebSocket) {
-      initWebSocket(ctx, pluginConfig)
+  if (config.enableRcon || config.enableWebSocket) {
+    registerServerCommands(mcCommand, config)
+    if (config.enableWebSocket) {
+      initWebSocket(ctx, config)
     }
   }
 }
@@ -271,9 +269,9 @@ export function apply(ctx: Context, pluginConfig: MTConfig) {
  * 插件卸载函数
  */
 export function dispose() {
-  if (versionCheckTimer) {
-    clearInterval(versionCheckTimer)
-    versionCheckTimer = null
+  if (verCheckTimer) {
+    clearInterval(verCheckTimer)
+    verCheckTimer = null
   }
   cleanupWebSocket()
 }

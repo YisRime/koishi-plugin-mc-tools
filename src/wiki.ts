@@ -140,19 +140,19 @@ export async function fetchContent(articleUrl: string, languageCode: LangCode, c
       .map((section, index) => {
         const sectionText = index === 0
           ? section.content.join(' ')
-          : section.content.join(' ').slice(0, config.wiki.sectionLength);
+          : section.content.join(' ').slice(0, config.sectionLength);
         if (section.title) {
-          return `『${section.title}』${sectionText}${sectionText.length >= config.wiki.sectionLength && index > 0 ? '...' : ''}`;
+          return `『${section.title}』${sectionText}${sectionText.length >= config.sectionLength && index > 0 ? '...' : ''}`;
         }
         return sectionText;
       })
       .join('\n')
-      .slice(0, config.wiki.totalLength);
+      .slice(0, config.totalLength);
 
     const cleanUrl = articleUrl.split('?')[0];
     return {
       title,
-      content: formattedContent.length >= config.wiki.totalLength ? formattedContent + '...' : formattedContent,
+      content: formattedContent.length >= config.totalLength ? formattedContent + '...' : formattedContent,
       url: cleanUrl
     };
   } catch (error) {
@@ -183,7 +183,7 @@ export async function processWikiRequest(
   keyword = keyword.trim().replace(/[\u200B-\u200D\uFEFF]/g, '');
 
   try {
-    const lang = userLangs.get(userId) || config.wiki.Language;
+    const lang = userLangs.get(userId) || config.Language;
     const results = await searchWiki(keyword);
 
     if (!results || !results.length) {
@@ -218,7 +218,7 @@ export async function processWikiRequest(
       const { title, content } = await fetchContent(pageUrl, lang, tempConfig);
 
       // 使用合并转发（如果启用且提供了session）
-      if (config.wiki.useForwardMsg && session) {
+      if (config.useForward && session) {
         try {
           const response = await sendForwardMessage(session, `『${title}』`, content, displayUrl);
 
@@ -233,8 +233,8 @@ export async function processWikiRequest(
       }
 
       // 如果不使用合并转发，或者标题是纯数字和点组合，则使用默认方式返回
-      const contentSliced = content.slice(0, config.wiki.totalLength);
-      return `『${title}』${contentSliced}${contentSliced.length >= config.wiki.totalLength ? '...' : ''}\n详细内容：${displayUrl}`;
+      const contentSliced = content.slice(0, config.totalLength);
+      return `『${title}』${contentSliced}${contentSliced.length >= config.totalLength ? '...' : ''}\n详细内容：${displayUrl}`;
 
     } catch (error) {
       return `获取"${result.title}"的内容时发生错误: ${error.message}`;
@@ -277,7 +277,7 @@ export function registerWikiCommands(ctx: Context, parent: any, config: MTConfig
           session,
           config,
           ctx,
-          lang: userLangs.get(session.userId) || config.wiki.Language
+          lang: userLangs.get(session.userId) || config.Language
         })
       } catch (error) {
         return error.message
@@ -299,7 +299,7 @@ export function registerWikiCommands(ctx: Context, parent: any, config: MTConfig
           ctx,
           {
             type: 'wiki',
-            lang: userLangs.get(session.userId) || config.wiki.Language
+            lang: userLangs.get(session.userId) || config.Language
           },
           config
         )

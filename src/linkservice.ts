@@ -40,14 +40,14 @@ export async function executeRconCommand(
   session?: Session
 ): Promise<void> {
   if (!command) return sendTempMessage('请输入命令', session)
-  if (!config.link.rconPassword) return sendTempMessage('请配置RCON密码', session)
-  const [serverHost, portStr] = (config.link.rconAddress || '').split(':')
+  if (!config.rconPassword) return sendTempMessage('请配置RCON密码', session)
+  const [serverHost, portStr] = (config.rconAddress || '').split(':')
   const port = portStr ? parseInt(portStr) : 25575
   if (!serverHost) return sendTempMessage('请配置RCON地址', session)
   if (isNaN(port)) return sendTempMessage('请正确配置RCON端口', session)
   try {
     const rcon = await Rcon.connect({
-      host: serverHost, port, password: config.link.rconPassword
+      host: serverHost, port, password: config.rconPassword
     })
     const result = await rcon.send(command)
     await rcon.end()
@@ -60,13 +60,13 @@ export async function executeRconCommand(
 /**
  * 检查群组是否有权限
  * @param session - Koishi会话对象
- * @param groupId - 要检查的群组ID
+ * @param connectId - 要检查的群组ID
  * @returns 如果当前会话的群组与配置的群组匹配，则返回true
  */
-export function hasGroupPermission(session, groupId: string): boolean {
-  if (!groupId || !session) return false
+export function hasGroupPermission(session, connectId: string): boolean {
+  if (!connectId || !session) return false
   const currentGroup = `${session.platform}:${session.guildId}`
-  return currentGroup === groupId
+  return currentGroup === connectId
 }
 
 /**
@@ -75,8 +75,8 @@ export function hasGroupPermission(session, groupId: string): boolean {
  * @param config - MC-Tools配置对象
  */
 export function initWebSocket(ctx: Context, config: MTConfig) {
-  if (!config.link.enableWebSocket) return
-  if (config.link.websocketMode === 'client') {
+  if (!config.enableWebSocket) return
+  if (config.websocketMode === 'client') {
     connectAsClient(ctx, config)
   } else {
     startWebSocketServer(ctx, config)
@@ -90,8 +90,8 @@ export function initWebSocket(ctx: Context, config: MTConfig) {
  * @param message - 要发送的通知消息
  */
 function sendGroupNotification(ctx: Context, config: MTConfig, message: string) {
-  if (!config.link.group) return
-  const [platform, channelId] = config.link.group.split(':')
+  if (!config.connect) return
+  const [platform, channelId] = config.connect.split(':')
   ctx.bots[platform]?.sendMessage(channelId, message)
 }
 
@@ -119,12 +119,12 @@ function sendWelcomeMessage(socket: WebSocket) {
  */
 function connectAsClient(ctx: Context, config: MTConfig) {
   const logger = ctx.logger('mc-tools:ws')
-  const [host, portStr] = config.link.websocketAddress.split(':')
+  const [host, portStr] = config.websocketAddress.split(':')
   const port = portStr ? parseInt(portStr) : 8080
   const url = `ws://${host}:${port}/minecraft/ws`
   const headers = {
-    'Authorization': `Bearer ${config.link.websocketToken}`,
-    'x-self-name': config.link.name,
+    'Authorization': `Bearer ${config.websocketToken}`,
+    'x-self-name': config.name,
     'x-client-origin': 'koishi'
   }
   try {
@@ -132,13 +132,13 @@ function connectAsClient(ctx: Context, config: MTConfig) {
     minecraftSocket.on('open', () => {
       logger.info(`WebSocket客户端已连接: ${url}`)
       reconnectCount = 0
-      sendGroupNotification(ctx, config, `已连接到Minecraft服务器 ${config.link.name}`)
+      sendGroupNotification(ctx, config, `已连接到Minecraft服务器 ${config.name}`)
       sendWelcomeMessage(minecraftSocket)
     })
     minecraftSocket.on('message', (data) => {
       try {
         const message = JSON.parse(data.toString())
-        if (message.event_name && config.link.group) {
+        if (message.event_name && config.connect) {
           handleMinecraftEvent(ctx, message, config)
         }
       } catch (err) {
@@ -157,7 +157,7 @@ function connectAsClient(ctx: Context, config: MTConfig) {
           connectAsClient(ctx, config)
         }, 5000 * Math.min(reconnectCount + 1, 5))
       } else {
-        sendGroupNotification(ctx, config, `Minecraft服务器 ${config.link.name} 已断开连接`)
+        sendGroupNotification(ctx, config, `Minecraft服务器 ${config.name} 已断开连接`)
       }
     })
   } catch (err) {
@@ -179,7 +179,7 @@ function connectAsClient(ctx: Context, config: MTConfig) {
  */
 function startWebSocketServer(ctx: Context, config: MTConfig) {
   const logger = ctx.logger('mc-tools:ws')
-  const [host, portStr] = config.link.websocketAddress.split(':')
+  const [host, portStr] = config.websocketAddress.split(':')
   const port = portStr ? parseInt(portStr) : 8080
   try {
     wsServer = new WebSocketServer({ host, port })
@@ -188,19 +188,19 @@ function startWebSocketServer(ctx: Context, config: MTConfig) {
       const auth = req.headers.authorization
       const selfName = req.headers['x-self-name']
       const clientOrigin = req.headers['x-client-origin']
-      if (!auth || auth !== `Bearer ${config.link.websocketToken}` ||
-          !selfName || selfName !== config.link.name) {
+      if (!auth || auth !== `Bearer ${config.websocketToken}` ||
+          !selfName || selfName !== config.name) {
         ws.close(1008, 'Authorization failed')
         return
       }
       logger.info(`已连接到Minecraft服务器 ${clientOrigin || '未知'}`)
       minecraftSocket = ws
-      sendGroupNotification(ctx, config, `已连接到Minecraft服务器 ${config.link.name}`)
+      sendGroupNotification(ctx, config, `已连接到Minecraft服务器 ${config.name}`)
       sendWelcomeMessage(ws)
       ws.on('message', (data) => {
         try {
           const message = JSON.parse(data.toString())
-          if (message.event_name && config.link.group) {
+          if (message.event_name && config.connect) {
             handleMinecraftEvent(ctx, message, config)
           }
         } catch (err) {
@@ -210,7 +210,7 @@ function startWebSocketServer(ctx: Context, config: MTConfig) {
       ws.on('close', () => {
         logger.warn('WebSocket客户端已断开')
         minecraftSocket = null
-        sendGroupNotification(ctx, config, `Minecraft服务器 ${config.link.name} 已断开连接`)
+        sendGroupNotification(ctx, config, `Minecraft服务器 ${config.name} 已断开连接`)
       })
       ws.on('error', (err) => {
         logger.error('WebSocket连接错误:', err)
@@ -232,9 +232,9 @@ function startWebSocketServer(ctx: Context, config: MTConfig) {
  */
 function handleMinecraftEvent(ctx: Context, message: any, config: MTConfig) {
   const logger = ctx.logger('mc-tools:ws')
-  const [platform, channelId] = config.link.group.split(':')
+  const [platform, channelId] = config.connect.split(':')
   try {
-    const serverName = message.server_name || config.link.name
+    const serverName = message.server_name || config.name
     const eventName = message.event_name || ''
     let content = ''
     // 获取玩家位置信息

@@ -420,14 +420,14 @@ export function registerModPlatformCommands(mcmod: any, config: MTConfig) {
       if (!keyword) return '请输入要搜索的关键词'
 
       try {
-        const results = await searchMods(keyword, 'modrinth', config.wiki, undefined, type)
+        const results = await searchMods(keyword, 'modrinth', config, undefined, type)
         if (!results.length) return '未找到相关内容'
 
         // 检查是否使用合并转发
-        if (config.wiki.useForwardMsg) {
+        if (config.useForward) {
           // 获取无长度限制的详细内容
-          const tempConfig = { ...config.wiki, totalLength: 10000 };
-          const fullContent = await getModDetails(results[0], tempConfig, config.wiki.cfApi);
+          const tempConfig = { ...config, totalLength: 10000 };
+          const fullContent = await getModDetails(results[0], tempConfig, config.cfApi);
           const url = `https://modrinth.com/${results[0].type}/${results[0].id}`;
 
           try {
@@ -442,7 +442,7 @@ export function registerModPlatformCommands(mcmod: any, config: MTConfig) {
           }
         }
 
-        return await getModDetails(results[0], config.wiki, config.wiki.cfApi)
+        return await getModDetails(results[0], config, config.cfApi)
       } catch (error) {
         return error.message
       }
@@ -453,12 +453,12 @@ export function registerModPlatformCommands(mcmod: any, config: MTConfig) {
       if (!keyword) return '请输入要搜索的关键词'
 
       try {
-        const results = await searchMods(keyword, 'modrinth', config.wiki, undefined, type)
+        const results = await searchMods(keyword, 'modrinth', config, undefined, type)
         if (!results.length) return '未找到相关项目'
 
-        await session.send('Modrinth 搜索结果：\n' + formatSearchResults(results, config.wiki) + '\n请回复序号查看详细内容')
+        await session.send('Modrinth 搜索结果：\n' + formatSearchResults(results, config) + '\n请回复序号查看详细内容')
 
-        const response = await session.prompt(config.wiki.Timeout * 1000)
+        const response = await session.prompt(config.Timeout * 1000)
         if (!response) return '操作超时'
 
         const index = parseInt(response) - 1
@@ -467,10 +467,10 @@ export function registerModPlatformCommands(mcmod: any, config: MTConfig) {
         }
 
         // 检查是否使用合并转发
-        if (config.wiki.useForwardMsg) {
+        if (config.useForward) {
           // 获取无长度限制的详细内容
-          const tempConfig = { ...config.wiki, totalLength: 10000 };
-          const fullContent = await getModDetails(results[index], tempConfig, config.wiki.cfApi);
+          const tempConfig = { ...config, totalLength: 10000 };
+          const fullContent = await getModDetails(results[index], tempConfig, config.cfApi);
           const url = `https://modrinth.com/${results[index].type}/${results[index].id}`;
 
           try {
@@ -485,7 +485,7 @@ export function registerModPlatformCommands(mcmod: any, config: MTConfig) {
           }
         }
 
-        return await getModDetails(results[index], config.wiki, config.wiki.cfApi)
+        return await getModDetails(results[index], config, config.cfApi)
       } catch (error) {
         return error.message
       }
@@ -497,14 +497,14 @@ export function registerModPlatformCommands(mcmod: any, config: MTConfig) {
       if (!keyword) return '请输入要搜索的关键词'
 
       try {
-        const results = await searchMods(keyword, 'curseforge', config.wiki, config.wiki.cfApi, type)
+        const results = await searchMods(keyword, 'curseforge', config, config.cfApi, type)
         if (!results.length) return '未找到相关内容'
 
         // 检查是否使用合并转发
-        if (config.wiki.useForwardMsg) {
+        if (config.useForward) {
           // 获取无长度限制的详细内容
-          const tempConfig = { ...config.wiki, totalLength: 10000 };
-          const fullContent = await getModDetails(results[0], tempConfig, config.wiki.cfApi);
+          const tempConfig = { ...config, totalLength: 10000 };
+          const fullContent = await getModDetails(results[0], tempConfig, config.cfApi);
           const url = results[0].source === 'curseforge' ?
             `https://www.curseforge.com/minecraft/${results[0].type}s/${results[0].title.toLowerCase().replace(/\s+/g, '-')}` : '';
 
@@ -520,7 +520,7 @@ export function registerModPlatformCommands(mcmod: any, config: MTConfig) {
           }
         }
 
-        return await getModDetails(results[0], config.wiki, config.wiki.cfApi)
+        return await getModDetails(results[0], config, config.cfApi)
       } catch (error) {
         return error.message
       }
@@ -531,12 +531,12 @@ export function registerModPlatformCommands(mcmod: any, config: MTConfig) {
       if (!keyword) return '请输入要搜索的关键词'
 
       try {
-        const results = await searchMods(keyword, 'curseforge', config.wiki, config.wiki.cfApi, type)
+        const results = await searchMods(keyword, 'curseforge', config, config.cfApi, type)
         if (!results.length) return '未找到相关项目'
 
-        await session.send('CurseForge 搜索结果：\n' + formatSearchResults(results, config.wiki) + '\n请回复序号查看详细内容')
+        await session.send('CurseForge 搜索结果：\n' + formatSearchResults(results, config) + '\n请回复序号查看详细内容')
 
-        const response = await session.prompt(config.wiki.Timeout * 1000)
+        const response = await session.prompt(config.Timeout * 1000)
         if (!response) return '操作超时'
 
         const index = parseInt(response) - 1
@@ -545,10 +545,10 @@ export function registerModPlatformCommands(mcmod: any, config: MTConfig) {
         }
 
         // 检查是否使用合并转发
-        if (config.wiki.useForwardMsg) {
+        if (config.useForward) {
           // 获取无长度限制的详细内容
-          const tempConfig = { ...config.wiki, totalLength: 10000 };
-          const fullContent = await getModDetails(results[index], tempConfig, config.wiki.cfApi);
+          const tempConfig = { ...config, totalLength: 10000 };
+          const fullContent = await getModDetails(results[index], tempConfig, config.cfApi);
           const url = results[index].source === 'curseforge' ?
             `https://www.curseforge.com/minecraft/${results[index].type}s/${results[index].title.toLowerCase().replace(/\s+/g, '-')}` : '';
 
@@ -564,7 +564,7 @@ export function registerModPlatformCommands(mcmod: any, config: MTConfig) {
           }
         }
 
-        return await getModDetails(results[index], config.wiki, config.wiki.cfApi)
+        return await getModDetails(results[index], config, config.cfApi)
       } catch (error) {
         return error.message
       }

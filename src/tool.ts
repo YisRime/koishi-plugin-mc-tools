@@ -168,10 +168,10 @@ export async function checkServerStatus(
   config?: MTConfig
 ): Promise<ServerStatus> {
   try {
-    const parsed = parseServerAddress(server, config?.tool.default)
+    const parsed = parseServerAddress(server, config?.default)
     const type = forceType || parsed.type
 
-    const apis = type === 'java' ? config?.tool.javaApis : config?.tool.bedrockApis
+    const apis = type === 'java' ? config?.javaApis : config?.bedrockApis
     if (!apis?.length) {
       throw new Error(`缺少 ${type} 版本查询 API 配置`)
     }
@@ -292,7 +292,7 @@ async function transformMcsrvstatResponse(data: any): Promise<ServerStatus> {
  * @param {MTConfig['info']} config - 信息显示配置
  * @returns {string} 格式化后的状态信息
  */
-export function formatServerStatus(status: ServerStatus, config: MTConfig['tool']) {
+export function formatServerStatus(status: ServerStatus, config: MTConfig) {
   if (!status.online) {
     return status.error || '服务器离线 - 连接失败'
   }
@@ -327,17 +327,17 @@ export function formatServerStatus(status: ServerStatus, config: MTConfig['tool'
   status.server_id && serverInfo.push(`ID: ${status.server_id}`)
   serverInfo.length > 0 && lines.push(serverInfo.join(' | '))
   // 添加玩家列表
-  const hasPlayers = status.players?.list?.length && config.maxNumberDisplay > 0
+  const hasPlayers = status.players?.list?.length && config.maxNumber > 0
   if (hasPlayers) {
-    const displayCount = Math.min(config.maxNumberDisplay, status.players.list.length)
+    const displayCount = Math.min(config.maxNumber, status.players.list.length)
     lines.push(`当前在线(${status.players.online}):`)
     const playerList = status.players.list.slice(0, displayCount).join(', ')
     lines.push(playerList + (status.players.list.length > displayCount ? ' ...' : ''))
   }
   // 添加插件列表
-  const hasPlugins = status.plugins?.length && config.maxNumberDisplay > 0
+  const hasPlugins = status.plugins?.length && config.maxNumber > 0
   if (hasPlugins) {
-    const displayCount = Math.min(config.maxNumberDisplay, status.plugins.length)
+    const displayCount = Math.min(config.maxNumber, status.plugins.length)
     lines.push(`插件(${status.plugins.length}):`)
     const pluginList = status.plugins
       .slice(0, displayCount)
@@ -346,9 +346,9 @@ export function formatServerStatus(status: ServerStatus, config: MTConfig['tool'
     lines.push(pluginList + (status.plugins.length > displayCount ? ' ...' : ''))
   }
   // 添加模组列表
-  const hasMods = status.mods?.length && config.maxNumberDisplay > 0
+  const hasMods = status.mods?.length && config.maxNumber > 0
   if (hasMods) {
-    const displayCount = Math.min(config.maxNumberDisplay, status.mods.length)
+    const displayCount = Math.min(config.maxNumber, status.mods.length)
     lines.push(`模组(${status.mods.length}):`)
     const modList = status.mods
       .slice(0, displayCount)
@@ -480,14 +480,14 @@ async function checkUpdate(versions: { snapshot: string, release: string }, ctx:
   try {
     const { latest, release } = await fetchVersions()
     const updates = [
-      { type: 'snapshot', version: latest, enabled: config.tool.snapshot },
-      { type: 'release', version: release, enabled: config.tool.release }
+      { type: 'snapshot', version: latest, enabled: config.snapshot },
+      { type: 'release', version: release, enabled: config.release }
     ]
 
     for (const { type, version, enabled } of updates) {
       if (versions[type] && version.id !== versions[type] && enabled) {
         const msg = `Minecraft ${type === 'release' ? '正式版' : '快照版'}更新：${version.id}\n发布时间: ${new Date(version.releaseTime).toLocaleString('zh-CN')}`
-        await notifyVersionUpdate(ctx, config.tool.guilds, msg)
+        await notifyVersionUpdate(ctx, config.guilds, msg)
       }
       versions[type] = version.id
     }
@@ -739,8 +739,8 @@ export function registerInfoCommands(ctx: Context, parent: any, config: MTConfig
     .usage(`mc.info [地址[:端口]] - 查询 Java 版服务器\nmc.info.be [地址[:端口]] - 查询 Bedrock 版服务器`)
     .action(async ({ }, server) => {
       try {
-        const status = await checkServerStatus(server || config.tool.default, 'java', config)
-        return formatServerStatus(status, config.tool)
+        const status = await checkServerStatus(server || config.default, 'java', config)
+        return formatServerStatus(status, config)
       } catch (error) {
         return error.message
       }
@@ -750,8 +750,8 @@ export function registerInfoCommands(ctx: Context, parent: any, config: MTConfig
     .usage('mc.info.be [地址[:端口]] - 查询 Bedrock 版服务器状态')
     .action(async ({ }, server) => {
       try {
-        const status = await checkServerStatus(server || config.tool.default, 'bedrock', config)
-        return formatServerStatus(status, config.tool)
+        const status = await checkServerStatus(server || config.default, 'bedrock', config)
+        return formatServerStatus(status, config)
       } catch (error) {
         return error.message
       }
@@ -787,7 +787,7 @@ export function registerInfoCommands(ctx: Context, parent: any, config: MTConfig
           const skinImage = await renderPlayerSkin(ctx, profile.skin.url, capeUrl, renderElytra);
           parts.push(h.image(`data:image/png;base64,${skinImage}`).toString());
 
-          if (config.tool.showSkull) {
+          if (config.showSkull) {
             parts.push(`使用 /give 获取 ${profile.name} ${profile.skin ? `(${profile.skin.model === 'slim' ? '纤细' : '经典'}) ` : ''}的头：(≤1.12 & ≥1.13)`);
             parts.push(`minecraft:skull 1 3 {SkullOwner:"${profile.name}"}`);
             parts.push(`minecraft:player_head{SkullOwner:"${profile.name}"}`);
@@ -822,9 +822,9 @@ export function registerInfoCommands(ctx: Context, parent: any, config: MTConfig
     });
 
   // 如果启用了版本更新检查，启动定时任务
-  if (config.tool.versionCheck && config.tool.guilds.length) {
+  if (config.verCheck && config.guilds.length) {
     checkUpdate(minecraftVersions, ctx, config)
-    const timer = setInterval(() => checkUpdate(minecraftVersions, ctx, config), config.tool.interval * 60 * 1000)
+    const timer = setInterval(() => checkUpdate(minecraftVersions, ctx, config), config.interval * 60 * 1000)
     return timer
   }
 }
