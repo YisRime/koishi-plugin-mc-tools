@@ -305,29 +305,32 @@ function formatServerStatus(status: ServerStatus, config: MTConfig) {
   status.server_id && serverInfo.push(`ID: ${status.server_id}`)
   serverInfo.length > 0 && lines.push(serverInfo.join(' | '))
   // 玩家列表
-  if (status.players?.list?.length && config.maxNumber > 0) {
-    const displayCount = Math.min(config.maxNumber, status.players.list.length)
+  if (status.players?.list?.length && config.maxNumber !== 0) {
+    const showAll = config.maxNumber < 0;
+    const displayCount = showAll ? status.players.list.length : Math.min(config.maxNumber, status.players.list.length);
     lines.push(`当前在线(${status.players.online}):`)
     lines.push(status.players.list.slice(0, displayCount).join(', ') +
-               (status.players.list.length > displayCount ? ' ...' : ''))
+               (!showAll && status.players.list.length > displayCount ? ' ...' : ''))
   }
   // 插件列表
-  if (status.plugins?.length && config.maxNumber > 0) {
-    const displayCount = Math.min(config.maxNumber, status.plugins.length)
+  if (status.plugins?.length && config.maxNumber !== 0) {
+    const showAll = config.maxNumber < 0;
+    const displayCount = showAll ? status.plugins.length : Math.min(config.maxNumber, status.plugins.length);
     lines.push(`插件(${status.plugins.length}):`)
     lines.push(status.plugins
       .slice(0, displayCount)
       .map(p => p.version ? `${p.name}-${p.version}` : p.name)
-      .join(', ') + (status.plugins.length > displayCount ? ' ...' : ''))
+      .join(', ') + (!showAll && status.plugins.length > displayCount ? ' ...' : ''))
   }
   // 模组列表
-  if (status.mods?.length && config.maxNumber > 0) {
-    const displayCount = Math.min(config.maxNumber, status.mods.length)
+  if (status.mods?.length && config.maxNumber !== 0) {
+    const showAll = config.maxNumber < 0;
+    const displayCount = showAll ? status.mods.length : Math.min(config.maxNumber, status.mods.length);
     lines.push(`模组(${status.mods.length}):`)
     lines.push(status.mods
       .slice(0, displayCount)
       .map(mod => mod.version ? `${mod.name}-${mod.version}` : mod.name)
-      .join(', ') + (status.mods.length > displayCount ? ' ...' : ''))
+      .join(', ') + (!showAll && status.mods.length > displayCount ? ' ...' : ''))
   }
   return lines.join('\n')
 }

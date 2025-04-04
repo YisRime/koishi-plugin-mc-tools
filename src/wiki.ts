@@ -140,16 +140,20 @@ async function fetchContent(articleUrl: string, languageCode: LangCode, config: 
     }
     const formattedContent = sections
       .map((section, index) => {
+        const sectionLimit = config.sectionLength < 0 ? Infinity : config.sectionLength;
         const sectionText = index === 0
           ? section.content.join(' ')
-          : section.content.join(' ').slice(0, config.sectionLength);
-        const truncated = sectionText.length >= config.sectionLength && index > 0 ? '...' : '';
+          : section.content.join(' ').slice(0, sectionLimit);
+        const truncated = sectionText.length >= sectionLimit && index > 0 && config.sectionLength >= 0 ? '...' : '';
         return section.title ? `『${section.title}』${sectionText}${truncated}` : sectionText;
-      }).join('\n').slice(0, config.totalLength);
+      }).join('\n');
+
+    const totalLimit = config.totalLength < 0 ? Infinity : config.totalLength;
+    const limitedContent = totalLimit === Infinity ? formattedContent : formattedContent.slice(0, totalLimit);
     const cleanUrl = articleUrl.split('?')[0];
     return {
       title,
-      content: formattedContent.length >= config.totalLength ? formattedContent + '...' : formattedContent,
+      content: limitedContent.length >= totalLimit && config.totalLength >= 0 ? limitedContent + '...' : limitedContent,
       url: cleanUrl
     };
   } catch (error) {
@@ -235,7 +239,8 @@ export async function search(params: {
     if (!results.length) return '没有找到相关内容'
     const message = formatSearchResults(results, source, config)
     await session.send(message)
-    const response = await session.prompt(config.Timeout * 1000)
+    const timeout = config.Timeout < 0 ? undefined : config.Timeout * 1000;
+    const response = await session.prompt(timeout)
     if (!response) return '等待超时，已取消操作'
     return await processSelection({ response, results, source, config, ctx, lang, session })
   } catch (error) {
@@ -257,8 +262,11 @@ function formatSearchResults(
 ): string {
   const items = results.map((r, i) => {
     const base = `${i + 1}. ${r.title}`
-    const desc = source === 'mcmod' && config.descLength > 0 && r.desc
-      ? `\n    ${r.desc}` : ''
+    const showDesc = source === 'mcmod' && config.descLength !== 0 && r.desc;
+    const desc = showDesc ? (config.descLength > 0
+      ? `\n    ${r.desc.slice(0, config.descLength)}${r.desc.length > config.descLength ? '...' : ''}`
+      : `\n    ${r.desc}`)
+      : ''
     return `${base}${desc}`
   })
   return `${results[0].source === 'wiki' ? 'Wiki' : 'MCMOD'} 搜索结果：\n${items.join('\n')}输入序号查看详情（添加 -i 获取页面截图）`
@@ -387,7 +395,7 @@ export async function capture(
       try {
         await page.goto(url, {
           waitUntil: config.waitUntil,
-          timeout: config.captureTimeout * 1000
+          timeout: config.captureTimeout < 0 ? 0 : config.captureTimeout * 1000
         })
         break
       } catch (err) {
@@ -426,7 +434,7 @@ export async function capture(
         x: 0,
         y: Math.max(0, Math.floor(rect.top)),
         width: 1080,
-        height: maxHeight === 0 ? Math.ceil(rect.height) : Math.min(maxHeight, Math.ceil(rect.height))
+        height: maxHeight <= 0 ? Math.ceil(rect.height) : Math.min(maxHeight, Math.ceil(rect.height))
       }
     }, { type: options.type, url, maxHeight: config.maxHeight })
     // 设置视口并截图

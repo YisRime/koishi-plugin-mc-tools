@@ -241,7 +241,7 @@ function parseContent($: cheerio.CheerioAPI, pageType: 'mod' | 'modpack' | 'post
       return
     }
     const text = parseText($elem)
-    if (text && totalLength < maxLength) {
+    if (text && (maxLength < 0 || totalLength < maxLength)) {
       sections.push(text)
       if (!text.startsWith('http')) {
         totalLength += text.length
@@ -306,7 +306,8 @@ export function formatContent(result: ProcessResult, url: string, options: {
     !['运行环境', '整合包类型', '运作方式', '打包方式'].some(type => s.includes(type)) &&
     !['支持版本:', '行为包:', 'Forge:', 'Fabric:'].some(type => s.includes(type))
   ).map((s, i, arr) => {
-    if (i === arr.length - 1 && !s.startsWith('http') && !s.endsWith('...') && !options.linkCount) {
+    const noLimit = options.linkCount === -1;
+    if (i === arr.length - 1 && !s.startsWith('http') && !s.endsWith('...') && !options.linkCount && !noLimit) {
       return s + '...'
     }
     return s
@@ -314,8 +315,9 @@ export function formatContent(result: ProcessResult, url: string, options: {
   const images = sections.filter((s, index) =>
     index > 1 && s.startsWith('http') && !s.includes(':'))
   // 相关链接
+  const linkLimit = options.linkCount === -1 ? Infinity : (options.linkCount || 0);
   const links = result.links?.length
-    ? ['相关链接:', ...result.links.slice(0, options.linkCount || result.links.length)]
+    ? ['相关链接:', ...result.links.slice(0, linkLimit)]
     : []
   // 判断是否显示图片
   const shouldShowImages =
@@ -342,7 +344,7 @@ export function formatContent(result: ProcessResult, url: string, options: {
 export async function fetchModContent(url: string, config: MTConfig): Promise<ProcessResult> {
   try {
     const response = await axios.get(url, {
-      timeout: 30000,
+      timeout: config.Timeout < 0 ? 0 : config.Timeout * 1000,
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
       }
@@ -378,7 +380,7 @@ export async function searchMod(keyword: string, config: MTConfig): Promise<Sear
   try {
     const response = await axios.get(
       `https://search.mcmod.cn/s?key=${encodeURIComponent(keyword)}`,
-      {         timeout: config.Timeout * 1000       }
+      { timeout: config.Timeout < 0 ? 0 : config.Timeout * 1000 }
     );
     const $ = cheerio.load(response.data);
 
@@ -388,12 +390,13 @@ export async function searchMod(keyword: string, config: MTConfig): Promise<Sear
       const titleEl = $item.find('.head a').last()
       const title = titleEl.text().trim()
       const url = titleEl.attr('href') || ''
-      const desc = config.descLength > 0
-        ? $item.find('.body').text().trim().replace(/\[.*?\]/g, '').trim()
-        : ''
-      const normalizedDesc = desc && desc.length > config.descLength
-        ? desc.slice(0, config.descLength) + '...'
-        : desc
+      let desc = '';
+      if (config.descLength !== 0) {
+        desc = $item.find('.body').text().trim().replace(/\[.*?\]/g, '').trim();
+        if (config.descLength > 0 && desc.length > config.descLength) {
+          desc = desc.slice(0, config.descLength) + '...';
+        }
+      }
 
       const normalizedUrl = url.startsWith('http') ? url : `https://www.mcmod.cn${url}`
 
@@ -401,7 +404,7 @@ export async function searchMod(keyword: string, config: MTConfig): Promise<Sear
         results.push({
           title,
           url: normalizedUrl,
-          desc: normalizedDesc,
+          desc,
           source: 'mcmod'
         })
       }
@@ -474,7 +477,7 @@ async function searchMods(
         offset: 0,
         index: 'relevance'
       },
-      timeout: config.Timeout
+      timeout: config.Timeout < 0 ? 0 : config.Timeout
     });
     return data.hits.map(hit => ({
       source: 'modrinth' as const,
@@ -495,7 +498,7 @@ async function searchMods(
         sortField: 2,
         sortOrder: 'desc'
       },
-      timeout: config.Timeout
+      timeout: config.Timeout < 0 ? 0 : config.Timeout
     });
     return data.data.map(r => ({
       source: 'curseforge' as const,
@@ -569,7 +572,7 @@ async function getModDetails(
   }
   // 格式化描述
   let description = details.description;
-  if (description.length > config.totalLength) {
+  if (config.totalLength > 0 && description.length > config.totalLength) {
     description = description.slice(0, config.totalLength) + '...';
   }
   // 构建输出
@@ -608,9 +611,10 @@ function registerModPlatformCommands(mcmod: any, config: MTConfig) {
         const results = await searchMods(keyword, 'modrinth', config, config.cfApi, type);
         if (!results.length) return '未找到相关项目';
         const formattedResults = results.map((r, i) => {
-          const description = r.description.length > config.descLength
-            ? r.description.slice(0, config.descLength) + '...'
-            : r.description;
+          let description = r.description;
+          if (config.descLength > 0 && description.length > config.descLength) {
+            description = description.slice(0, config.descLength) + '...';
+          }
           return `${i + 1}. ${[
             `${TypeMap.getLocalizedType(r.source, r.type)} | ${r.title}`,
             `分类: ${r.categories.join(', ')}`,
@@ -618,7 +622,7 @@ function registerModPlatformCommands(mcmod: any, config: MTConfig) {
           ].join('\n')}`;
         }).join('\n');
         await session.send(`Modrinth 搜索结果：\n${formattedResults}\n请回复序号查看详细内容`);
-        const response = await session.prompt(config.Timeout * 1000);
+        const response = await session.prompt(config.Timeout < 0 ? undefined : config.Timeout * 1000);
         if (!response) return '操作超时';
         const index = parseInt(response) - 1;
         if (isNaN(index) || index < 0 || index >= results.length) return '请输入有效的序号';
