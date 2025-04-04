@@ -3,25 +3,15 @@ import {} from 'koishi-plugin-puppeteer'
 import { registerWikiCommands } from './wiki'
 import { registerModCommands } from './mod'
 import { registerInfoCommands } from './tool'
-import { registerServerCommands } from './link'
-import { initWebSocket, cleanupWebSocket } from './linkservice'
+import { registerServerCommands, initWebSocket, cleanupWebSocket } from './link'
 
-/**
- * Minecraft 工具箱插件
- * @module mc-tools
- */
 export const name = 'mc-tools'
 export const inject = {optional: ['puppeteer']}
 export const usage = '注意：使用 Docker 部署产生的问题请前往插件主页查看解决方案'
 
-// 版本检查定时器
 let verCheckTimer: NodeJS.Timeout
 
 export type LangCode = keyof typeof MINECRAFT_LANGUAGES
-
-/**
- * 支持的Minecraft语言
- */
 const MINECRAFT_LANGUAGES = {
   'zh': '简体中文',
   'zh-hk': '繁體中文（香港）',
@@ -41,72 +31,6 @@ const MINECRAFT_LANGUAGES = {
 }
 
 /**
- * 类型映射相关配置
- */
-export const TypeMap = {
-  modrinthTypes: {
-    'mod': '模组',
-    'resourcepack': '资源包',
-    'datapack': '数据包',
-    'shader': '光影',
-    'modpack': '整合包',
-    'plugin': '插件'
-  },
-  facets: {
-    'mod': ['project_type:mod'],
-    'resourcepack': ['project_type:resourcepack'],
-    'datapack': ['project_type:datapack'],
-    'shader': ['project_type:shader'],
-    'modpack': ['project_type:modpack'],
-    'plugin': ['project_type:plugin']
-  } as const,
-  curseforgeTypes: {
-    6: 'mod',
-    12: 'resourcepack',
-    17: 'modpack',
-    4471: 'shader',
-    4546: 'datapack',
-    4944: 'world',
-    5141: 'addon',
-    5232: 'plugin',
-  },
-  curseforgeTypeNames: {
-    'mod': '模组/扩展',
-    'resourcepack': '资源包/材质包',
-    'modpack': '整合包',
-    'shader': '光影包',
-    'datapack': '数据包',
-    'world': '地图存档',
-    'addon': '附加内容',
-    'plugin': '服务器插件'
-  },
-  /**
-   * 验证类型是否有效
-   * @param source 源站点
-   * @param type 类型
-   * @returns 是否有效
-   */
-  isValidType: (source: 'modrinth' | 'curseforge', type?: string): boolean => {
-    if (!type) return true
-    const types = source === 'modrinth' ? Object.keys(TypeMap.modrinthTypes) : Object.values(TypeMap.curseforgeTypes)
-    return types.includes(type as any)
-  }
-}
-
-/**
- * 服务器配置接口
- */
-export interface ServerConfig {
-  name: string
-  connect: string
-  rconAddress: string
-  rconPassword: string
-  websocketMode: 'client' | 'server'
-  websocketAddress: string
-  websocketToken: string
-}
-
-/**
  * 插件完整配置接口
  */
 export interface MTConfig {
@@ -116,7 +40,6 @@ export interface MTConfig {
     maxHeight?: number
     waitUntil?: 'load' | 'domcontentloaded' | 'networkidle0' | 'networkidle2'
     captureTimeout?: number
-    useForward?: boolean
     Language: LangCode
     sectionLength: number
     linkCount: number
@@ -150,8 +73,6 @@ export interface MTConfig {
  */
 export const Config: Schema<MTConfig> = Schema.intersect([
   Schema.object({
-    useForward: Schema.boolean()
-      .description('启用合并转发').default(false),
     totalLength: Schema.number()
       .description('总预览字数').default(400),
     sectionLength: Schema.number()

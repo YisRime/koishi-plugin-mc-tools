@@ -4,11 +4,7 @@ import { MTConfig } from './index'
 
 const logger = new Logger('mcver')
 
-/**
- * 表示 Minecraft 服务器状态的接口
- * @interface ServerStatus
- */
-export interface ServerStatus {
+interface ServerStatus {
   online: boolean
   host: string
   port: number
@@ -44,8 +40,6 @@ export interface ServerStatus {
   edition?: 'MCPE' | 'MCEE' | null
   error?: string
 }
-
-// 皮肤相关接口定义
 interface TexturesData {
   textures: {
     SKIN?: {
@@ -59,7 +53,6 @@ interface TexturesData {
     }
   }
 }
-
 interface PlayerProfile {
   name: string
   uuid: string
@@ -71,6 +64,16 @@ interface PlayerProfile {
   cape?: {
     url: string
   }
+}
+interface ParsedTarget {
+  platform: string
+  type: 'private' | 'group'
+  id: string
+}
+
+const API_SOURCES = {
+  MOJANG: 'https://launchermeta.mojang.com/mc/game/version_manifest.json',
+  BMCLAPI: 'https://bmclapi2.bangbang93.com/mc/game/version_manifest.json',
 }
 
 /**
@@ -85,36 +88,33 @@ function parseServerAddress(
   defaultServer?: string
 ): { address: string, type: 'java' | 'bedrock' } {
   const address = input || defaultServer
-
   try {
     let host: string, port: number | undefined
-    // 处理IPv6地址格式 [xxxx:xxxx::xxxx]:port
+    // IPv6地址格式
     if (address.includes('[')) {
       const match = address.match(/^\[([\da-fA-F:]+)\](?::(\d+))?$/)
       if (!match) throw new Error('无效的IPv6地址格式')
-
       host = match[1]
       port = match[2] ? parseInt(match[2], 10) : undefined
     }
-    // 处理带端口的地址 host:port
+    // 带端口地址
     else if (address.includes(':')) {
-      const parts = address.split(':')
-      host = parts[0]
-      port = parseInt(parts[1], 10)
+      const [hostPart, portPart] = address.split(':')
+      host = hostPart
+      port = parseInt(portPart, 10)
     }
-    // 处理不带端口的地址
+    // 不带端口地址
     else {
       host = address
     }
     // 安全检查
-    if (host.toLowerCase() === 'localhost' || host === '0.0.0.0') {
+    if (['localhost', '0.0.0.0'].includes(host.toLowerCase())) {
       throw new Error('不允许连接到本地服务器')
     }
     // IPv4地址检查
     if (/^(\d{1,3}\.){3}\d{1,3}$/.test(host)) {
       const parts = host.split('.').map(Number)
-      // 验证格式和检查私有地址
-      if (!parts.every(part => Number.isInteger(part) && part >= 0 && part <= 255)) {
+      if (!parts.every(p => p >= 0 && p <= 255)) {
         throw new Error('无效的IPv4地址格式')
       }
       if (parts[0] === 127 || parts[0] === 10 ||
@@ -128,14 +128,6 @@ function parseServerAddress(
     // IPv6地址检查
     else if (/^[0-9a-fA-F:]+$/.test(host)) {
       const lowerIP = host.toLowerCase()
-      const segments = host.split(':')
-      const doubleColonIndex = host.indexOf('::')
-      // 检查格式和私有地址
-      if ((doubleColonIndex !== -1 && host.indexOf('::', doubleColonIndex + 1) !== -1) ||
-          (doubleColonIndex === -1 && segments.length !== 8) ||
-          !segments.every(segment => segment === '' || /^[0-9a-fA-F]{1,4}$/.test(segment))) {
-        throw new Error('无效的IPv6地址格式')
-      }
       if (lowerIP === '::1' || lowerIP === '0:0:0:0:0:0:0:1' ||
           /^fe80:/i.test(lowerIP) || /^f[cd][0-9a-f]{2}:/i.test(lowerIP) ||
           lowerIP.startsWith('ff') || lowerIP === '::') {
@@ -146,7 +138,7 @@ function parseServerAddress(
     if (port !== undefined && (isNaN(port) || port < 1 || port > 65535)) {
       throw new Error('端口号必须在1-65535之间')
     }
-    // 根据端口判断服务器类型
+    // 判断服务器类型
     const type = (port === 19132 || address.endsWith(':19132')) ? 'bedrock' : 'java'
     return { address, type }
   }
@@ -162,7 +154,7 @@ function parseServerAddress(
  * @param {MTConfig} [config] - 配置选项
  * @returns {Promise<ServerStatus>} 服务器状态信息
  */
-export async function checkServerStatus(
+async function checkServerStatus(
   server?: string,
   forceType?: 'java' | 'bedrock',
   config?: MTConfig
@@ -170,37 +162,31 @@ export async function checkServerStatus(
   try {
     const parsed = parseServerAddress(server, config?.default)
     const type = forceType || parsed.type
-
     const apis = type === 'java' ? config?.javaApis : config?.bedrockApis
     if (!apis?.length) {
       throw new Error(`缺少 ${type} 版本查询 API 配置`)
     }
-
     const errors: string[] = []
     for (const apiUrl of apis) {
       const actualUrl = apiUrl.replace('${address}', parsed.address)
       try {
         const response = await axios.get(actualUrl, {
-          headers: {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'},
+          headers: {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'},
           timeout: 10000,
           validateStatus: null
         })
-
         if (!response.data || response.status !== 200) {
           errors.push(`${actualUrl} 请求失败: ${response.data?.error || response.status}`)
           continue
         }
-
         if (actualUrl.includes('mcsrvstat.us')) {
           return await transformMcsrvstatResponse(response.data)
         }
-
         const data = response.data
         if (!data.online) {
           errors.push(`${actualUrl} 返回服务器离线`)
           continue
         }
-
         return {
           online: true,
           host: data.host,
@@ -231,7 +217,6 @@ export async function checkServerStatus(
         errors.push(`${actualUrl} 连接错误: ${error.message}`)
       }
     }
-
     return {
       online: false,
       host: parsed.address,
@@ -250,6 +235,9 @@ export async function checkServerStatus(
   }
 }
 
+/**
+ * 转换 mcsrvstat.us API 响应格式
+ */
 async function transformMcsrvstatResponse(data: any): Promise<ServerStatus> {
   if (!data.online) {
     return {
@@ -259,7 +247,6 @@ async function transformMcsrvstatResponse(data: any): Promise<ServerStatus> {
       players: { online: null, max: null }
     }
   }
-
   return {
     online: true,
     host: data.hostname || data.ip,
@@ -287,125 +274,89 @@ async function transformMcsrvstatResponse(data: any): Promise<ServerStatus> {
 }
 
 /**
- * 格式化服务器状态信息为可读文本
- * @param {ServerStatus} status - 服务器状态对象
- * @param {MTConfig['info']} config - 信息显示配置
- * @returns {string} 格式化后的状态信息
+ * 格式化服务器状态信息
  */
-export function formatServerStatus(status: ServerStatus, config: MTConfig) {
+function formatServerStatus(status: ServerStatus, config: MTConfig) {
   if (!status.online) {
     return status.error || '服务器离线 - 连接失败'
   }
-
   const lines: string[] = []
-  // 添加 IP 信息
-  if (config.showIP) {
-    status.ip_address && lines.push(`IP: ${status.ip_address}`)
-    status.srv_record && lines.push(`SRV: ${status.srv_record.host}:${status.srv_record.port}`)
-  }
-  // 添加图标和 MOTD
+  // IP 信息
+  config.showIP && status.ip_address && lines.push(`IP: ${status.ip_address}`)
+  config.showIP && status.srv_record && lines.push(`SRV: ${status.srv_record.host}:${status.srv_record.port}`)
+  // 图标和 MOTD
   status.icon?.startsWith('data:image/png;base64,') && config.showIcon && lines.push(h.image(status.icon).toString())
   status.motd && lines.push(status.motd)
-  // 添加基本状态信息
-  const statusParts = [
+  // 基本状态
+  lines.push([
     status.version?.name_clean || '未知',
     `${status.players?.online ?? 0}/${status.players?.max ?? 0}`,
-  ]
-  status.retrieved_at && statusParts.push(`${Date.now() - status.retrieved_at}ms`)
-  lines.push(statusParts.join(' | '))
-  // 添加服务器信息
+    status.retrieved_at && `${Date.now() - status.retrieved_at}ms`
+  ].filter(Boolean).join(' | '))
+  // 服务器信息
   const serverInfo = []
   status.software && serverInfo.push(status.software)
-
   if (status.edition) {
     const editionMap = { MCPE: '基岩版', MCEE: '教育版' }
     serverInfo.push(editionMap[status.edition] || status.edition)
   }
-
   status.gamemode && serverInfo.push(status.gamemode)
   status.eula_blocked && serverInfo.push('已被封禁')
   status.server_id && serverInfo.push(`ID: ${status.server_id}`)
   serverInfo.length > 0 && lines.push(serverInfo.join(' | '))
-  // 添加玩家列表
-  const hasPlayers = status.players?.list?.length && config.maxNumber > 0
-  if (hasPlayers) {
+  // 玩家列表
+  if (status.players?.list?.length && config.maxNumber > 0) {
     const displayCount = Math.min(config.maxNumber, status.players.list.length)
     lines.push(`当前在线(${status.players.online}):`)
-    const playerList = status.players.list.slice(0, displayCount).join(', ')
-    lines.push(playerList + (status.players.list.length > displayCount ? ' ...' : ''))
+    lines.push(status.players.list.slice(0, displayCount).join(', ') +
+               (status.players.list.length > displayCount ? ' ...' : ''))
   }
-  // 添加插件列表
-  const hasPlugins = status.plugins?.length && config.maxNumber > 0
-  if (hasPlugins) {
+  // 插件列表
+  if (status.plugins?.length && config.maxNumber > 0) {
     const displayCount = Math.min(config.maxNumber, status.plugins.length)
     lines.push(`插件(${status.plugins.length}):`)
-    const pluginList = status.plugins
+    lines.push(status.plugins
       .slice(0, displayCount)
       .map(p => p.version ? `${p.name}-${p.version}` : p.name)
-      .join(', ')
-    lines.push(pluginList + (status.plugins.length > displayCount ? ' ...' : ''))
+      .join(', ') + (status.plugins.length > displayCount ? ' ...' : ''))
   }
-  // 添加模组列表
-  const hasMods = status.mods?.length && config.maxNumber > 0
-  if (hasMods) {
+  // 模组列表
+  if (status.mods?.length && config.maxNumber > 0) {
     const displayCount = Math.min(config.maxNumber, status.mods.length)
     lines.push(`模组(${status.mods.length}):`)
-    const modList = status.mods
+    lines.push(status.mods
       .slice(0, displayCount)
       .map(mod => mod.version ? `${mod.name}-${mod.version}` : mod.name)
-      .join(', ')
-    lines.push(modList + (status.mods.length > displayCount ? ' ...' : ''))
+      .join(', ') + (status.mods.length > displayCount ? ' ...' : ''))
   }
   return lines.join('\n')
 }
 
-// 从 ver.ts 移动来的代码
-const API_SOURCES = {
-  MOJANG: 'https://launchermeta.mojang.com/mc/game/version_manifest.json',
-  BMCLAPI: 'https://bmclapi2.bangbang93.com/mc/game/version_manifest.json',
-}
-
 /**
  * 获取 Minecraft 版本信息
- * @param {number} timeout - 请求超时时间(毫秒)
- * @returns {Promise<{latest: any, release: any, versions: any[]}>}
- * @throws {Error} 当所有 API 源都请求失败时抛出错误
  */
 async function fetchVersions(timeout = 10000) {
-  const apiSources = Object.values(API_SOURCES)
-  let lastError = null
-
-  for (const apiUrl of apiSources) {
+  for (const apiUrl of Object.values(API_SOURCES)) {
     try {
       const { data } = await axios.get(apiUrl, { timeout })
-
       const latest = data.versions[0]
       const release = data.versions.find(v => v.type === 'release')
-
-      if (!latest || !release) {
-        throw new Error('版本数据解析失败')
-      }
-
+      if (!latest || !release) throw new Error('版本数据解析失败')
       return { latest, release, versions: data.versions }
     } catch (error) {
-      lastError = error
       logger.warn(`API 源 ${apiUrl} 请求失败:`, error.message || String(error))
-      continue
     }
   }
-
-  throw new Error(`所有 API 源均请求失败: ${lastError?.message || String(lastError)}`)
+  throw new Error('所有 API 源均请求失败')
 }
 
 /**
  * 获取格式化的 Minecraft 版本信息
- * @returns {Promise<{success: boolean, data?: string, error?: string}>}
  */
 async function getVersionInfo() {
   try {
     const { latest, release } = await fetchVersions()
     const formatDate = (date: string) => new Date(date).toLocaleDateString('zh-CN')
-
     return {
       success: true,
       data: `Minecraft 最新版本：\n正式版: ${release.id}(${formatDate(release.releaseTime)})\n快照版: ${latest.id}(${formatDate(latest.releaseTime)})`
@@ -419,31 +370,17 @@ async function getVersionInfo() {
 }
 
 /**
- * 解析通知目标配置
- * @param target 格式: "platform:type:id"
+ * 解析通知目标
  */
-interface ParsedTarget {
-  platform: string
-  type: 'private' | 'group'
-  id: string
-}
-
 function parseTarget(target: string): ParsedTarget | null {
   const parts = target.split(':')
   if (parts.length !== 3) return null
-
   const [platform, type, id] = parts
-  if (!['private', 'group'].includes(type)) return null
-
-  return { platform, type: type as 'private' | 'group', id }
+  return ['private', 'group'].includes(type) ? { platform, type: type as 'private' | 'group', id } : null
 }
 
 /**
- * 向目标发送版本更新通知
- * @param {Context} ctx - Koishi 上下文
- * @param {string[]} targets - 目标配置列表 (格式: platform:type:id)
- * @param {string} updateMessage - 更新消息内容
- * @private
+ * 发送版本更新通知
  */
 async function notifyVersionUpdate(ctx: any, targets: string[], updateMessage: string) {
   for (const target of targets) {
@@ -452,10 +389,8 @@ async function notifyVersionUpdate(ctx: any, targets: string[], updateMessage: s
       logger.warn(`无效的通知目标配置: ${target}`)
       continue
     }
-
     for (const bot of ctx.bots) {
       if (bot.platform !== parsed.platform) continue
-
       try {
         if (parsed.type === 'private') {
           await bot.sendPrivateMessage(parsed.id, updateMessage)
@@ -470,37 +405,30 @@ async function notifyVersionUpdate(ctx: any, targets: string[], updateMessage: s
 }
 
 /**
- * 检查 Minecraft 版本更新并发送通知
- * @param {{snapshot: string, release: string}} versions - 当前版本信息
- * @param {any} ctx - Koishi 上下文
- * @param {MTConfig} config - 插件配置
- * @returns {Promise<void>}
+ * 检查 Minecraft 版本更新
  */
 async function checkUpdate(versions: { snapshot: string, release: string }, ctx: any, config: MTConfig) {
   try {
     const { latest, release } = await fetchVersions()
-    const updates = [
-      { type: 'snapshot', version: latest, enabled: config.snapshot },
-      { type: 'release', version: release, enabled: config.release }
-    ]
-
-    for (const { type, version, enabled } of updates) {
-      if (versions[type] && version.id !== versions[type] && enabled) {
-        const msg = `Minecraft ${type === 'release' ? '正式版' : '快照版'}更新：${version.id}\n发布时间: ${new Date(version.releaseTime).toLocaleString('zh-CN')}`
-        await notifyVersionUpdate(ctx, config.guilds, msg)
-      }
-      versions[type] = version.id
+    // 检查快照版更新
+    if (config.snapshot && versions.snapshot && latest.id !== versions.snapshot) {
+      const msg = `Minecraft 快照版更新：${latest.id}\n发布时间: ${new Date(latest.releaseTime).toLocaleString('zh-CN')}`
+      await notifyVersionUpdate(ctx, config.guilds, msg)
     }
+    versions.snapshot = latest.id
+    // 检查正式版更新
+    if (config.release && versions.release && release.id !== versions.release) {
+      const msg = `Minecraft 正式版更新：${release.id}\n发布时间: ${new Date(release.releaseTime).toLocaleString('zh-CN')}`
+      await notifyVersionUpdate(ctx, config.guilds, msg)
+    }
+    versions.release = release.id
   } catch (error) {
     logger.warn('版本检查失败：', error)
   }
 }
 
 /**
- * 获取完整的玩家信息
- * @param {string} username - 玩家用户名
- * @returns {Promise<PlayerProfile>} 完整的玩家信息
- * @throws {Error} 当无法获取玩家信息时抛出错误
+ * 获取玩家信息
  */
 async function getPlayerProfile(username: string): Promise<PlayerProfile> {
   try {
@@ -515,13 +443,7 @@ async function getPlayerProfile(username: string): Promise<PlayerProfile> {
       texturesData = JSON.parse(Buffer.from(profileData.properties[0].value, 'base64').toString());
     }
     // 格式化UUID
-    const uuidDashed = [
-      basicData.id.slice(0, 8),
-      basicData.id.slice(8, 12),
-      basicData.id.slice(12, 16),
-      basicData.id.slice(16, 20),
-      basicData.id.slice(20)
-    ].join('-');
+    const uuidDashed = basicData.id.replace(/(\w{8})(\w{4})(\w{4})(\w{4})(\w{12})/, '$1-$2-$3-$4-$5');
     // 构建玩家档案
     const profile: PlayerProfile = {
       name: basicData.name,
@@ -536,49 +458,34 @@ async function getPlayerProfile(username: string): Promise<PlayerProfile> {
           model: texturesData.textures.SKIN.metadata?.model || 'classic'
         };
       }
-
       if (texturesData.textures.CAPE) {
         profile.cape = {
           url: texturesData.textures.CAPE.url
         };
       }
     }
-
     return profile;
-
   } catch (error) {
     throw new Error(`玩家信息获取失败: ${error.response?.data?.error || error.message}`);
   }
 }
 
 /**
- * 渲染玩家皮肤和披风，生成两个不同角度的视图
- * @param {Context} ctx - Koishi 上下文对象，用于获取 Puppeteer 实例
- * @param {string} skinUrl - 玩家皮肤的 URL 地址
- * @param {string} [capeUrl] - 玩家披风的 URL 地址（可选）
- * @param {boolean} [renderElytra=false] - 是否渲染鞘翅（需要披风）
- * @returns {Promise<string>} 返回渲染后的图片 Base64 编码字符串
+ * 渲染玩家皮肤和披风
  */
 async function renderPlayerSkin(ctx: Context, skinUrl: string, capeUrl?: string, renderElytra: boolean = false): Promise<string> {
-  // 确定渲染尺寸
   const viewportWidth = renderElytra ? 600 : (capeUrl ? 400 : 360);
   const viewportHeight = 400;
   const viewWidth = renderElytra ? 300 : (capeUrl ? 200 : 180);
-
   const page = await ctx.puppeteer.page()
   await page.setViewport({ width: viewportWidth, height: viewportHeight })
-
   const html = `
     <html>
       <head>
         <script src="https://unpkg.com/skinview3d@3.1.0/bundles/skinview3d.bundle.js"></script>
         <style>
           body { margin: 0; background: transparent; display: flex; justify-content: center; align-items: center; }
-          .container {
-            display: flex;
-            width: ${viewportWidth}px;
-            height: ${viewportHeight}px;
-          }
+          .container { display: flex; width: ${viewportWidth}px; height: ${viewportHeight}px; }
           .view { width: ${viewWidth}px; height: ${viewportHeight}px; }
         </style>
       </head>
@@ -588,7 +495,7 @@ async function renderPlayerSkin(ctx: Context, skinUrl: string, capeUrl?: string,
           <canvas id="view2" class="view"></canvas>
         </div>
         <script>
-          const createView = (id, rotationAngle) => {
+          const createView = (id, angle) => {
             const viewer = new skinview3d.SkinViewer({
               canvas: document.getElementById(id),
               width: ${viewWidth},
@@ -597,20 +504,14 @@ async function renderPlayerSkin(ctx: Context, skinUrl: string, capeUrl?: string,
               fov: 30,
               zoom: 0.95
             });
-            // 设置透明背景
             viewer.renderer.setClearColor(0x000000, 0);
-            viewer.playerObject.rotation.y = rotationAngle;
-            // 完全禁用动画
+            viewer.playerObject.rotation.y = angle;
             viewer.animation = null;
-
             return viewer;
           };
-
           (async () => {
-            // 创建左右两个视图，分别旋转 -36° 和 144° (-36° + 180°)
             const view1 = createView('view1', -Math.PI / 5);
             const view2 = createView('view2', Math.PI * 4 / 5);
-            // 为每个视图加载皮肤和披风（如果有）
             for (const view of [view1, view2]) {
               await view.loadSkin("${skinUrl}");
               ${capeUrl ? `
@@ -624,39 +525,30 @@ async function renderPlayerSkin(ctx: Context, skinUrl: string, capeUrl?: string,
       </body>
     </html>
   `
-
   await page.setContent(html)
   await page.waitForFunction(() => {
-    const v1 = document.getElementById('view1')
-    const v2 = document.getElementById('view2')
+    const v1 = document.getElementById('view1');
+    const v2 = document.getElementById('view2');
     return v1 && v2 &&
            (v1 as HTMLCanvasElement).toDataURL() !== 'data:,' &&
-           (v2 as HTMLCanvasElement).toDataURL() !== 'data:,'
+           (v2 as HTMLCanvasElement).toDataURL() !== 'data:,';
   }, { timeout: 5000 })
-
   await new Promise(resolve => setTimeout(resolve, 100))
-
-  // 截取渲染结果
   const element = await page.$('.container')
   const screenshot = await element.screenshot({
     encoding: 'base64',
     omitBackground: true
-  }) as string
-
+  })
   await page.close()
   return screenshot
 }
 
 /**
- * 渲染玩家皮肤为大头娃娃风格（头大身小）
- * @param {Context} ctx - Koishi 上下文对象，用于获取 Puppeteer 实例
- * @param {string} skinUrl - 玩家皮肤的 URL 地址
- * @returns {Promise<string>} 返回渲染后的图片 Base64 编码字符串
+ * 渲染玩家大头娃娃
  */
 async function renderPlayerHead(ctx: Context, skinUrl: string): Promise<string> {
   const page = await ctx.puppeteer.page()
   await page.setViewport({ width: 400, height: 400 })
-
   const html = `
     <html>
       <head>
@@ -667,74 +559,52 @@ async function renderPlayerHead(ctx: Context, skinUrl: string): Promise<string> 
         </style>
       </head>
       <body>
-        <div class="container">
-          <canvas id="view" width="400" height="400"></canvas>
-        </div>
+        <div class="container"><canvas id="view" width="400" height="400"></canvas></div>
         <script>
           (async () => {
             const viewer = new skinview3d.SkinViewer({
               canvas: document.getElementById('view'),
-              width: 400,
-              height: 400,
+              width: 400, height: 400,
               preserveDrawingBuffer: true,
-              fov: 10,
-              zoom: 1.0
+              fov: 10, zoom: 1.0
             });
-            // 设置透明背景
             viewer.renderer.setClearColor(0x000000, 0);
-
             await viewer.loadSkin("${skinUrl}");
-
-            // 设置正面角度，稍微低头
+            // 设置角度和缩放
             viewer.playerObject.rotation.x = 0.05;
-            // 只放大头部，其他部位保持原比例
             viewer.playerObject.skin.head.scale.set(3.0, 3.0, 3.0);
-            // 头部位置调整，补偿放大导致的偏移
             viewer.playerObject.skin.head.position.y = 0.5 * (3.0 - 1.0);
-            // 整体模型缩放
+            // 整体缩放和位置调整
             const globalScale = 0.6;
             viewer.playerObject.scale.set(globalScale, globalScale, globalScale);
-            // 整体位置向下调整，使头部居中
             viewer.playerObject.position.y = -5;
-            // 禁用动画，保持静态
             viewer.animation = null;
             viewer.render();
           })();
-      </script>
+        </script>
       </body>
     </html>
   `
-
   await page.setContent(html)
   await page.waitForFunction(() => {
     const canvas = document.getElementById('view');
     return canvas && (canvas as HTMLCanvasElement).toDataURL() !== 'data:,';
   }, { timeout: 5000 })
-
   await new Promise(resolve => setTimeout(resolve, 100))
-
-  // 截取渲染结果
   const element = await page.$('.container')
   const screenshot = await element.screenshot({
     encoding: 'base64',
     omitBackground: true
-  }) as string
-
+  })
   await page.close()
   return screenshot
 }
 
 /**
- * 注册 Minecraft 服务器信息查询和皮肤查询命令
- * @param {Context} ctx - Koishi 上下文
- * @param {Command} parent - 父命令
- * @param {MTConfig} config - 插件配置
- * @returns {NodeJS.Timeout|undefined} - 定时器句柄（如启用版本检查）
+ * 注册命令
  */
 export function registerInfoCommands(ctx: Context, parent: any, config: MTConfig): NodeJS.Timeout | undefined {
-  // 创建一个对象保存版本信息
   const minecraftVersions = { snapshot: '', release: '' }
-
   const mcinfo = parent.subcommand('.info [server]', '查询 Minecraft 服务器信息')
     .usage(`mc.info [地址[:端口]] - 查询 Java 版服务器\nmc.info.be [地址[:端口]] - 查询 Bedrock 版服务器`)
     .action(async ({ }, server) => {
@@ -745,9 +615,7 @@ export function registerInfoCommands(ctx: Context, parent: any, config: MTConfig
         return error.message
       }
     })
-
   mcinfo.subcommand('.be [server]', '查询 Bedrock 版服务器')
-    .usage('mc.info.be [地址[:端口]] - 查询 Bedrock 版服务器状态')
     .action(async ({ }, server) => {
       try {
         const status = await checkServerStatus(server || config.default, 'bedrock', config)
@@ -756,39 +624,28 @@ export function registerInfoCommands(ctx: Context, parent: any, config: MTConfig
         return error.message
       }
     })
-
-  // 添加版本查询命令
   parent.subcommand('.ver', '查询 Minecraft 版本信息')
-    .usage('mc.ver - 获取 Minecraft 最新版本信息')
     .action(async () => {
       const result = await getVersionInfo()
       return result.success ? result.data : result.error
     })
-
-  // 添加皮肤查询命令
   parent.subcommand('.skin <username>', '查询 Minecraft 玩家信息')
-    .usage('mc.skin <用户名> [-e/-c] - 获取玩家信息并生成皮肤预览，可选显示鞘翅或披风')
     .option('elytra', '-e 显示鞘翅')
     .option('cape', '-c 显示披风')
     .action(async ({ options }, username) => {
       if (!username) return '请输入玩家用户名'
-
       try {
         const profile = await getPlayerProfile(username);
-        const parts = [
-          `${profile.name}[${profile.uuidDashed}]`
-        ];
-
+        const parts = [`${profile.name}[${profile.uuidDashed}]`];
         if (profile.skin) {
           const renderCape = Boolean(options.cape && profile.cape?.url);
           const renderElytra = Boolean(options.elytra && profile.cape?.url);
           const capeUrl = (renderCape || renderElytra) ? profile.cape?.url : undefined;
-
           const skinImage = await renderPlayerSkin(ctx, profile.skin.url, capeUrl, renderElytra);
           parts.push(h.image(`data:image/png;base64,${skinImage}`).toString());
-
           if (config.showSkull) {
-            parts.push(`使用 /give 获取 ${profile.name} ${profile.skin ? `(${profile.skin.model === 'slim' ? '纤细' : '经典'}) ` : ''}的头：(≤1.12 & ≥1.13)`);
+            const modelType = profile.skin.model === 'slim' ? '纤细' : '经典';
+            parts.push(`使用 /give 获取 ${profile.name} (${modelType}) 的头：(≤1.12 & ≥1.13)`);
             parts.push(`minecraft:skull 1 3 {SkullOwner:"${profile.name}"}`);
             parts.push(`minecraft:player_head{SkullOwner:"${profile.name}"}`);
           }
@@ -801,30 +658,21 @@ export function registerInfoCommands(ctx: Context, parent: any, config: MTConfig
       }
     })
     .subcommand('.head <username>', '获取 Minecraft 玩家大头')
-    .usage('mc.skin.head <用户名> - 获取玩家大头娃娃风格头像')
     .action(async ({ }, username) => {
       if (!username) return '请输入玩家用户名'
-
       try {
         const profile = await getPlayerProfile(username);
-        const parts = [];
-
-        if (profile.skin) {
-          const headImage = await renderPlayerHead(ctx, profile.skin.url);
-          parts.push(h.image(`data:image/png;base64,${headImage}`).toString());
-        } else {
-          parts.push('该玩家未设置皮肤');
-        }
-        return parts.join('\n');
+        if (!profile.skin) return '该玩家未设置皮肤';
+        const headImage = await renderPlayerHead(ctx, profile.skin.url);
+        return h.image(`data:image/png;base64,${headImage}`).toString();
       } catch (error) {
         return error.message
       }
     });
 
-  // 如果启用了版本更新检查，启动定时任务
+  // 版本更新检查
   if (config.verCheck && config.guilds.length) {
     checkUpdate(minecraftVersions, ctx, config)
-    const timer = setInterval(() => checkUpdate(minecraftVersions, ctx, config), config.interval * 60 * 1000)
-    return timer
+    return setInterval(() => checkUpdate(minecraftVersions, ctx, config), config.interval * 60 * 1000)
   }
 }
