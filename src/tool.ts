@@ -67,7 +67,7 @@ interface PlayerProfile {
 }
 interface ParsedTarget {
   platform: string
-  type: 'private' | 'group'
+  type: 'private' | 'guild'
   id: string
 }
 
@@ -377,9 +377,15 @@ async function getVersionInfo() {
  */
 function parseTarget(target: string): ParsedTarget | null {
   const parts = target.split(':')
-  if (parts.length !== 3) return null
-  const [platform, type, id] = parts
-  return ['private', 'group'].includes(type) ? { platform, type: type as 'private' | 'group', id } : null
+  if (parts.length === 2) {
+    const [platform, id] = parts
+    return { platform, type: 'guild', id }
+  } else if (parts.length === 3) {
+    const [platform, type, id] = parts
+    if (!['private', 'guild'].includes(type)) return null
+    return { platform, type: type as 'private' | 'guild', id }
+  }
+  return null
 }
 
 /**
@@ -389,20 +395,17 @@ async function notifyVersionUpdate(ctx: any, targets: string[], updateMessage: s
   for (const target of targets) {
     const parsed = parseTarget(target)
     if (!parsed) {
-      logger.warn(`无效的通知目标配置: ${target}`)
+      logger.warn(`通知目标无效: ${target}`)
       continue
     }
-    for (const bot of ctx.bots) {
-      if (bot.platform !== parsed.platform) continue
-      try {
-        if (parsed.type === 'private') {
-          await bot.sendPrivateMessage(parsed.id, updateMessage)
-        } else {
-          await bot.sendMessage(parsed.id, updateMessage)
-        }
-      } catch (e) {
-        logger.warn(`通知发送失败|${parsed.type} ${parsed.id}:`, e)
+    try {
+      if (parsed.type === 'private') {
+        await ctx.bot.sendPrivateMessage(parsed.id, updateMessage)
+      } else {
+        await ctx.bot.sendMessage(parsed.id, updateMessage)
       }
+    } catch (e) {
+      logger.warn(`通知发送失败|${parsed.platform}:${parsed.type}:${parsed.id}: `, e)
     }
   }
 }
