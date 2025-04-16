@@ -391,7 +391,7 @@ function parseTarget(target: string): ParsedTarget | null {
 /**
  * 发送版本更新通知
  */
-async function notifyVersionUpdate(ctx: any, targets: string[], updateMessage: string) {
+async function notifyVersionUpdate(ctx: Context, targets: string[], updateMessage: string) {
   for (const target of targets) {
     const parsed = parseTarget(target)
     if (!parsed) {
@@ -399,10 +399,12 @@ async function notifyVersionUpdate(ctx: any, targets: string[], updateMessage: s
       continue
     }
     try {
+      const bot = ctx.bots[`${parsed.platform}:${parsed.id}`]
+      if (!bot) continue
       if (parsed.type === 'private') {
-        await ctx.bot.sendPrivateMessage(parsed.id, updateMessage)
+        await bot.sendPrivateMessage(parsed.id, updateMessage)
       } else {
-        await ctx.bot.sendMessage(parsed.id, updateMessage)
+        await bot.sendMessage(parsed.id, updateMessage)
       }
     } catch (e) {
       logger.warn(`通知发送失败|${parsed.platform}:${parsed.type}:${parsed.id}: `, e)
