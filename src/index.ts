@@ -1,9 +1,11 @@
 import { Context, Schema } from 'koishi'
 import {} from 'koishi-plugin-puppeteer'
-import { registerWikiCommands } from './wiki'
-import { registerModCommands } from './mod'
-import { registerInfoCommands } from './tool'
-import { registerServerCommands, initWebSocket, cleanupWebSocket } from './link'
+import { registerWiki } from './wiki'
+import { registerMod } from './mod'
+import { registerSkin } from './skin'
+import { registerInfo } from './info'
+import { registerVersion } from './ver'
+import { registerServer, initWebSocket, cleanupWebSocket } from './server'
 
 export const name = 'mc-tools'
 export const inject = {optional: ['puppeteer']}
@@ -22,7 +24,7 @@ export const usage = `
 </div>
 `
 
-let verCheckTimer: NodeJS.Timeout
+let versionCheckInterval: NodeJS.Timeout
 
 export type LangCode = keyof typeof MINECRAFT_LANGUAGES
 const MINECRAFT_LANGUAGES = {
@@ -44,9 +46,10 @@ const MINECRAFT_LANGUAGES = {
 }
 
 /**
- * 插件完整配置接口
+ * 插件配置接口
  */
 export interface MTConfig {
+    // 通用查询配置
     Timeout: number
     totalLength: number
     descLength: number
@@ -58,18 +61,26 @@ export interface MTConfig {
     linkCount: number
     cfApi: string
     showImages: 'always' | 'noqq' | 'never'
+
+    // 服务器信息配置
     default: string
     showIP: boolean
     showIcon: boolean
     maxNumber: number
     javaApis: string[]
     bedrockApis: string[]
+
+    // 玩家相关配置
     showSkull: boolean
+
+    // 版本检查配置
     verCheck: boolean
     guilds: string[]
     interval: number
     release: boolean
     snapshot: boolean
+
+    // 服务器连接配置
     enableRcon: boolean
     rconAddress: string
     rconPassword: string
@@ -170,16 +181,22 @@ export const Config: Schema<MTConfig> = Schema.intersect([
 export function apply(ctx: Context, config: MTConfig) {
   // 用户语言设置
   const userLanguageSettings = new Map<string, LangCode>()
-  // 创建 mc 主命令
-  const mcCommand = ctx.command('mc', 'Minecraft 工具')
+
+  // 创建主命令
+  const mc = ctx.command('mc', 'Minecraft 工具')
+
   // 注册各功能子命令
-  registerWikiCommands(ctx, mcCommand, config, userLanguageSettings)
-  registerModCommands(ctx, mcCommand, config)
-  // 注册服务器信息和版本查询命令
-  verCheckTimer = registerInfoCommands(ctx, mcCommand, config)
+  registerWiki(ctx, mc, config, userLanguageSettings)
+  registerMod(ctx, mc, config)
+  registerInfo(ctx, mc, config)
+  registerSkin(ctx, mc, config)
+
+  // 注册版本查询命令并设置自动检查
+  versionCheckInterval = registerVersion(ctx, mc, config)
+
   // 注册服务器管理命令
   if (config.enableRcon || config.enableWebSocket) {
-    registerServerCommands(mcCommand, config)
+    registerServer(mc, config)
     if (config.enableWebSocket) {
       initWebSocket(ctx, config)
     }
@@ -190,9 +207,9 @@ export function apply(ctx: Context, config: MTConfig) {
  * 插件卸载函数
  */
 export function dispose() {
-  if (verCheckTimer) {
-    clearInterval(verCheckTimer)
-    verCheckTimer = null
+  if (versionCheckInterval) {
+    clearInterval(versionCheckInterval)
+    versionCheckInterval = null
   }
   cleanupWebSocket()
 }

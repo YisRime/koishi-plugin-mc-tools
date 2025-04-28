@@ -14,7 +14,7 @@ let reconnectCount = 0
  * @param config - MC-Tools 配置对象
  * @returns void
  */
-export function registerServerCommands(parent: any, config: MTConfig) {
+export function registerServer(parent: any, config: MTConfig) {
   const mcserver = parent.subcommand('.server', 'Minecraft 服务器管理')
     .usage('mc.server - Minecraft 服务器相关命令')
     .before(({ session }) => {

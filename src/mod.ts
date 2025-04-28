@@ -2,7 +2,8 @@ import { Context, h } from 'koishi'
 import axios from 'axios'
 import * as cheerio from 'cheerio'
 import { MTConfig } from './index'
-import { SearchResult, capture } from './wiki'
+import { SearchResult } from './wiki'
+import { capture } from './shot'
 
 interface ProcessResult {
   sections: string[];
@@ -590,7 +591,7 @@ async function getModDetails(
 /**
  * 注册命令处理函数
  */
-function registerModPlatformCommands(mcmod: any, config: MTConfig) {
+function registerModPlatform(mcmod: any, config: MTConfig) {
   mcmod.subcommand('.mr <keyword> [type]', '查询 Modrinth')
     .usage('mc.mod.mr <关键词> [类型] - 查询 Modrinth 内容\n可用类型：mod(模组), resourcepack(资源包), datapack(数据包), shader(光影), modpack(整合包), plugin(插件)')
     .action(async ({}, keyword, type) => {
@@ -678,7 +679,7 @@ function registerModPlatformCommands(mcmod: any, config: MTConfig) {
  * @param {Command} parent - 父命令
  * @param {MTConfig} config - 插件配置
  */
-export function registerModCommands(ctx: Context, parent: any, config: MTConfig) {
+export function registerMod(ctx: Context, parent: any, config: MTConfig) {
   const mcmod = parent.subcommand('.mod <keyword:text>', '查询 Minecraft 相关资源')
     .usage('mc.mod <关键词> - 查询 MCMod\nmc.mod.find <关键词> - 搜索 MCMod\nmc.mod.shot <关键词> - 截图 MCMod 页面\nmc.mod.(find)mr <关键词> [类型] - 搜索 Modrinth\nmc.mod.(find)cf <关键词> [类型] - 搜索 CurseForge')
     .action(async ({ session }, keyword) => {
@@ -728,5 +729,5 @@ export function registerModCommands(ctx: Context, parent: any, config: MTConfig)
         return error.message
       }
     })
-  registerModPlatformCommands(mcmod, config)
+  registerModPlatform(mcmod, config)
 }
