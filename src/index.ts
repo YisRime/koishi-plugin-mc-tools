@@ -1,11 +1,14 @@
 import { Context, Schema } from 'koishi'
-import {} from 'koishi-plugin-puppeteer'
-import { registerWiki } from './wiki'
-import { registerMod } from './mod'
-import { registerSkin } from './skin'
-import { registerInfo } from './info'
-import { registerVersion } from './ver'
-import { registerServer, initWebSocket, cleanupWebSocket } from './server'
+import { registerPlayer } from './tool/player'
+import { registerInfo } from './server/info'
+import { registerServer } from './server/server'
+import { registerVer, regVerCheck, UpdTarget, cleanupVerCheck, ServerMaps } from './tool/ver'
+import { initWebSocket, cleanupWebSocket, WsServerConfig, RconServerConfig } from './server/service'
+import { registerCurseForge } from './resource/curseforge'
+import { registerModrinth } from './resource/modrinth'
+import { registerSearch } from './resource/search'
+import { registerMcmod } from './resource/mcmod'
+import { registerMcwiki } from './resource/mcwiki'
 
 export const name = 'mc-tools'
 export const inject = {optional: ['puppeteer']}
@@ -24,192 +27,139 @@ export const usage = `
 </div>
 `
 
-let versionCheckInterval: NodeJS.Timeout
-
-export type LangCode = keyof typeof MINECRAFT_LANGUAGES
-const MINECRAFT_LANGUAGES = {
-  'zh': '简体中文',
-  'zh-hk': '繁體中文（香港）',
-  'zh-tw': '繁體中文（臺灣）',
-  'en': 'English',
-  'ja': '日本語',
-  'ko': '한국어',
-  'fr': 'Français',
-  'de': 'Deutsch',
-  'es': 'Español',
-  'it': 'Italiano',
-  'pt': 'Português',
-  'ru': 'Русский',
-  'pl': 'Polski',
-  'nl': 'Nederlands',
-  'tr': 'Türkçe'
+export interface Config {
+  noticeTargets: UpdTarget[]
+  updInterval: number
+  verEnabled: boolean
+  playerEnabled: boolean
+  infoEnabled: boolean
+  serverApis?: Array<{ type: 'java' | 'bedrock'; url: string }>
+  serverTemplate: string
+  serverMaps: ServerMaps[]
+  rconServers: RconServerConfig[]
+  wsServers: WsServerConfig[]
+  bindEnabled: boolean
+  useForward: boolean
+  useScreenshot: boolean
+  curseforgeEnabled: false | string
+  modrinthEnabled: boolean
+  mcmodEnabled: false | string
+  mcwikiEnabled: boolean
+  searchDesc: number
+  searchResults: number
+  maxParagraphs: number;
+  maxDescLength: number;
 }
 
-/**
- * 插件配置接口
- */
-export interface MTConfig {
-    // 通用查询配置
-    Timeout: number
-    totalLength: number
-    descLength: number
-    maxHeight?: number
-    waitUntil?: 'load' | 'domcontentloaded' | 'networkidle0' | 'networkidle2'
-    captureTimeout?: number
-    Language: LangCode
-    sectionLength: number
-    linkCount: number
-    cfApi: string
-    showImages: 'always' | 'noqq' | 'never'
-
-    // 服务器信息配置
-    default: string
-    showIP: boolean
-    showIcon: boolean
-    maxNumber: number
-    javaApis: string[]
-    bedrockApis: string[]
-
-    // 玩家相关配置
-    showSkull: boolean
-
-    // 版本检查配置
-    verCheck: boolean
-    guilds: string[]
-    interval: number
-    release: boolean
-    snapshot: boolean
-
-    // 服务器连接配置
-    enableRcon: boolean
-    rconAddress: string
-    rconPassword: string
-    websocketMode: 'client' | 'server'
-    websocketAddress: string
-    websocketToken: string
-    enableWebSocket: boolean
-    name: string
-    connect: string
-}
-
-/**
- * 插件配置模式
- */
-export const Config: Schema<MTConfig> = Schema.intersect([
+export const Config: Schema<Config> = Schema.intersect([
   Schema.object({
-    totalLength: Schema.number()
-      .description('总预览字数').default(400),
-    sectionLength: Schema.number()
-      .description('Wiki 每段预览字数').default(50),
-    descLength: Schema.number()
-      .description('搜索列表描述字数').default(20),
-    linkCount: Schema.number()
-      .description('MCMod 相关链接个数').default(4),
-    Timeout: Schema.number()
-      .description('搜索超时时间（秒）').default(15),
-    captureTimeout: Schema.number()
-      .description('截图超时时间（秒）').default(3),
-    maxHeight: Schema.number()
-      .description('截图最大高度（像素）').default(4096),
-    waitUntil: Schema.union(['load', 'domcontentloaded', 'networkidle0', 'networkidle2'])
-      .description('截图等待条件').default('domcontentloaded'),
-    Language: Schema.union(Object.keys(MINECRAFT_LANGUAGES) as LangCode[])
-      .description('Wiki 显示语言').default('zh'),
-    showImages: Schema.union(['always', 'noqq', 'never' ])
-      .description('MCMod 简介图片展示平台').default('noqq'),
-    cfApi: Schema.string()
-      .description('CurseForge API Key').role('secret'),
-  }).description('查询配置'),
-
+    mcwikiEnabled: Schema.boolean().description('启用 Minecraft Wiki 查询').default(true),
+    modrinthEnabled: Schema.boolean().description('启用 Modrinth 查询').default(true),
+    mcmodEnabled: Schema.union([
+      Schema.const(false).description('禁用'),
+      Schema.string().description('启用').role('link').default('https://mcmod-api.yis-rime.workers.dev/')
+    ]).description('启用 MCMOD 查询').default('string'),
+    curseforgeEnabled: Schema.union([
+      Schema.const(false).description('禁用'),
+      Schema.string().description('启用').role('secret')
+    ]).description('启用 CurseForge 查询').default(false)
+  }).description('查询开关配置'),
   Schema.object({
-    verCheck: Schema.boolean()
-      .description('启用更新检查').default(false),
-    release: Schema.boolean()
-      .description('正式版本通知').default(true),
-    snapshot: Schema.boolean()
-      .description('快照版本通知').default(true),
-    interval: Schema.number()
-      .description('检查间隔时间（分钟）').default(5),
-    guilds: Schema.array(String)
-      .description('更新通知目标(platform:guild/private:target)')
-      .default(['onebot:private:123456789', 'onebot:guild:123456789']),
-    showSkull: Schema.boolean()
-      .description('显示如何获取玩家头颅').default(true),
-    showIP: Schema.boolean()
-      .description('显示服务器地址').default(false),
-    showIcon: Schema.boolean()
-      .description('显示服务器图标').default(true),
-    maxNumber: Schema.number()
-      .description('列表最大显示个数').default(8),
-    default: Schema.string()
-      .description('默认 INFO 地址').default('hypixel.net'),
-    javaApis: Schema.array(String)
-      .description('Java 查询 API')
-      .default(['https://api.mcstatus.io/v2/status/java/${address}',
-        'https://api.mcsrvstat.us/3/${address}']),
-    bedrockApis: Schema.array(String)
-      .description('Bedrock 查询 API')
-      .default(['https://api.mcstatus.io/v2/status/bedrock/${address}',
-        'https://api.mcsrvstat.us/bedrock/3/${address}']),
-  }).description('工具配置'),
-
+    useForward: Schema.boolean().description('启用合并转发').default(true),
+    useScreenshot: Schema.boolean().description('启用网页截图').default(true),
+    searchDesc: Schema.number().description('简介长度').default(50).min(0).max(500),
+    searchResults: Schema.number().description('搜索结果数/页').default(10).min(1).max(100),
+    maxParagraphs: Schema.number().description('详情段落数限制').default(20).min(1).max(20),
+    maxDescLength: Schema.number().description('每段字数限制').default(1000).min(10).max(1000),
+  }).description('资源查询配置'),
   Schema.object({
-    connect: Schema.string()
-      .description('互联群组ID').default('onebot:123456789'),
-    enableRcon: Schema.boolean()
-      .description('启用 RCON').default(false),
-    rconAddress: Schema.string()
-      .description('RCON 地址').default('localhost:25575'),
-    rconPassword: Schema.string()
-      .description('RCON 密码').role('secret'),
-    enableWebSocket: Schema.boolean()
-      .description('启用 WebSocket').default(false),
-    name: Schema.string()
-      .description('服务器名称').default('Server'),
-    websocketMode: Schema.union(['client', 'server'])
-      .description('WebSocket 模式'),
-    websocketAddress: Schema.string()
-      .description('WebSocket 地址').default('localhost:8080'),
-    websocketToken: Schema.string()
-      .description('WebSocket 密码').role('secret'),
-  }).description('鹊桥互联配置'),
+    playerEnabled: Schema.boolean().description('启用玩家信息查询').default(true),
+    verEnabled: Schema.boolean().description('启用最新版本查询').default(true),
+    updInterval: Schema.number().description('更新检查间隔(分钟)').default(5).min(1).max(1440),
+    noticeTargets: Schema.array(Schema.object({
+      platform: Schema.string().description('平台 ID'),
+      channelId: Schema.string().description('频道 ID'),
+      type: Schema.union([
+        Schema.const('release').description('仅正式版'),
+        Schema.const('snapshot').description('仅快照版'),
+        Schema.const('both').description('所有版本')
+      ]).description('推送类型').default('both')
+    })).description('版本更新推送目标').role('table')
+  }).description('版本&玩家查询配置'),
+  Schema.object({
+    infoEnabled: Schema.boolean().description('启用服务器查询').default(true),
+    serverApis: Schema.array(Schema.object({
+      type: Schema.union([
+        Schema.const('java').description('Java版'),
+        Schema.const('bedrock').description('基岩版')
+      ]).description('API 类型'),
+      url: Schema.string().description('API URL （使用 ${address} 指代地址）')
+    })).description('服务器查询 API ').default([
+      { type: 'java', url: 'https://api.mcstatus.io/v2/status/java/${address}' },
+      { type: 'bedrock', url: 'https://api.mcstatus.io/v2/status/bedrock/${address}' },
+      { type: 'java', url: 'https://api.mcsrvstat.us/2/${address}' },
+      { type: 'bedrock', url: 'https://api.mcsrvstat.us/bedrock/2/${address}' },
+      { type: 'java', url: 'https://api.imlazy.ink/mcapi?type=json&host=${address}' },
+      { type: 'bedrock', url: 'https://api.imlazy.ink/mcapi?type=json&host=${address}&be=true' }
+    ]).role('table'),
+    serverTemplate: Schema.string().role('textarea')
+    .description('服务器信息模板（使用[...]包含存在{...:x}指代的数据才会显示的内容，冒号后的数字代表显示数量）')
+    .default('{icon}\n{name}\n{motd}\n{version} | {online}/{max} | {ping}ms\nIP:{ip}\nSRV:{srv}\n{edition} {gamemode} {software} {serverid} {eulablock}[\n在线玩家({playercount}):\n{playerlist:10}][\n插件列表({plugincount}):\n{pluginlist:10}][\n模组列表({modcount}):\n{modlist:10}]')
+  }).description('服务器查询配置'),
+  Schema.object({
+    bindEnabled: Schema.boolean().description('启用白名单管理').default(false),
+    serverMaps: Schema.array(Schema.object({
+      serverId: Schema.number().description('服务器 ID').required(),
+      platform: Schema.string().description('平台 ID'),
+      channelId: Schema.string().description('频道 ID'),
+      serverAddress: Schema.string().description('服务器地址'),
+    })).description('服务器映射群组').default([]).role('table'),
+    rconServers: Schema.array(Schema.object({
+      id: Schema.number().description('服务器 ID').required(),
+      rconAddress: Schema.string().description('地址').default('localhost:25575'),
+      rconPassword: Schema.string().description('密码').role('secret')
+    })).description('RCON 配置').default([]).role('table'),
+    wsServers: Schema.array(Schema.object({
+      id: Schema.number().description('服务器 ID').required(),
+      name: Schema.string().description('名称').default('Server'),
+      websocketMode: Schema.union([
+        Schema.const('client').description('客户端'),
+        Schema.const('server').description('服务端')
+      ]).description('模式').default('server'),
+      websocketAddress: Schema.string().description('地址').default('localhost:8080'),
+      websocketToken: Schema.string().description('密码').role('secret')
+    })).description('WebSocket 配置').default([]).role('table')
+  }).description('服务器连接配置')
 ])
 
-/**
- * 插件主函数
- */
-export function apply(ctx: Context, config: MTConfig) {
-  // 用户语言设置
-  const userLanguageSettings = new Map<string, LangCode>()
-
-  // 创建主命令
+export function apply(ctx: Context, config: Config) {
   const mc = ctx.command('mc', 'Minecraft 工具')
 
-  // 注册各功能子命令
-  registerWiki(ctx, mc, config, userLanguageSettings)
-  registerMod(ctx, mc, config)
-  registerInfo(ctx, mc, config)
-  registerSkin(ctx, mc, config)
+  // 添加帮助命令
+  mc.subcommand('.help', '获取插件帮助')
+    .action(() => '现已更新 3.0.0 版本，代码全部重写，基本完善，欢迎体验测试，如有Bug请加个人Bot的QQ810518660，此命令会在之后转为插件帮助说明，因插件功能众多')
 
-  // 注册版本查询命令并设置自动检查
-  versionCheckInterval = registerVersion(ctx, mc, config)
-
-  // 注册服务器管理命令
-  if (config.enableRcon || config.enableWebSocket) {
-    registerServer(mc, config)
-    if (config.enableWebSocket) {
-      initWebSocket(ctx, config)
-    }
-  }
+  // 最新版本查询
+  config.verEnabled !== false && registerVer(ctx, mc)
+  config.noticeTargets?.length && regVerCheck(ctx, config)
+  // 玩家信息查询
+  config.playerEnabled !== false && registerPlayer(ctx, mc)
+  // 服务器信息查询
+  config.infoEnabled !== false && config.serverApis?.length && registerInfo(ctx, mc, config)
+  // 服务器连接与管理
+  if (config.rconServers.length > 0 || config.wsServers.length > 0) registerServer(ctx, mc, config)
+  if (config.wsServers.length > 0) initWebSocket(ctx, config)
+  // 资源查询
+  if (config.modrinthEnabled) registerModrinth(ctx, mc, config)
+  if (typeof config.curseforgeEnabled === 'string' && config.curseforgeEnabled) registerCurseForge(ctx, mc, config)
+  if (typeof config.mcmodEnabled === 'string' && config.mcmodEnabled) registerMcmod(ctx, mc, config)
+  if (config.mcwikiEnabled) registerMcwiki(ctx, mc, config)
+  // 统一搜索
+  if (config.mcmodEnabled || config.mcwikiEnabled || config.modrinthEnabled
+    || config.curseforgeEnabled) registerSearch(ctx, mc, config)
 }
 
-/**
- * 插件卸载函数
- */
 export function dispose() {
-  if (versionCheckInterval) {
-    clearInterval(versionCheckInterval)
-    versionCheckInterval = null
-  }
   cleanupWebSocket()
+  cleanupVerCheck()
 }

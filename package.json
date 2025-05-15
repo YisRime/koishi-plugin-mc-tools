@@ -1,6 +1,6 @@
 {
   "name": "koishi-plugin-mc-tools",
-  "description": "我的世界（Minecraft/MC）工具。支持查询MCWiki/MCMod/CurseForge/Modrinth、服务器信息、最新版本和玩家皮肤；推送MC更新通知，运行命令等",
+  "description": "我的世界(Minecraft)工具。支持查询资源、版本、服务器、玩家皮肤等；以及推送 MC 更新，管理服务器等功能",
   "version": "2.2.24",
   "contributors": [
     "Yis_Rime <yis_rime@outlook.com>"
@@ -16,7 +16,7 @@
     "lib",
     "dist"
   ],
-  "license": "GPL-3.0",
+  "license": "AGPL-3.0-only",
   "keywords": [
     "chatbot",
     "koishi",
@@ -29,6 +29,7 @@
     "server",
     "info",
     "rcon",
+    "websocket",
     "mcmod",
     "CurseForge",
     "Modrinth",
