@@ -167,7 +167,7 @@ export async function getMcmodProject(ctx: Context, project, config: Config = nu
       [
         modName,
         `状态: ${[basicInfo.status?.isActive ? '活跃' : '停更', basicInfo.status?.isOpenSource ? '开源' : '闭源'].join(', ')}`,
-        `分类: ${basicInfo.categories?.map(id => getMapValue(MCMOD_MAPS.CATEGORY, id)).join(', ') || '未知'}`,
+        `分类: ${basicInfo.categories?.map(id => getMapValue(MCMOD_MAPS.MOD_CATEGORY, id)).join(', ') || '未知'}`,
         `标签: ${basicInfo.tags?.join(', ') || '无标签'}`,
         `作者: ${authors?.map(a => `${a.name}${a.position ? ` (${a.position})` : ''}`).join(', ') || '未知'}`,
         `支持平台: ${compatibility?.platforms?.join(', ') || '未知'}`,
@@ -255,7 +255,6 @@ export async function getMcmodModpack(ctx: Context, modpack, config: Config = nu
       [
         packName,
         `分类: ${basicInfo.categories?.map(id => getMapValue(MCMOD_MAPS.CATEGORY, id)).join(', ') || '未知'}`,
-        `标签: ${basicInfo.tags?.join(', ') || '无标签'}`,
         `作者: ${authors?.map(a => `${a.name}${a.position ? ` (${a.position})` : ''}`).join(', ') || '未知'}`,
         compatibility?.packType && `整合包类型: ${compatibility.packType}`,
         compatibility?.apiType?.length ? `运作方式: ${compatibility.apiType.join(', ')}` : null,
