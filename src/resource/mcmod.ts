@@ -161,12 +161,21 @@ export async function getMcmodProject(ctx: Context, project, config: Config = nu
           `${platform === 'behaviorPack' ? '行为包' : platform.charAt(0).toUpperCase() + platform.slice(1)}: ${compatibility.mcVersions[platform].join(', ')}`)
         .filter(Boolean).join('\n● ')
     }
+    // 获取模组状态
+    const getModStatus = (status) => {
+      if (!status) return '未知';
+      switch (status.status) {
+        case 'active': return '活跃';
+        case 'semi-abandoned': return '半弃坑';
+        case 'inactive': return '停更';
+      }
+    }
     // 构建完整内容
     const content = [
       basicInfo.img && h.image(basicInfo.img),
       [
         modName,
-        `状态: ${[basicInfo.status?.isActive ? '活跃' : '停更', basicInfo.status?.isOpenSource ? '开源' : '闭源'].join(', ')}`,
+        `状态: ${[getModStatus(basicInfo.status), basicInfo.status?.isOpenSource ? '开源' : '闭源'].join(', ')}`,
         `分类: ${basicInfo.categories?.map(id => getMapValue(MCMOD_MAPS.MOD_CATEGORY, id)).join(', ') || '未知'}`,
         `标签: ${basicInfo.tags?.join(', ') || '无标签'}`,
         `作者: ${authors?.map(a => `${a.name}${a.position ? ` (${a.position})` : ''}`).join(', ') || '未知'}`,
