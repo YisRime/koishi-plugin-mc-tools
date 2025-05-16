@@ -58,7 +58,7 @@ export const Config: Schema<Config> = Schema.intersect([
     mcmodEnabled: Schema.union([
       Schema.const(false).description('禁用'),
       Schema.string().description('启用').role('link').default('https://mcmod-api.yis-rime.workers.dev/')
-    ]).description('启用 MCMOD 查询').default('string'),
+    ]).description('启用 MCMOD 查询').default('https://mcmod-api.yis-rime.workers.dev/'),
     curseforgeEnabled: Schema.union([
       Schema.const(false).description('禁用'),
       Schema.string().description('启用').role('secret')
@@ -103,8 +103,8 @@ export const Config: Schema<Config> = Schema.intersect([
       { type: 'bedrock', url: 'https://api.imlazy.ink/mcapi?type=json&host=${address}&be=true' }
     ]).role('table'),
     serverTemplate: Schema.string().role('textarea')
-    .description('服务器信息模板（使用[...]包含存在{...:x}指代的数据才会显示的内容，冒号后的数字代表显示数量）')
-    .default('{icon}\n{name}\n{motd}\n{version} | {online}/{max} | {ping}ms\nIP:{ip}\nSRV:{srv}\n{edition} {gamemode} {software} {serverid} {eulablock}[\n在线玩家({playercount}):\n{playerlist:10}][\n插件列表({plugincount}):\n{pluginlist:10}][\n模组列表({modcount}):\n{modlist:10}]')
+    .description('服务器信息模板（使用{...:x}指代数据，数字代表数量限制）')
+    .default('{icon}\n{name} {edition}\n{motd}\n{version} | {online}/{max} | {ping}\n{gamemode} {software} {serverid} {eulablock}\nIP:{ip}\nSRV:{srv}\n玩家({playercount}): {playerlist:10}\n插件({plugincount}): {pluginlist:10}\n模组({modcount}): {modlist:10}')
   }).description('服务器查询配置'),
   Schema.object({
     bindEnabled: Schema.boolean().description('启用白名单管理').default(false),
@@ -134,11 +134,9 @@ export const Config: Schema<Config> = Schema.intersect([
 
 export function apply(ctx: Context, config: Config) {
   const mc = ctx.command('mc', 'Minecraft 工具')
-
-  // 添加帮助命令
-  mc.subcommand('.help', '获取插件帮助')
+  // 帮助
+  mc.subcommand('.help', 'Minecraft 插件帮助')
     .action(() => '现已更新 3.0.0 版本，代码全部重写，基本完善，欢迎体验测试，如有Bug请加个人Bot的QQ810518660，此命令会在之后转为插件帮助说明，因插件功能众多')
-
   // 最新版本查询
   config.verEnabled !== false && registerVer(ctx, mc)
   config.noticeTargets?.length && regVerCheck(ctx, config)

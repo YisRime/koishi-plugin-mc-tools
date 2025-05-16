@@ -1,5 +1,7 @@
 import { Context, h } from 'koishi'
 import { Config } from '../index'
+import * as net from 'net'
+import * as dgram from 'dgram'
 
 /**
  * Minecraft 服务器状态信息接口
@@ -88,11 +90,44 @@ function validateServerAddress(input: string): string {
 }
 
 /**
+ * 直接ping Minecraft服务器
+ * @param {string} host - 服务器主机地址
+ * @param {number} port - 服务器端口
+ * @param {'java'|'bedrock'} type - 服务器类型，java 使用 TCP，bedrock 使用 UDP
+ * @param {number} [timeout=3000] - 超时时间(毫秒)
+ * @returns {Promise<number>} ping时间(毫秒)
+ * @throws {Error} 当连接超时或发生错误时抛出异常
+ */
+async function pingServer(host: string, port: number, type: 'java' | 'bedrock', timeout = 3000): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const startTime = Date.now();
+    if (type === 'java') {
+      // Java服务器TCP
+      const socket = net.createConnection({ host, port, timeout });
+      const cleanup = () => { socket.removeAllListeners(); socket.destroy(); };
+      socket.once('connect', () => { cleanup(); resolve(Date.now() - startTime); })
+        .once('error', err => { cleanup(); reject(err); })
+        .once('timeout', () => { cleanup(); reject(new Error('超时')); });
+    } else {
+      // 基岩版UDP
+      const client = dgram.createSocket('udp4');
+      const pingData = Buffer.from([0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0x00, 0xfe, 0xfe, 0xfe, 0xfe, 0xfd, 0xfd, 0xfd, 0xfd, 0x12, 0x34, 0x56, 0x78]);
+      const timer = setTimeout(() => { client.close(); reject(new Error('超时')); }, timeout);
+      const cleanup = () => { clearTimeout(timer); client.removeAllListeners(); client.close(); };
+      client.once('message', () => { cleanup(); resolve(Date.now() - startTime); })
+        .once('error', err => { cleanup(); reject(err); });
+      client.send(pingData, port, host, err => { if (err) { cleanup(); reject(err); } });
+    }
+  });
+}
+
+/**
  * 获取 Minecraft 服务器状态
- * @param {string} server - 服务器地址(可包含端口)
- * @param {'java'|'bedrock'} forceType - 强制使用的服务器类型
- * @param {Config} [config] - 配置信息
- * @returns {Promise<ServerStatus>} 服务器状态信息
+ * @param {string} server - 服务器地址，可以包含端口(如 example.com:25565)
+ * @param {'java'|'bedrock'} forceType - 强制使用的服务器类型，java 或 bedrock
+ * @param {Config} [config] - 配置信息，包含API端点等配置
+ * @returns {Promise<ServerStatus>} 服务器状态信息对象
+ * @description 首先尝试直接ping服务器，然后使用配置的API获取详细信息。
  */
 async function fetchServerStatus(server: string, forceType: 'java' | 'bedrock', config?: Config): Promise<ServerStatus> {
   try {
@@ -102,32 +137,33 @@ async function fetchServerStatus(server: string, forceType: 'java' | 'bedrock', 
     const host = address.split(':')[0], port = parseInt(address.split(':')[1]) || defaultPort;
     const apiEndpoints = config?.serverApis?.filter(api => api.type === serverType)?.map(api => api.url) || [];
     const errors = [];
+    let directPing: number | null = null;
+    try { directPing = await pingServer(host, port, serverType, 3000); } catch (e) {}
+    // API查询
     for (const apiUrl of apiEndpoints) {
       try {
         const requestUrl = apiUrl.replace('${address}', address);
         const startTime = Date.now();
-        const response = await fetch(requestUrl, {
-          headers: {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'},
-          method: 'GET'
-        });
-        const endTime = Date.now();
-        const pingTime = endTime - startTime;
+        const response = await fetch(requestUrl, {headers: {'User-Agent': 'Mozilla/5.0'}, method: 'GET'});
         if (response.ok) {
           const data = await response.json();
           const result = normalizeApiResponse(data, address, serverType);
-          result.ping = pingTime;
+          result.ping = directPing || data.ping || (Date.now() - startTime);
           return result;
         }
-        errors.push(`${requestUrl} 请求失败: ${response.status}`);
-      } catch (error) {
-        errors.push(`${apiUrl.replace('${address}', address)} 连接错误: ${error.message}`);
-      }
+        errors.push(`${apiUrl.split('/').pop()} ${response.status}`);
+      } catch (e) { errors.push(`API错误`); }
     }
-    return { online: false, host, port, players: { online: null, max: null }, error: `请求失败: ${errors.join('; ')}` };
+    if (directPing !== null) return { online: true, host, port, ping: directPing, players: { online: null, max: null } };
+    return {
+      online: false, host, port,
+      players: { online: null, max: null },
+      error: errors.length ? `请求失败: ${errors[0]}` : '服务器无响应'
+    };
   } catch (error) {
     return {
       online: false, host: server, port: forceType === 'bedrock' ? 19132 : 25565,
-      players: { online: null, max: null }, error: `地址验证失败: ${error.message}`
+      players: { online: null, max: null }, error: `地址错误: ${error.message}`
     };
   }
 }
@@ -200,56 +236,65 @@ function normalizeApiResponse(data: any, address: string, serverType: 'java' | '
  */
 function formatServerStatus(status: ServerStatus, config: Config) {
   if (!status.online) return status.error || '服务器离线 - 连接失败';
-  // 格式化函数
-  const formatList = (items?: any[], limit?: number) => {
-    if (!items?.length) return '';
-    const show = limit ?? items.length;
-    return items.slice(0, show)
-      .map(i => i.version ? `${i.name}-${i.version}` : i.name)
-      .join(', ') + (show < items.length ? '...' : '');
+  const getValue = (name: string, limit?: number) => {
+    switch (name) {
+      case 'name': return `${status.host}:${status.port}`;
+      case 'ip': return status.ip_address;
+      case 'srv': return status.srv_record && `${status.srv_record.host}:${status.srv_record.port}`;
+      case 'icon': return status.icon?.startsWith('data:image/png;base64,') ? h.image(status.icon).toString() : null;
+      case 'motd': return status.motd;
+      case 'version': return status.version?.name_clean;
+      case 'online': return status.players.online != null ? String(status.players.online) : null;
+      case 'max': return status.players.max != null ? String(status.players.max) : null;
+      case 'ping': return status.ping ? `${status.ping}ms` : null;
+      case 'software': return status.software;
+      case 'edition': return status.edition && ({ MCPE: '基岩版', MCEE: '教育版' }[status.edition] || status.edition);
+      case 'gamemode': return status.gamemode;
+      case 'eulablock': return status.eula_blocked ? '已被封禁' : null;
+      case 'serverid': return status.server_id;
+      case 'playercount': return String(status.players.list?.length || 0);
+      case 'plugincount': return String(status.plugins?.length || 0);
+      case 'modcount': return String(status.mods?.length || 0);
+      case 'playerlist':
+        if (!status.players.list?.length) return null;
+        limit = limit || status.players.list.length;
+        return status.players.list.slice(0, limit)
+          .map(p => p)
+          .join(', ') + (limit < status.players.list.length ? '...' : '');
+      case 'pluginlist':
+        if (!status.plugins?.length) return null;
+        limit = limit || status.plugins.length;
+        return status.plugins.slice(0, limit)
+          .map(p => p.version ? `${p.name}-${p.version}` : p.name)
+          .join(', ') + (limit < status.plugins.length ? '...' : '');
+      case 'modlist':
+        if (!status.mods?.length) return null;
+        limit = limit || status.mods.length;
+        return status.mods.slice(0, limit)
+          .map(m => m.version ? `${m.name}-${m.version}` : m.name)
+          .join(', ') + (limit < status.mods.length ? '...' : '');
+      default: return null;
+    }
   };
-  // 各部分内容生成
-  const parts = {
-    name: () => `${status.host}:${status.port}`,
-    ip: () => status.ip_address,
-    srv: () => status.srv_record ? `${status.srv_record.host}:${status.srv_record.port}` : '',
-    icon: () => status.icon?.startsWith('data:image/png;base64,') ? h.image(status.icon).toString() : '',
-    motd: () => status.motd,
-    version: () => status.version?.name_clean || '未知',
-    online: () => `${status.players.online ?? 0}`,
-    max: () => `${status.players.max ?? 0}`,
-    ping: () => status.ping ? `${status.ping}ms` : '未知',
-    software: () => status.software,
-    edition: () => status.edition ? { MCPE: '基岩版', MCEE: '教育版' }[status.edition] || status.edition : '',
-    gamemode: () => status.gamemode,
-    eulablock: () => status.eula_blocked ? '已被封禁' : '',
-    serverid: () => status.server_id,
-    playerlist: (limit?: number) => formatList(status.players.list, limit),
-    playercount: () => `${status.players.list?.length || 0}`,
-    pluginlist: (limit?: number) => formatList(status.plugins, limit),
-    plugincount: () => `${status.plugins?.length || 0}`,
-    modlist: (limit?: number) => formatList(status.mods, limit),
-    modcount: () => `${status.mods?.length || 0}`
-  };
-  // 使用模板格式化输出
-  const template = config.serverTemplate || `${status.host}:${status.port} - ${status.version?.name_clean || '未知'}`;
-  // 替换占位符
-  const replacePlaceholders = (text: string) => {
-    return text.replace(/\{([^{}]+)\}/g, (match, content) => {
-      const [name, limitStr] = content.split(':');
-      const limit = limitStr ? parseInt(limitStr, 10) : undefined;
-      const value = parts[name]?.(limit) || '';
-      return value;
-    });
-  };
-  // 先替换所有占位符
-  let result = replacePlaceholders(template);
-  // 处理条件性方括号，如果内容为空则整段不显示
-  result = result.replace(/\[([\s\S]*?)\]/g, (_, content) => {
-    return content.trim() ? content : '';
-  });
-  // 清理多余空行
-  return result.replace(/\n{3,}/g, '\n\n').trim();
+  // 处理模板
+  const results = config.serverTemplate.split('\n')
+    .map(line => {
+      const placeholders = Array.from(line.matchAll(/\{([^{}:]+)(?::(\d+))?\}/g));
+      if (placeholders.some(match => {
+        const name = match[1];
+        const limit = match[2] ? parseInt(match[2], 10) : undefined;
+        const value = getValue(name, limit);
+        return value === null || value === undefined || value === '';
+      })) return '';
+      // 替换占位符
+      return line.replace(/\{([^{}:]+)(?::(\d+))?\}/g, (match, name, limitStr) => {
+        const limit = limitStr ? parseInt(limitStr, 10) : undefined;
+        const value = getValue(name, limit);
+        return value !== null && value !== undefined ? value : '';
+      });
+    })
+    .filter(line => line.trim()).join('\n');
+  return results.replace(/\n{3,}/g, '\n\n').trim();
 }
 
 /**

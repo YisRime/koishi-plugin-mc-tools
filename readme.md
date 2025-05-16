@@ -2,7 +2,7 @@
 
 [![npm](https://img.shields.io/npm/v/koishi-plugin-mc-tools?style=flat-square)](https://www.npmjs.com/package/koishi-plugin-mc-tools)
 
-我的世界(Minecraft)工具。支持查询资源、版本、服务器、玩家皮肤等；以及推送 MC 更新，管理服务器等功能
+我的世界(Minecraft)。可查询 MC 版本、服务器信息、玩家皮肤信息以及四大平台资源；支持管理服务器，功能梭哈
 
 ## 功能概述
 
