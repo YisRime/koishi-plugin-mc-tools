@@ -49,6 +49,7 @@ export interface Config {
   searchResults: number
   maxParagraphs: number;
   maxDescLength: number;
+  maxModLinks: number;
 }
 
 export const Config: Schema<Config> = Schema.intersect([
@@ -68,9 +69,10 @@ export const Config: Schema<Config> = Schema.intersect([
     useForward: Schema.boolean().description('启用合并转发').default(true),
     useScreenshot: Schema.boolean().description('启用网页截图').default(true),
     searchDesc: Schema.number().description('简介长度').default(50).min(0).max(500),
-    searchResults: Schema.number().description('搜索结果数/页').default(10).min(1).max(100),
-    maxParagraphs: Schema.number().description('详情段落数限制').default(20).min(1).max(20),
-    maxDescLength: Schema.number().description('每段字数限制').default(1000).min(10).max(1000),
+    searchResults: Schema.number().description('搜索结果数/页').default(10).min(5).max(100),
+    maxParagraphs: Schema.number().description('详情段落数限制').default(20).min(1).max(100),
+    maxDescLength: Schema.number().description('每段字数限制').default(1000).min(100).max(2000),
+    maxModLinks: Schema.number().description('相关链接数限制').default(10).min(5).max(1000),
   }).description('资源查询配置'),
   Schema.object({
     playerEnabled: Schema.boolean().description('启用玩家信息查询').default(true),

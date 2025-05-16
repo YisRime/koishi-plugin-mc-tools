@@ -238,7 +238,7 @@ function formatServerStatus(status: ServerStatus, config: Config) {
   if (!status.online) return status.error || '服务器离线 - 连接失败';
   const getValue = (name: string, limit?: number) => {
     switch (name) {
-      case 'name': return `${status.host}:${status.port}`;
+      case 'name': return status.port === 25565 || status.port === 19132 ? status.host : `${status.host}:${status.port}`;
       case 'ip': return status.ip_address;
       case 'srv': return status.srv_record && `${status.srv_record.host}:${status.srv_record.port}`;
       case 'icon': return status.icon?.startsWith('data:image/png;base64,') ? h.image(status.icon).toString() : null;
