@@ -5,6 +5,9 @@ import { MCMOD_MAPS } from './maps'
 
 /**
  * 处理MCMOD介绍文本，提取图片和分段
+ * @param {string} body - 需要处理的MCMOD介绍文本
+ * @param {number} paragraphLimit - 每段文本的最大长度限制
+ * @returns {any[]} 处理后的内容数组，包含文本段落和图片元素
  */
 function processMcmodIntroduction(body: string, paragraphLimit: number): any[] {
   const result = []
@@ -67,15 +70,37 @@ function processMcmodIntroduction(body: string, paragraphLimit: number): any[] {
   return result
 }
 
-// 获取MCMOD API基础URL
+/**
+ * 获取MCMOD API基础URL
+ * @param {Config} config - 配置对象
+ * @returns {string} 格式化后的API基础URL
+ */
 const getMcmodApiBase = (config: Config) =>
   typeof config?.mcmodEnabled === 'string' && config.mcmodEnabled.trim()
     ? (config.mcmodEnabled.trim().endsWith('/') ? config.mcmodEnabled.trim() : config.mcmodEnabled.trim() + '/')
     : ''
-// 获取映射值
+
+/**
+ * 从映射表中获取值，如果不存在则返回默认值
+ * @param {Record<string, any>} map - 映射表
+ * @param {string} key - 查找的键
+ * @param {string} defaultValue - 未找到时的默认值
+ * @returns {any} 映射值或默认值
+ */
 const getMapValue = (map, key, defaultValue = `未知(${key})`) => map[key] || defaultValue
 
-// 搜索MCMOD资源
+/**
+ * 搜索MCMOD资源
+ * @param {Context} ctx - Koishi上下文
+ * @param {string} keyword - 搜索关键词
+ * @param {Object} options - 搜索选项
+ * @param {number} [options.page] - 页码
+ * @param {number} [options.offset] - 偏移量
+ * @param {number} [options.mold] - 搜索模式
+ * @param {string} [options.type] - 资源类型
+ * @param {Config} [config] - 配置对象
+ * @returns {Promise<{results: Array<any>, pagination: Object}>} 搜索结果和分页信息
+ */
 export async function searchMcmodProjects(ctx: Context, keyword: string, options = {}, config: Config = null) {
   try {
     const pageSize = 30
@@ -105,18 +130,21 @@ export async function searchMcmodProjects(ctx: Context, keyword: string, options
   }
 }
 
-// 处理MCMOD资源详情
+/**
+ * 获取MCMOD资源详情
+ * @param {Context} ctx - Koishi上下文
+ * @param {Object} project - 项目信息
+ * @param {string} project.name - 项目名称
+ * @param {string} project.url - 项目URL
+ * @param {string} [project.description] - 项目描述
+ * @param {boolean} [project.community] - 是否获取社区信息
+ * @param {boolean} [project.relations] - 是否获取关联模组信息
+ * @param {Object} [project.extra] - 额外信息
+ * @param {Config} [config] - 配置对象
+ * @returns {Promise<{content: Array<any>, url: string, icon: string|null}>} 处理后的项目详情
+ */
 export async function getMcmodProject(ctx: Context, project, config: Config = null) {
   try {
-    // 构建基本内容
-    const basicContent = [
-      `[${project.name}]`, project.description || '暂无描述',
-      project.extra?.type === 'class' ? null : `类型: ${getMapValue(MCMOD_MAPS.TYPE, project.extra?.type, '未知')}`,
-      `查看详情: ${project.url}`
-    ].filter(Boolean)
-    // 非模组类型直接返回基本信息
-    if (project.extra?.type !== 'class') return { content: basicContent, url: project.url, icon: null }
-    // 获取模组详情
     const response = await ctx.http.get(`${getMcmodApiBase(config)}api/class`, {
       params: { id: project.extra.id, others: false, community: project.community === true, relations: project.relations === true }
     })
@@ -198,13 +226,130 @@ export async function getMcmodProject(ctx: Context, project, config: Config = nu
   }
 }
 
-// 注册 mcmod 命令
+/**
+ * 获取MCMOD整合包详情
+ * @param {Context} ctx - Koishi上下文
+ * @param {Object} modpack - 整合包信息
+ * @param {string} modpack.name - 整合包名称
+ * @param {string} modpack.url - 整合包URL
+ * @param {string} [modpack.description] - 整合包描述
+ * @param {boolean} [modpack.community] - 是否获取社区信息
+ * @param {boolean} [modpack.relations] - 是否获取关联模组信息
+ * @param {Object} [modpack.extra] - 额外信息
+ * @param {Config} [config] - 配置对象
+ * @returns {Promise<{content: Array<any>, url: string, icon: string|null}>} 处理后的整合包详情
+ */
+export async function getMcmodModpack(ctx: Context, modpack, config: Config = null) {
+  try {
+    const response = await ctx.http.get(`${getMcmodApiBase(config)}api/modpack`, {
+      params: { id: modpack.extra.id, others: false, community: modpack.community === true, relations: modpack.relations === true }
+    })
+    if (!response?.basicInfo) throw new Error('无法获取整合包详情')
+    const { basicInfo, compatibility, links, authors, introduction, relations } = response
+    // 整合包名称和基本信息
+    const packName = [basicInfo.shortName, basicInfo.name, basicInfo.englishName ? `[${basicInfo.englishName}]` : null]
+      .filter(Boolean).join(' ')
+    // 构建完整内容
+    const content = [
+      basicInfo.img && h.image(basicInfo.img),
+      [
+        packName,
+        `分类: ${basicInfo.categories?.map(id => getMapValue(MCMOD_MAPS.CATEGORY, id)).join(', ') || '未知'}`,
+        `标签: ${basicInfo.tags?.join(', ') || '无标签'}`,
+        `作者: ${authors?.map(a => `${a.name}${a.position ? ` (${a.position})` : ''}`).join(', ') || '未知'}`,
+        compatibility?.packType && `整合包类型: ${compatibility.packType}`,
+        compatibility?.apiType?.length ? `运作方式: ${compatibility.apiType.join(', ')}` : null,
+        compatibility?.packMethod?.length ? `打包方式: ${compatibility.packMethod.join(', ')}` : null,
+        compatibility?.mcVersions ? `支持版本: ${Array.isArray(compatibility.mcVersions) ? compatibility.mcVersions.join(', ') : '未知'}` : null,
+      ].filter(Boolean).join('\n'),
+      links?.length && `相关链接:\n${links.slice(0, config.maxModLinks)
+        .map(link => `● ${link.title}: ${link.url}`).join('\n')}`
+    ].filter(Boolean)
+    // 包含模组
+    if (modpack.relations && relations?.mods?.length) {
+      content.push('包含模组:')
+      content.push(relations.mods.slice(0, config.maxModLinks)
+        .map(mod => `● [${mod.name}](https://www.mcmod.cn/class/${mod.id}.html)${mod.version ? ` (${mod.version})` : ''}`)
+        .join('\n'))
+    }
+    // 相关教程
+    if (modpack.community && relations?.tutorials?.length) {
+      content.push('相关教程:')
+      content.push(relations.tutorials.slice(0, config.maxModLinks)
+        .map(t => `● [${t.title}](https://www.mcmod.cn/post/${t.id}.html)`)
+        .join('\n'))
+    }
+    // 详细介绍
+    if (introduction) {
+      content.push(`详细介绍：`)
+      const allIntroParts = processMcmodIntroduction(introduction, config.maxDescLength)
+      const introParts = allIntroParts.slice(0, config.maxParagraphs)
+      content.push(...introParts)
+      if (introParts.length < allIntroParts.length) content.push('（更多内容请查看完整页面）')
+    }
+    content.push(`查看详情: ${modpack.url}`)
+    return { content, url: modpack.url, icon: basicInfo.img || null }
+  } catch (error) {
+    ctx.logger.error('MCMOD 整合包获取失败:', error)
+    return { content: [ `[${modpack.name}]`, modpack.description || '暂无描述', `查看详情: ${modpack.url}` ], url: modpack.url, icon: null }
+  }
+}
+
+/**
+ * 获取MCMOD教程详情
+ * @param {Context} ctx - Koishi上下文
+ * @param {Object} post - 教程信息
+ * @param {string} post.name - 教程标题
+ * @param {string} post.url - 教程URL
+ * @param {string} [post.description] - 教程描述
+ * @param {boolean} [post.others] - 是否获取附加信息
+ * @param {Object} [post.extra] - 额外信息
+ * @param {Config} [config] - 配置对象
+ * @returns {Promise<{content: Array<any>, url: string, icon: string|null}>} 处理后的教程详情
+ */
+export async function getMcmodPost(ctx: Context, post, config: Config = null) {
+  try {
+    const response = await ctx.http.get(`${getMcmodApiBase(config)}api/post`, {
+      params: { id: post.extra.id, others: post.others === true }
+    })
+    if (!response?.content) throw new Error('无法获取教程详情')
+    const { title, content, author, metrics } = response
+    // 构建完整内容
+    const postContent = [
+      `教程：${title || post.name}`,
+      post.others && author ? `作者：${author.name}` : null,
+      post.others && metrics?.statistics ? `发布于：${new Date(metrics.statistics.createTime).toLocaleString('zh-CN')}` : null,
+      post.others && metrics?.statistics?.viewCount ? `浏览量：${metrics.statistics.viewCount}` : null,
+      `查看原文：${post.url}`
+    ].filter(Boolean)
+    // 处理教程内容
+    if (content) {
+      postContent.push(`\n内容预览：`)
+      const allContentParts = processMcmodIntroduction(content, config.maxDescLength)
+      const contentParts = allContentParts.slice(0, config.maxParagraphs)
+      postContent.push(...contentParts)
+      if (contentParts.length < allContentParts.length) postContent.push('（更多内容请查看完整页面）')
+    }
+    return { content: postContent, url: post.url, icon: post.others && author ? author.avatar : null }
+  } catch (error) {
+    ctx.logger.error('MCMOD 教程获取失败:', error)
+    return { content: [ `[${post.name}]`, post.description || '暂无描述', `查看详情: ${post.url}` ], url: post.url, icon: null }
+  }
+}
+
+/**
+ * 注册MCMOD相关命令
+ * @param {Context} ctx - Koishi上下文
+ * @param {Command} mc - 父命令
+ * @param {Config} config - 配置对象
+ */
 export function registerMcmod(ctx: Context, mc: Command, config: Config) {
   mc.subcommand('.mod <keyword:string>', '查询 MCMOD 百科')
     .option('type', '-t <type:string> 资源类型')
     .option('mold', '-m 启用复杂搜索')
     .option('community', '-c 获取教程讨论')
     .option('relations', '-r 获取模组关系')
+    .option('others', '-o 获取额外信息')
     .option('page', '-p <page:number> 页码')
     .option('shot', '-s 使用截图模式')
     .action(async ({ session, options }, keyword) => {
@@ -213,11 +358,40 @@ export function registerMcmod(ctx: Context, mc: Command, config: Config) {
         const projects = await searchMcmodProjects(ctx, keyword, { type: options.type, mold: options.mold ? 1 : 0, page: options.page }, config)
         if (!projects.results.length) return '未找到匹配的资源'
         const project = projects.results[0]
-        const projectInfo = await getMcmodProject(ctx, {
-          name: project.name, url: project.url, description: project.description,
-          community: options.community, relations: options.relations,
-          extra: { id: project.id, type: project.type, category: project.category }
-        }, config)
+        let projectInfo
+        switch (project.type) {
+          case 'class': // 模组
+            projectInfo = await getMcmodProject(ctx, {
+              name: project.name, url: project.url, description: project.description,
+              community: options.community, relations: options.relations,
+              extra: { id: project.id, type: project.type, category: project.category }
+            }, config)
+            break
+          case 'modpack': // 整合包
+            projectInfo = await getMcmodModpack(ctx, {
+              name: project.name, url: project.url, description: project.description,
+              community: options.community, relations: options.relations,
+              extra: { id: project.id, type: project.type, category: project.category }
+            }, config)
+            break
+          case 'post': // 教程
+            projectInfo = await getMcmodPost(ctx, {
+              name: project.name, url: project.url, description: project.description,
+              others: options.others, extra: { id: project.id, type: project.type }
+            }, config)
+            break
+          default: // 其他类型资源
+            projectInfo = {
+              content: [
+                `[${project.name}]`,
+                project.description || '暂无描述',
+                `类型: ${getMapValue(MCMOD_MAPS.TYPE, project.type, '未知')}`,
+                `查看详情: ${project.url}`
+              ].filter(Boolean),
+              url: project.url,
+              icon: null
+            }
+        }
         const result = await renderOutput(session, projectInfo.content, projectInfo.url, ctx, config, options.shot)
         return config.useForward && result === '' && !options.shot ? undefined : result
       } catch (error) {
