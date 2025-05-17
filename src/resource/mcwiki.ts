@@ -184,7 +184,7 @@ export function registerMcwiki(ctx: Context, mc: Command, config: Config) {
     .option('skip', '-k <count:number> 跳过结果数')
     .option('what', '-w <what:string> 搜索范围')
     .option('exact', '-e 精确匹配')
-    .option('shot', '-s 使用截图模式')
+    .option('shot', '-s 截图模式')
     .action(async ({ session, options }, keyword) => {
       if (!keyword) return '请输入关键词'
       try {

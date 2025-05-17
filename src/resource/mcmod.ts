@@ -347,6 +347,83 @@ export async function getMcmodPost(ctx: Context, post, config: Config = null) {
 }
 
 /**
+ * 获取MCMOD物品详情
+ * @param {Context} ctx - Koishi上下文
+ * @param {Object} item - 物品信息
+ * @param {string} item.name - 物品名称
+ * @param {string} item.url - 物品URL
+ * @param {string} [item.description] - 物品描述
+ * @param {boolean} [item.others] - 是否获取附加信息
+ * @param {Object} [item.extra] - 额外信息
+ * @param {Config} [config] - 配置对象
+ * @returns {Promise<{content: Array<any>, url: string, icon: string|null}>} 处理后的物品详情
+ */
+export async function getMcmodItem(ctx: Context, item, config: Config = null) {
+  try {
+    const response = await ctx.http.get(`${getMcmodApiBase(config)}api/item`, { params: { id: item.extra.id, others: item.others === true } })
+    if (!response || !Array.isArray(response) || !response.length) throw new Error('无法获取物品详情')
+    const itemContent = []
+    let iconUrl = null
+    // 处理每个物品
+    for (let i = 0; i < response.length; i++) {
+      const itemInfo = response[i]
+      const { name, englishName, icon, command, category, introduction, properties, recipes } = itemInfo
+      // 构建基本信息
+      const itemElements = [
+        icon && h.image(icon),
+        [
+          `${name}${englishName ? ` [${englishName}]` : ''}`,
+          category && `分类：${category}`,
+          ...(properties?.length ? properties.map(prop => `${prop.name}：${prop.value}`) : []),
+          command && `获取：${command}`
+        ].filter(Boolean).join('\n')
+      ].filter(Boolean)
+      itemContent.push(...itemElements)
+      // 添加合成配方
+      if (recipes?.length) {
+        const recipesText = [`合成配方(${recipes.length}个)：`]
+        for (let j = 0; j < recipes.length; j++) {
+          const recipe = recipes[j]
+          const recipeType = recipe.type || '未知类型'
+          const materials = recipe.materials?.map(m => {
+            const materialName = m.name || '未知原料'
+            return m.count > 1 ? `${materialName} x${m.count}` : materialName
+          }).join(', ') || '无原料信息'
+          const result = recipe.result?.name || '未知产物'
+          const resultCount = recipe.result?.count > 1 ? ` x${recipe.result.count}` : ''
+          recipesText.push(`• 使用: ${recipeType}`)
+          recipesText.push(`  原料: ${materials}`)
+          recipesText.push(`  产物: ${result}${resultCount}`)
+          if (recipe.notes) recipesText.push(`  备注: ${recipe.notes}`)
+        }
+        itemContent.push(recipesText.join('\n'))
+      }
+      // 添加物品介绍
+      if (introduction) {
+        itemContent.push(`物品介绍：`)
+        const allIntroParts = processMcmodIntroduction(introduction, config.maxDescLength)
+        const introParts = allIntroParts.slice(0, config.maxParagraphs)
+        itemContent.push(...introParts)
+        if (introParts.length < allIntroParts.length) itemContent.push('（更多内容请查看完整页面）')
+      }
+      // 添加相关内容
+      if (item.others && itemInfo.teams?.relatedItems?.length) {
+        const relatedItems = [`相关内容：`]
+        itemInfo.teams.relatedItems.slice(0, config.maxModLinks).forEach(related => {
+          relatedItems.push(`• [${related.name}](${related.url})`)
+        })
+        itemContent.push(relatedItems.join('\n'))
+      }
+    }
+    itemContent.push(`查看详情: ${item.url}`)
+    return { content: itemContent, url: item.url, icon: iconUrl }
+  } catch (error) {
+    ctx.logger.error('MCMOD 资料详情获取失败:', error)
+    return { content: [ `[${item.name}]`, item.description || '暂无描述', `查看详情: ${item.url}` ], url: item.url, icon: null }
+  }
+}
+
+/**
  * 注册MCMOD相关命令
  * @param {Context} ctx - Koishi上下文
  * @param {Command} mc - 父命令
@@ -360,7 +437,7 @@ export function registerMcmod(ctx: Context, mc: Command, config: Config) {
     .option('relations', '-r 获取模组关系')
     .option('others', '-o 获取额外信息')
     .option('page', '-p <page:number> 页码')
-    .option('shot', '-s 使用截图模式')
+    .option('shot', '-s 截图模式')
     .action(async ({ session, options }, keyword) => {
       if (!keyword) return '请输入关键词'
       try {
@@ -385,6 +462,12 @@ export function registerMcmod(ctx: Context, mc: Command, config: Config) {
             break
           case 'post': // 教程
             projectInfo = await getMcmodPost(ctx, {
+              name: project.name, url: project.url, description: project.description,
+              others: options.others, extra: { id: project.id, type: project.type }
+            }, config)
+            break
+          case 'item': // 物品
+            projectInfo = await getMcmodItem(ctx, {
               name: project.name, url: project.url, description: project.description,
               others: options.others, extra: { id: project.id, type: project.type }
             }, config)

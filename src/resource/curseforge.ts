@@ -2,6 +2,7 @@ import { Context, Command, h } from 'koishi'
 import { Config } from '../index'
 import { renderOutput } from './render'
 import { CF_MAPS } from './maps'
+import { handleDownload } from './download'
 
 /** CurseForge API基础URL */
 const CF_API_BASE = 'https://api.curseforge.com/v1'
@@ -113,7 +114,8 @@ export function registerCurseForge(ctx: Context, mc: Command, config: Config) {
     .option('version', '-v <version:string> 支持版本')
     .option('loader', '-l <loader:string> 加载器')
     .option('skip', '-k <count:number> 跳过结果数')
-    .option('shot', '-s 使用截图模式')
+    .option('shot', '-s 截图模式')
+    .option('download', '-d 下载模式')
     .action(async ({ session, options }, keyword) => {
       if (!keyword) return '请输入关键词'
       if (!config.curseforgeEnabled) return '未配置 CurseForge API 密钥'
@@ -125,6 +127,7 @@ export function registerCurseForge(ctx: Context, mc: Command, config: Config) {
         }
         const { results } = await searchCurseForgeProjects(ctx, keyword, config.curseforgeEnabled, searchOptions)
         if (!results.length) return '未找到匹配的资源'
+        if (options.download) return handleDownload(ctx, session, 'curseforge', results[0], config, options)
         const projectInfo = await getCurseForgeProject(ctx, results[0].id, config.curseforgeEnabled)
         if (!projectInfo) return '获取详情失败'
         const result = await renderOutput(session, projectInfo.content, projectInfo.url, ctx, config, options.shot)

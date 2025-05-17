@@ -17,18 +17,35 @@ function preparePlatforms(ctx, options) {
 }
 
 /**
+ * 构建Modrinth facets字符串
+ */
+function buildModrinthFacets(options) {
+  const facets = []
+  if (options.type) facets.push([`project_type:${options.type}`])
+  if (options.version) facets.push([`versions:${options.version}`])
+  if (options.loader) facets.push([`categories:${options.loader}`])
+  if (options.mrf) {
+    try {
+      const parsedFacets = JSON.parse(options.mrf)
+      if (Array.isArray(parsedFacets)) facets.push(...parsedFacets)
+    } catch {}
+  }
+  return facets.length ? JSON.stringify(facets) : null
+}
+
+/**
  * 准备平台选项
  */
 function preparePlatformOptions(options, platformStates) {
   return {
     modrinth: {
-      facets: options.mrf || (options.type && JSON.stringify([[`project_type:${options.type}`]])),
+      facets: options.mrf || buildModrinthFacets(options),
       sort: options.sort, version: options.version, offset: platformStates.modrinth?.offset || 0, limit: 100
     },
     curseforge: {
       categoryId: options.type ? CF_MAPS.TYPE[options.type] : undefined,
       gameVersion: options.version, sortOrder: options.cfo, pageSize: 50,
-      modLoaderType: options.cfl ? CF_MAPS.LOADER[options.cfl] : undefined,
+      modLoaderType: options.loader ? CF_MAPS.LOADER[options.loader] : undefined,
       sortField: options.sort, index: platformStates.curseforge?.offset || 0
     },
     mcmod: { offset: platformStates.mcmod?.offset || 0, type: options.type, mold: options.mcmold ? 1 : 0 },
@@ -159,7 +176,7 @@ async function handleUserInput(input, allResults, currentPage, config, ctx, sess
   // 序号选择
   const choice = parseInt(input);
   if (isNaN(choice) || choice < 1 || choice > allResults.length) {
-    return { done: true, message: `请输入 1-${allResults.length} 的数字，或输入 n 查看下一页，输入 c 取消` };
+    return { done: true, message: `请输入 1-${allResults.length} 的数字，或输入n查看下页，输入c取消` };
   }
   // 获取详情
   try {
@@ -197,7 +214,7 @@ async function displayResultPage(ctx, session, config, platformResults, currentP
   if (platforms.length === 1 && platformStates[platforms[0]]?.totalPages > 0) totalPages = platformStates[platforms[0]].totalPages;
   // 渲染结果
   const formattedResults = [
-    '请回复序号查看详情，输入 n 查看下一页，输入 c 取消',
+    '请回复序号查看详情，输入n查看下页，输入c取消',
     ...currentResults.map((p, i) => {
       const index = startIndex + i + 1;
       const desc = config.searchDesc > 0 && p.description
@@ -218,14 +235,15 @@ export function registerSearch(ctx: Context, mc: Command, config: Config) {
   mc.subcommand('.search <keyword:string>', '搜索 Minecraft 资源')
     .option('platform', '-p <platform:string> 指定平台')
     .option('sort', '-s <sort:string> 排序方式')
+    .option('version', '-v <version:string> 支持版本')
+    .option('loader', '-l <loader:string> 加载器')
+    .option('skip', '-k <count:number> 跳过结果数')
+    .option('type', `-t <type:string> 资源类型(${Object.keys(CF_MAPS.TYPE).join('|')})`)
     .option('mrf', '-mrf <facets:string> [MR]高级过滤')
-    .option('cfl', '-cfl <loader:string> [CF]加载器')
     .option('cfo', '-cfo <order:string> [CF]升降序')
     .option('what', '-ww <what:string> [Wiki]搜索范围')
     .option('mcmold', '-mm [Mod]复杂搜索')
-    .option('version', '-v <version:string> 支持版本')
-    .option('skip', '-k <count:number> 跳过结果数')
-    .option('type', `-t <type:string> 资源类型(${Object.keys(CF_MAPS.TYPE).join('|')})`)
+    .option('download', '-d 下载模式')
     .action(async ({ session, options }, keyword) => {
       if (!keyword) return '需要关键词';
       try {

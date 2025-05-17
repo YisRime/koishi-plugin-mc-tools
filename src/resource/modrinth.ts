@@ -2,6 +2,7 @@ import { Context, Command, h } from 'koishi'
 import { Config } from '../index'
 import { renderOutput } from './render'
 import { STATUS_MAP } from './maps'
+import { handleDownload } from './download'
 
 /** Modrinth API基础URL */
 const MR_API_BASE = 'https://api.modrinth.com/v2'
@@ -210,10 +211,12 @@ export function registerModrinth(ctx: Context, mc: Command, config: Config) {
   mc.subcommand('.modrinth <keyword:string>', '查询 Modrinth 资源')
     .option('type', '-t <type:string> 资源类型')
     .option('version', '-v <version:string> 支持版本')
+    .option('loader', '-l <loader:string> 加载器')
     .option('facets', '-f <facets:string> 高级过滤')
     .option('sort', '-sort <sort:string> 排序方式')
     .option('skip', '-k <count:number> 跳过结果数')
-    .option('shot', '-s 使用截图模式')
+    .option('shot', '-s 截图模式')
+    .option('download', '-d 下载模式')
     .action(async ({ session, options }, keyword) => {
       if (!keyword) return '请输入关键词'
       try {
@@ -221,10 +224,12 @@ export function registerModrinth(ctx: Context, mc: Command, config: Config) {
         const facetsArray = []
         if (options.type) facetsArray.push([`project_type:${options.type}`])
         if (options.version) facetsArray.push([`versions:${options.version}`])
+        if (options.loader) facetsArray.push([`categories:${options.loader}`])
         if (options.facets) facetsArray.push(...parseFacets(options.facets))
         if (facetsArray.length) searchOptions['facets'] = JSON.stringify(facetsArray)
         const projects = await searchModrinthProjects(ctx, keyword, searchOptions)
         if (!projects.length) return '未找到匹配的资源'
+        if (options.download) return handleDownload(ctx, session, 'modrinth', projects[0], config, options)
         const projectInfo = await getModrinthProject(ctx, projects[0].project_id, config)
         if (!projectInfo) return '获取详情失败'
         const result = await renderOutput(session, projectInfo.content, projectInfo.url, ctx, config, options.shot)
