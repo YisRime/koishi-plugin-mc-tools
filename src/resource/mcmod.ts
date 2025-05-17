@@ -156,10 +156,11 @@ export async function getMcmodProject(ctx: Context, project, config: Config = nu
     // 版本信息
     let versionInfo = '未知'
     if (compatibility?.mcVersions) {
-      versionInfo = ['forge', 'fabric', 'behaviorPack']
+      versionInfo = ['forge', 'fabric', 'neoforge', 'quilt', 'behaviorPack', 'dataPack']
         .map(platform => compatibility.mcVersions[platform] &&
-          `${platform === 'behaviorPack' ? '行为包' : platform.charAt(0).toUpperCase() + platform.slice(1)}: ${compatibility.mcVersions[platform].join(', ')}`)
-        .filter(Boolean).join('\n● ')
+          `${ platform === 'behaviorPack' ? '行为包' : platform === 'dataPack' ? '数据包' :
+            platform.charAt(0).toUpperCase() + platform.slice(1)
+          }: ${compatibility.mcVersions[platform].join(', ')}`).filter(Boolean).join('\n● ')
     }
     // 获取模组状态
     const getModStatus = (status) => {

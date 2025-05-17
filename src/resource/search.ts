@@ -101,6 +101,12 @@ async function executeSearch(ctx, keyword, options, config, platforms, platformS
     }
     // 将结果添加到平台结果中
     platformResults[platform] = (platformResults[platform] || []).concat(results);
+    // 如果结果数量少于每页期望的数量，标记为已耗尽，避免重复搜索
+    const expectedPageSizes = { curseforge: 50, mcmod: 30, mcwiki: 10 };
+    const expectedPageSize = expectedPageSizes[platform] || 100;
+    if (results.length < expectedPageSize && !platformStates[platform]?.exhausted) {
+      platformStates[platform] = { ...platformStates[platform], exhausted: true };
+    }
   });
   // 结果检查
   const allExhausted = platforms.every(p => platformStates[p]?.exhausted);
