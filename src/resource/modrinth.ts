@@ -54,6 +54,21 @@ export async function searchModrinthProjects(ctx: Context, keyword: string, opti
 }
 
 /**
+ * 获取Modrinth项目依赖关系
+ * @param {Context} ctx - Koishi上下文
+ * @param {string} projectId - 项目ID或slug
+ * @returns {Promise<Object|null>} 依赖关系数据
+ */
+export async function getModrinthDependencies(ctx: Context, projectId: string) {
+  try {
+    return await ctx.http.get(`${MR_API_BASE}/project/${projectId}/dependencies`)
+  } catch (error) {
+    ctx.logger.error('Modrinth 依赖获取失败:', error)
+    return null
+  }
+}
+
+/**
  * 将长文本分割成适当长度的段落
  * @param text 要处理的文本
  * @param paragraphLimit 段落字数限制
@@ -137,9 +152,10 @@ function processModrinthBody(body: string, paragraphLimit: number): string[] {
  * @param {Context} ctx - Koishi上下文
  * @param {string} projectId - 项目ID
  * @param {Config} config - 配置对象
+ * @param {boolean} showDependencies - 是否显示依赖关系
  * @returns {Promise<Object|null>} 项目详情，包含content和url
  */
-export async function getModrinthProject(ctx: Context, projectId: string, config: Config) {
+export async function getModrinthProject(ctx: Context, projectId: string, config: Config, showDependencies = false) {
   try {
     const project = await ctx.http.get(`${MR_API_BASE}/project/${projectId}`)
     if (!project) return null
@@ -162,6 +178,18 @@ export async function getModrinthProject(ctx: Context, projectId: string, config
         `许可: ${project.license?.id}${project.license?.name ? ` (${project.license.name})` : ''}`
       ].filter(Boolean).map(item => `● ${item}`).join('\n')
     ].filter(Boolean)
+    if (showDependencies) {
+      const dependencies = await getModrinthDependencies(ctx, projectId)
+      if (dependencies) {
+        if (dependencies.projects?.length > 0) {
+          content.push('项目依赖：')
+          const depItems = dependencies.projects.map(dep =>
+            `● ${dep.title}${dep.project_type ? ` (${dep.project_type})` : ''} - ${dep.slug}`
+          )
+          content.push(depItems.join('\n'))
+        }
+      }
+    }
     // 相关链接
     const links = [
       project.source_url && `源代码: ${project.source_url}`,
@@ -213,8 +241,9 @@ export function registerModrinth(ctx: Context, mc: Command, config: Config) {
     .option('version', '-v <version:string> 支持版本')
     .option('loader', '-l <loader:string> 加载器')
     .option('facets', '-f <facets:string> 高级过滤')
-    .option('sort', '-sort <sort:string> 排序方式')
     .option('skip', '-k <count:number> 跳过结果数')
+    .option('sort', '-sort <sort:string> 排序方式')
+    .option('dependencies', '-dep 显示依赖')
     .option('shot', '-s 截图模式')
     .option('download', '-d 下载模式')
     .action(async ({ session, options }, keyword) => {
@@ -230,7 +259,7 @@ export function registerModrinth(ctx: Context, mc: Command, config: Config) {
         const projects = await searchModrinthProjects(ctx, keyword, searchOptions)
         if (!projects.length) return '未找到匹配的资源'
         if (options.download) return handleDownload(ctx, session, 'modrinth', projects[0], config, options)
-        const projectInfo = await getModrinthProject(ctx, projects[0].project_id, config)
+        const projectInfo = await getModrinthProject(ctx, projects[0].project_id, config, options.dependencies)
         if (!projectInfo) return '获取详情失败'
         const result = await renderOutput(session, projectInfo.content, projectInfo.url, ctx, config, options.shot)
         return config.useForward && result === '' && !options.shot ? undefined : result
