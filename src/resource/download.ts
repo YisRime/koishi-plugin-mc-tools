@@ -88,27 +88,31 @@ function formatFileSize(bytes: number): string {
  * @param {string} input - 用户输入
  * @param {any[]} pageFiles - 当前页的文件列表
  * @param {boolean} isLastPage - 是否为最后一页
+ * @param {number} startIndex - 当前页起始索引
  * @returns {Promise<{action: 'select'|'next'|'cancel', index?: number}>} 用户操作结果
  */
-async function handleUserInput(session: Session, input: string, pageFiles: any[], isLastPage: boolean): Promise<{action: 'select'|'next'|'cancel', index?: number}> {
+async function handleUserInput(session: Session, input: string, pageFiles: any[], isLastPage: boolean, startIndex: number): Promise<{action: 'select'|'next'|'cancel', index?: number}> {
   if (!input || input.toLowerCase() === 'c') return { action: 'cancel' };
   if (input.toLowerCase() === 'n') return isLastPage ? { action: 'cancel' } : { action: 'next' };
   const index = parseInt(input) - 1;
-  if (isNaN(index) || index < 0 || index >= pageFiles.length) {
-    await session.send(`请输入 1-${pageFiles.length} 的数字，输入n查看下页，输入c取消`);
-    return handleUserInput(session, await session.prompt(60000), pageFiles, isLastPage);
+  // 检查输入的序号是否在当前页的范围内
+  const pageIndex = index - startIndex;
+  if (isNaN(index) || pageIndex < 0 || pageIndex >= pageFiles.length) {
+    await session.send(`请回复序号下载文件，输入n查看下页，输入c取消`);
+    return handleUserInput(session, await session.prompt(60000), pageFiles, isLastPage, startIndex);
   }
-  return { action: 'select', index };
+  return { action: 'select', index: pageIndex };
 }
 
 /**
  * 格式化文件展示信息
  * @param {any} file - 文件信息
  * @param {string} platform - 平台名称 ('modrinth' 或 'curseforge')
+ * @param {number} globalIndex - 全局索引
  * @returns {string} 格式化的文件信息字符串
  */
-function formatFileInfo(file: any, platform: string): string {
-  const index = file._index + 1;
+function formatFileInfo(file: any, platform: string, globalIndex: number): string {
+  const index = globalIndex + 1;
   if (platform === 'modrinth') {
     return `${index}. ${file.name} [${file.game_versions?.join(', ')}] [${file.loaders?.join(', ')}] (${formatFileSize(file.files[0].size)})`;
   } else {
@@ -126,12 +130,13 @@ function formatFileInfo(file: any, platform: string): string {
  * @param {string} platform - 平台名称
  * @param {Context} ctx - Koishi上下文
  * @param {any} config - 配置信息
+ * @param {number} startIndex - 当前页起始索引
  * @returns {Promise<void>}
  */
-async function displayFileList(session: Session, files: any[], pageInfo: string, platform: string, ctx: Context, config: any): Promise<void> {
+async function displayFileList(session: Session, files: any[], pageInfo: string, platform: string, ctx: Context, config: any, startIndex: number): Promise<void> {
   const messages = [
     '请回复序号下载文件，输入n查看下页，输入c取消',
-    ...files.map((file, i) => { file._index = i; return formatFileInfo(file, platform); }), pageInfo
+    ...files.map((file, i) => formatFileInfo(file, platform, startIndex + i)), pageInfo
   ];
   await renderOutput(session, messages, null, ctx, config, false);
 }
@@ -181,9 +186,9 @@ export async function handleDownload(ctx: Context, session: Session, platform: s
       const totalPages = Math.ceil(totalItems / displayPageSize);
       const isLastPage = !hasMoreResults && (endIndex >= allFiles.length);
       const pageInfo = `第 ${currentPage + 1}/${totalPages || '?'} 页${isLastPage ? '（最后一页）' : ''}`;
-      await displayFileList(session, pageFiles, pageInfo, platform, ctx, config);
+      await displayFileList(session, pageFiles, pageInfo, platform, ctx, config, startIndex);
       const input = await session.prompt(60000);
-      const result = await handleUserInput(session, input, pageFiles, isLastPage);
+      const result = await handleUserInput(session, input, pageFiles, isLastPage, startIndex);
       if (result.action === 'cancel') {
         return '已取消下载';
       } else if (result.action === 'next') {

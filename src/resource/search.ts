@@ -183,7 +183,7 @@ async function handleUserInput(input, allResults, currentPage, config, ctx, sess
     const selected = allResults[choice - 1];
     const platform = Object.values(PLATFORMS).find(p => p.name === selected.platform);
     if (!platform) return { done: true, message: '获取详情失败：无法找到平台处理器' };
-    const detailId = selected.platform === 'MCMOD' ? selected : selected.extra.id;
+    const detailId = selected.platform === 'MCMOD' ? selected.id : selected.extra.id;
     const detail = await platform.getDetail(ctx, detailId, config);
     if (!detail) return { done: true, message: '获取详情失败' };
     return { done: true, message: await renderOutput(session, detail.content, detail.url, ctx, config) };

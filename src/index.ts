@@ -59,7 +59,7 @@ export const Config: Schema<Config> = Schema.intersect([
     mcmodEnabled: Schema.union([
       Schema.const(false).description('禁用'),
       Schema.string().description('启用').role('link').default('https://mcmod-api.yis-rime.workers.dev/')
-    ]).description('启用 MCMOD 查询').default('https://mcmod-api.yis-rime.workers.dev/'),
+    ]).description('启用 MC 百科查询').default('https://mcmod-api.yis-rime.workers.dev/'),
     curseforgeEnabled: Schema.union([
       Schema.const(false).description('禁用'),
       Schema.string().description('启用').role('secret')
@@ -138,7 +138,13 @@ export function apply(ctx: Context, config: Config) {
   const mc = ctx.command('mc', 'Minecraft 工具')
   // 帮助
   mc.subcommand('.help', 'Minecraft 插件帮助')
-    .action(() => '现已更新 3.0.0 版本，代码全部重写，基本完善，欢迎体验测试，如有Bug请加个人Bot的QQ810518660，此命令会在之后转为插件帮助说明，因插件功能众多')
+    .action(() => `# MC-Tools 插件帮助
+- **资源查询**：查询MCWiki、MCMOD百科、CurseForge和Modrinth上的内容
+- **玩家信息**：查询玩家UUID、皮肤、渲染3D模型和头像
+- **版本功能**：查询最新版本，自动推送Minecraft版本更新通知
+- **服务器信息**：查询Java版和基岩版服务器状态、玩家、模组和插件列表
+- **服务器交互**：通过WebSocket连接服务器、执行RCON命令、发送游戏内消息
+详细说明请访问[插件主页](https://github.com/YisRime/koishi-plugin-mc-tools)获取`)
   // 最新版本查询
   config.verEnabled !== false && registerVer(ctx, mc)
   config.noticeTargets?.length && regVerCheck(ctx, config)
