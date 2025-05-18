@@ -106,7 +106,7 @@ export const Config: Schema<Config> = Schema.intersect([
     ]).role('table'),
     serverTemplate: Schema.string().role('textarea')
     .description('服务器信息模板（使用{...:x}指代数据，数字代表数量限制）')
-    .default('{icon}\n{name} {edition}\n{motd}\n{software} {version} | {online}/{max} | {ping}\n{gamemode} {serverid} {eulablock}\nIP:{ip}\nSRV:{srv}\n玩家({playercount}):\n{playerlist:10}\n插件({plugincount}):\n{pluginlist:10}\n模组({modcount}):\n{modlist:10}')
+    .default('{icon}\n{name} {edition}\n{motd}\n{software}{version} | {online}/{max} | {ping}\n{gamemode} {serverid} {eulablock}\nIP:{ip}\nSRV:{srv}\n玩家({playercount}):\n{playerlist:10}\n插件({plugincount}):\n{pluginlist:10}\n模组({modcount}):\n{modlist:10}')
   }).description('服务器查询配置'),
   Schema.object({
     bindEnabled: Schema.boolean().description('启用白名单管理').default(false),

@@ -149,9 +149,8 @@ async function fetchServerStatus(ctx: Context, server: string, forceType: 'java'
     if (actualPingResult !== null) successResult.ping = actualPingResult;
     return successResult;
   }
-  // 所有API均离线时，只返回最基本信息
   return {
-    online: actualPingResult !== null, host, port, players: { online: null, max: null },
+    online: false, host, port, players: { online: null, max: null },
     ping: actualPingResult, error: '查询失败：无法获取服务器状态'
   };
 }
@@ -241,15 +240,14 @@ function formatServerStatus(status: ServerStatus, config: Config) {
       case 'gamemode': return status.gamemode;
       case 'eulablock': return status.eula_blocked ? '已被封禁' : null;
       case 'serverid': return status.server_id;
-      case 'playercount': return String(status.players.list?.length || 0);
-      case 'plugincount': return String(status.plugins?.length || 0);
-      case 'modcount': return String(status.mods?.length || 0);
+      case 'playercount': return status.players.list?.length ? String(status.players.list.length) : null;
+      case 'plugincount': return status.plugins?.length ? String(status.plugins.length) : null;
+      case 'modcount': return status.mods?.length ? String(status.mods.length) : null;
       case 'playerlist':
         if (!status.players.list?.length) return null;
         limit = limit || status.players.list.length;
         return status.players.list.slice(0, limit)
-          .map(p => p)
-          .join(', ') + (limit < status.players.list.length ? '...' : '');
+          .map(p => p).join(', ') + (limit < status.players.list.length ? '...' : '');
       case 'pluginlist':
         if (!status.plugins?.length) return null;
         limit = limit || status.plugins.length;
@@ -269,7 +267,7 @@ function formatServerStatus(status: ServerStatus, config: Config) {
   const results = config.serverTemplate.split('\n')
     .map(line => {
       const placeholders = Array.from(line.matchAll(/\{([^{}:]+)(?::(\d+))?\}/g));
-      if (placeholders.some(match => {
+      if (placeholders.length > 0 && placeholders.every(match => {
         const name = match[1];
         const limit = match[2] ? parseInt(match[2], 10) : undefined;
         const value = getValue(name, limit);
