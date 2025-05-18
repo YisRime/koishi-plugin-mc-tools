@@ -91,81 +91,69 @@ function validateServerAddress(input: string): string {
 
 /**
  * 直接ping Minecraft服务器
- * @param {string} host - 服务器主机地址
- * @param {number} port - 服务器端口
- * @param {'java'|'bedrock'} type - 服务器类型，java 使用 TCP，bedrock 使用 UDP
- * @param {number} [timeout=3000] - 超时时间(毫秒)
- * @returns {Promise<number>} ping时间(毫秒)
- * @throws {Error} 当连接超时或发生错误时抛出异常
  */
-async function pingServer(host: string, port: number, type: 'java' | 'bedrock', timeout = 3000): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const startTime = Date.now();
-    if (type === 'java') {
-      // Java服务器TCP
-      const socket = net.createConnection({ host, port, timeout });
-      const cleanup = () => { socket.removeAllListeners(); socket.destroy(); };
-      socket.once('connect', () => { cleanup(); resolve(Date.now() - startTime); })
-        .once('error', err => { cleanup(); reject(err); })
-        .once('timeout', () => { cleanup(); reject(new Error('超时')); });
-    } else {
-      // 基岩版UDP
+async function pingServer(host: string, port: number, type: 'java' | 'bedrock'): Promise<number> {
+  const startTime = Date.now();
+  if (type === 'java') {
+    return new Promise((resolve, reject) => {
+      const socket = net.createConnection({ host, port })
+        .once('connect', () => { socket.destroy(); resolve(Date.now() - startTime); })
+        .once('error', err => { socket.destroy(); reject(err); });
+    });
+  } else {
+    return new Promise((resolve, reject) => {
       const client = dgram.createSocket('udp4');
       const pingData = Buffer.from([0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0x00, 0xfe, 0xfe, 0xfe, 0xfe, 0xfd, 0xfd, 0xfd, 0xfd, 0x12, 0x34, 0x56, 0x78]);
-      const timer = setTimeout(() => { client.close(); reject(new Error('超时')); }, timeout);
-      const cleanup = () => { clearTimeout(timer); client.removeAllListeners(); client.close(); };
-      client.once('message', () => { cleanup(); resolve(Date.now() - startTime); })
-        .once('error', err => { cleanup(); reject(err); });
-      client.send(pingData, port, host, err => { if (err) { cleanup(); reject(err); } });
-    }
-  });
+      const timer = setTimeout(() => { client.close(); reject(new Error('查询超时')); }, 10000);
+      client.once('message', () => {
+        clearTimeout(timer); client.close(); resolve(Date.now() - startTime);
+      }).once('error', err => {clearTimeout(timer); client.close(); reject(err); });
+      client.send(pingData, port, host, err => { if (err) { clearTimeout(timer); client.close(); reject(err); }});
+    });
+  }
 }
 
 /**
  * 获取 Minecraft 服务器状态
- * @param {string} server - 服务器地址，可以包含端口(如 example.com:25565)
- * @param {'java'|'bedrock'} forceType - 强制使用的服务器类型，java 或 bedrock
- * @param {Config} [config] - 配置信息，包含API端点等配置
- * @returns {Promise<ServerStatus>} 服务器状态信息对象
- * @description 首先尝试直接ping服务器，然后使用配置的API获取详细信息。
  */
-async function fetchServerStatus(server: string, forceType: 'java' | 'bedrock', config?: Config): Promise<ServerStatus> {
-  try {
-    const address = validateServerAddress(server);
-    const serverType = forceType || 'java';
-    const defaultPort = serverType === 'java' ? 25565 : 19132;
-    const host = address.split(':')[0], port = parseInt(address.split(':')[1]) || defaultPort;
-    const apiEndpoints = config?.serverApis?.filter(api => api.type === serverType)?.map(api => api.url) || [];
-    const errors = [];
-    let directPing: number | null = null;
-    try { directPing = await pingServer(host, port, serverType, 3000); } catch (e) {}
-    // API查询
-    for (const apiUrl of apiEndpoints) {
-      try {
-        const requestUrl = apiUrl.replace('${address}', address);
-        const startTime = Date.now();
-        const response = await fetch(requestUrl, {headers: {'User-Agent': 'Mozilla/5.0'}, method: 'GET'});
-        if (response.ok) {
-          const data = await response.json();
-          const result = normalizeApiResponse(data, address, serverType);
-          result.ping = directPing || data.ping || (Date.now() - startTime);
-          return result;
-        }
-        errors.push(`${apiUrl.split('/').pop()} ${response.status}`);
-      } catch (e) { errors.push(`API错误`); }
-    }
-    if (directPing !== null) return { online: true, host, port, ping: directPing, players: { online: null, max: null } };
-    return {
-      online: false, host, port,
-      players: { online: null, max: null },
-      error: errors.length ? `请求失败: ${errors[0]}` : '服务器无响应'
-    };
-  } catch (error) {
-    return {
-      online: false, host: server, port: forceType === 'bedrock' ? 19132 : 25565,
-      players: { online: null, max: null }, error: `地址错误: ${error.message}`
-    };
+async function fetchServerStatus(ctx: Context, server: string, forceType: 'java' | 'bedrock', config?: Config): Promise<ServerStatus> {
+  // 解析和验证地址
+  let address = validateServerAddress(server);
+  const serverType = forceType || 'java';
+  const defaultPort = serverType === 'java' ? 25565 : 19132;
+  const host = address.split(':')[0];
+  const port = parseInt(address.split(':')[1]) || defaultPort;
+  // 获取API端点和执行ping请求
+  const apiEndpoints = config?.serverApis?.filter(api => api.type === serverType)?.map(api => api.url) || [];
+  const pingPromise = pingServer(host, port, serverType).catch(() => null);
+  // 同时处理所有API请求和ping请求
+  const [pingResult, ...apiResults] = await Promise.allSettled([
+    pingPromise,
+    ...apiEndpoints.map(async (apiUrl) => {
+      const startTime = Date.now();
+      const response = await fetch(apiUrl.replace('${address}', address), {headers: {'User-Agent': 'Mozilla/5.0'}, method: 'GET'});
+      if (!response.ok) return null;
+      const data = await response.json();
+      // 检查有效响应
+      const result = normalizeApiResponse(data, address, serverType);
+      result.ping = Date.now() - startTime;
+      return result.online && (result.version?.name_clean || result.players.online !== null) ? result : null;
+    })
+  ]);
+  // 处理结果
+  const actualPingResult = pingResult.status === 'fulfilled' ? pingResult.value : null;
+  const successResult = apiResults
+    .filter(result => result.status === 'fulfilled' && result.value)
+    .map(result => (result as PromiseFulfilledResult<ServerStatus>).value)[0];
+  if (successResult) {
+    if (actualPingResult !== null) successResult.ping = actualPingResult;
+    return successResult;
   }
+  // 所有API均离线时，只返回最基本信息
+  return {
+    online: actualPingResult !== null, host, port, players: { online: null, max: null },
+    ping: actualPingResult, error: '查询失败：无法获取服务器状态'
+  };
 }
 
 /**
@@ -176,55 +164,56 @@ async function fetchServerStatus(server: string, forceType: 'java' | 'bedrock', 
  * @returns {ServerStatus} 标准化后的服务器状态
  */
 function normalizeApiResponse(data: any, address: string, serverType: 'java' | 'bedrock'): ServerStatus {
+  const [host, portStr] = address.split(':');
+  const defaultPort = serverType === 'java' ? 25565 : 19132;
+  const port = parseInt(portStr) || defaultPort;
   // 检查服务器是否在线
-  if (data.online === false || (data.status === 'error' && !data.players) ||
-      (data.status === 'offline') || (typeof data.status === 'string' && data.status.toLowerCase() === 'offline')) {
-    return {
-      online: false,
-      host: data.hostname || data.host || data.ip || address.split(':')[0],
-      port: data.port || parseInt(address.split(':')[1]) || (serverType === 'java' ? 25565 : 19132),
-      players: { online: null, max: null },
-      error: data.error || data.description
-    };
-  }
-  // 统一处理各种 API 格式
+  const isOffline = data.online === false ||  (data.status === 'error') || (data.status === 'offline') ||
+                    (typeof data.status === 'string' && data.status.toLowerCase() === 'offline');
+  if (isOffline) return { online: false, host: host, port: port, players: { online: null, max: null }, error: data.error || data.description };
+  // 处理列表类型数据
+  const processListData = (items: any, isObject = false) => {
+    if (!items) return undefined;
+    if (Array.isArray(items)) return items.map(item => typeof item === 'string' ? { name: item } : item);
+    if (isObject && typeof items === 'object') return Object.entries(items).map(([k, v]) => ({ name: k, version: v }));
+    return undefined;
+  };
+  // 处理MOTD
+  const processMOTD = () => {
+    if (!data.motd) return data.description?.text || data.description || data.server_motd;
+    if (typeof data.motd === 'string') return data.motd;
+    if (typeof data.motd !== 'object') return null;
+    const textArray = data.motd.clean || data.motd.raw;
+    if (!textArray) return null;
+    return Array.isArray(textArray) ? textArray.join('\n') : textArray;
+  };
   return {
-    online: true,
-    host: data.hostname || data.host || data.server || address.split(':')[0],
-    port: data.port || data.ipv6Port || parseInt(address.split(':')[1]) || (serverType === 'java' ? 25565 : 19132),
-    ip_address: data.ip_address || data.ip || data.hostip,
-    eula_blocked: data.eula_blocked || data.blocked,
+    online: true, host: data.hostname || data.host || data.server || host,
+    port: data.port || data.ipv6Port || port, ip_address: data.ip_address || data.ip || data.hostip,
+    eula_blocked: data.eula_blocked || data.blocked, motd: processMOTD(),
     version: {
       name_clean: data.version?.name_clean || data.version || data.server?.version || data.server_version,
       name: data.version?.name || data.protocol?.name || data.version?.protocol_name
     },
     players: {
-      online: data.players?.online ?? data.players?.now ?? data.players_online ?? data.online_players ?? 0,
-      max: data.players?.max ?? data.players_max ?? data.max_players ?? 0,
+      online: data.players?.online ?? data.players?.now ?? data.players_online ?? data.online_players,
+      max: data.players?.max ?? data.players_max ?? data.max_players,
       list: Array.isArray(data.players?.list)
         ? data.players.list.map(p => typeof p === 'string' ? p : p.name || p.name_clean || p.id)
         : (Array.isArray(data.players)
            ? data.players.map(p => typeof p === 'string' ? p : p.name || p.name_clean || p.id)
            : data.players?.sample?.map(p => p.name) || data.player_list)
     },
-    motd: data.motd?.clean?.[0] || (Array.isArray(data.motd?.clean) ? data.motd.clean[0] : null) ||
-          data.motd?.raw?.[0] || data.motd || data.description?.text || data.description || data.server_motd,
-    icon: data.icon || data.favicon || data.favocion,
-    mods: (data.mods && (Array.isArray(data.mods)
-           ? data.mods.map(m => typeof m === 'string' ? { name: m } : m)
-           : Object.entries(data.mods).map(([k, v]) => ({ name: k, version: v }))))
-           || data.modinfo?.modList?.map(m => ({ name: m.modid, version: m.version }))
-           || (data.modInfo ? { name: data.modInfo } : null)
-           || data.modlist,
+    icon: data.icon || data.favicon || data.favocion, srv_record: data.srv_record || data.srv,
+    mods: processListData(data.mods, true) ||
+          data.modinfo?.modList?.map(m => ({ name: m.modid, version: m.version })) ||
+          (data.modInfo ? [{ name: data.modInfo }] : null) || data.modlist,
     software: data.software || data.server?.name || data.server_software,
-    plugins: (data.plugins && (Array.isArray(data.plugins)
-              ? data.plugins.map(p => typeof p === 'string' ? { name: p } : p)
-              : Object.entries(data.plugins).map(([k, v]) => ({ name: k, version: v }))))
-              || data.plugin_list,
-    srv_record: data.srv_record || data.srv,
+    plugins: processListData(data.plugins, true) || data.plugin_list,
     gamemode: data.gamemode || data.game_type || data.gametype,
     server_id: data.server_id || data.serverid || data.uuid || data.serverId,
-    edition: data.edition || (serverType === 'bedrock' ? 'MCPE' : null) || (data.platform === 'MINECRAFT_BEDROCK' ? 'MCPE' : null)
+    edition: data.edition || (serverType === 'bedrock' ? 'MCPE' : null) ||
+             (data.platform === 'MINECRAFT_BEDROCK' ? 'MCPE' : null)
   };
 }
 
@@ -301,13 +290,11 @@ function formatServerStatus(status: ServerStatus, config: Config) {
  * 根据会话查找群组对应的服务器
  * @param {any} session - 会话对象
  * @param {Config} config - 配置信息
- * @returns {{server: string, serverId: number}|{error: string}} 服务器信息或错误信息
+ * @returns {string|null} 服务器地址，未找到时返回null
  */
-function findGroupServer(session: any, config: Config): { server: string, serverId: number } | { error: string } {
-  const mapping = config.serverMaps.find(m =>m.platform === session.platform && m.channelId === session.guildId);
-  if (!mapping) return { error: '请提供服务器地址' };
-  if (!mapping.serverAddress) return { error: `服务器 #${mapping.serverId} 未配置地址` };
-  return { server: mapping.serverAddress, serverId: mapping.serverId };
+function findGroupServer(session: any, config: Config): string | null {
+  const mapping = config.serverMaps.find(m => m.platform === session.platform && m.channelId === session.guildId);
+  return mapping.serverAddress || null;
 }
 
 /**
@@ -320,34 +307,20 @@ export function registerInfo(ctx: Context, parent: any, config: Config) {
   const mcinfo = parent.subcommand('.info [server]', '查询 Minecraft 服务器')
     .usage(`mc.info [地址[:端口]] - 查询 Java 服务器\nmc.info.be [地址[:端口]] - 查询 Bedrock 服务器`)
     .action(async ({ session }, server) => {
-      try {
-        if (!server && session) {
-          const groupServer = findGroupServer(session, config);
-          if ('error' in groupServer) return groupServer.error;
-          server = groupServer.server;
-          return fetchServerStatus(server, 'java', config).then(status => formatServerStatus(status, config));
-        }
-        const status = await fetchServerStatus(server, 'java', config);
-        return formatServerStatus(status, config);
-      } catch (error) {
-        ctx.logger.error(`Java 服务器查询失败: ${error.message}`, error);
-        return `信息查询失败`;
+      if (!server) {
+        server = findGroupServer(session, config);
+        if (!server) return '请提供服务器地址';
       }
+      const status = await fetchServerStatus(ctx, server, 'java', config);
+      return formatServerStatus(status, config);
     });
   mcinfo.subcommand('.be [server]', '查询 Bedrock 服务器')
     .action(async ({ session }, server) => {
-      try {
-        if (!server && session) {
-          const groupServer = findGroupServer(session, config);
-          if ('error' in groupServer) return groupServer.error;
-          server = groupServer.server;
-          return fetchServerStatus(server, 'bedrock', config).then(status => formatServerStatus(status, config));
-        }
-        const status = await fetchServerStatus(server, 'bedrock', config);
-        return formatServerStatus(status, config);
-      } catch (error) {
-        ctx.logger.error(`Bedrock 服务器查询失败: ${error.message}`, error);
-        return `信息查询失败`;
+      if (!server) {
+        server = findGroupServer(session, config);
+        if (!server) return '请提供服务器地址';
       }
+      const status = await fetchServerStatus(ctx, server, 'bedrock', config);
+      return formatServerStatus(status, config);
     });
 }

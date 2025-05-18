@@ -86,22 +86,19 @@ function formatFileSize(bytes: number): string {
  * 处理用户输入
  * @param {Session} session - Koishi会话
  * @param {string} input - 用户输入
- * @param {any[]} pageFiles - 当前页的文件列表
+ * @param {any[]} allFiles - 所有文件列表
  * @param {boolean} isLastPage - 是否为最后一页
- * @param {number} startIndex - 当前页起始索引
  * @returns {Promise<{action: 'select'|'next'|'cancel', index?: number}>} 用户操作结果
  */
-async function handleUserInput(session: Session, input: string, pageFiles: any[], isLastPage: boolean, startIndex: number): Promise<{action: 'select'|'next'|'cancel', index?: number}> {
+async function handleUserInput(session: Session, input: string, allFiles: any[], isLastPage: boolean): Promise<{action: 'select'|'next'|'cancel', index?: number}> {
   if (!input || input.toLowerCase() === 'c') return { action: 'cancel' };
   if (input.toLowerCase() === 'n') return isLastPage ? { action: 'cancel' } : { action: 'next' };
-  const index = parseInt(input) - 1;
-  // 检查输入的序号是否在当前页的范围内
-  const pageIndex = index - startIndex;
-  if (isNaN(index) || pageIndex < 0 || pageIndex >= pageFiles.length) {
+  const choice = parseInt(input);
+  if (isNaN(choice) || choice < 1 || choice > allFiles.length) {
     await session.send(`请回复序号下载文件，输入n查看下页，输入c取消`);
-    return handleUserInput(session, await session.prompt(60000), pageFiles, isLastPage, startIndex);
+    return handleUserInput(session, await session.prompt(60000), allFiles, isLastPage);
   }
-  return { action: 'select', index: pageIndex };
+  return { action: 'select', index: choice - 1 };
 }
 
 /**
@@ -188,14 +185,14 @@ export async function handleDownload(ctx: Context, session: Session, platform: s
       const pageInfo = `第 ${currentPage + 1}/${totalPages || '?'} 页${isLastPage ? '（最后一页）' : ''}`;
       await displayFileList(session, pageFiles, pageInfo, platform, ctx, config, startIndex);
       const input = await session.prompt(60000);
-      const result = await handleUserInput(session, input, pageFiles, isLastPage, startIndex);
+      const result = await handleUserInput(session, input, allFiles, isLastPage);
       if (result.action === 'cancel') {
         return '已取消下载';
       } else if (result.action === 'next') {
         if (!isLastPage) currentPage++;
         else return '已取消下载';
       } else if (result.action === 'select' && result.index !== undefined) {
-        const selectedFile = pageFiles[result.index];
+        const selectedFile = allFiles[result.index];
         if (platform === 'modrinth') {
           // Modrinth文件下载
           if (selectedFile.files.length > 1) {

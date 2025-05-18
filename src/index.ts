@@ -106,7 +106,7 @@ export const Config: Schema<Config> = Schema.intersect([
     ]).role('table'),
     serverTemplate: Schema.string().role('textarea')
     .description('服务器信息模板（使用{...:x}指代数据，数字代表数量限制）')
-    .default('{icon}\n{name} {edition}\n{motd}\n{version} | {online}/{max} | {ping}\n{gamemode} {software} {serverid} {eulablock}\nIP:{ip}\nSRV:{srv}\n玩家({playercount}): {playerlist:10}\n插件({plugincount}): {pluginlist:10}\n模组({modcount}): {modlist:10}')
+    .default('{icon}\n{name} {edition}\n{motd}\n{software} {version} | {online}/{max} | {ping}\n{gamemode} {serverid} {eulablock}\nIP:{ip}\nSRV:{srv}\n玩家({playercount}):\n{playerlist:10}\n插件({plugincount}):\n{pluginlist:10}\n模组({modcount}):\n{modlist:10}')
   }).description('服务器查询配置'),
   Schema.object({
     bindEnabled: Schema.boolean().description('启用白名单管理').default(false),
@@ -138,13 +138,7 @@ export function apply(ctx: Context, config: Config) {
   const mc = ctx.command('mc', 'Minecraft 工具')
   // 帮助
   mc.subcommand('.help', 'Minecraft 插件帮助')
-    .action(() => `# MC-Tools 插件帮助
-- **资源查询**：查询MCWiki、MCMOD百科、CurseForge和Modrinth上的内容
-- **玩家信息**：查询玩家UUID、皮肤、渲染3D模型和头像
-- **版本功能**：查询最新版本，自动推送Minecraft版本更新通知
-- **服务器信息**：查询Java版和基岩版服务器状态、玩家、模组和插件列表
-- **服务器交互**：通过WebSocket连接服务器、执行RCON命令、发送游戏内消息
-详细说明请访问[插件主页](https://github.com/YisRime/koishi-plugin-mc-tools)获取`)
+    .action(() => `MC-Tools 插件帮助\n[详细说明](https://github.com/YisRime/koishi-plugin-mc-tools)`)
   // 最新版本查询
   config.verEnabled !== false && registerVer(ctx, mc)
   config.noticeTargets?.length && regVerCheck(ctx, config)
