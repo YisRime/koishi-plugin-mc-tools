@@ -34,17 +34,20 @@ async function fetchPlayerProfile(ctx: Context, username: string): Promise<Minec
     const profileData = await ctx.http.get(`https://sessionserver.mojang.com/session/minecraft/profile/${playerData.id}`);
     const texturesData = profileData.properties?.[0]?.value ?
       JSON.parse(Buffer.from(profileData.properties[0].value, 'base64').toString()) : null;
-    return {
+    const profile: MinecraftPlayerProfile = {
       name: playerData.name, uuid: playerData.id,
-      uuidDashed: playerData.id.replace(/(\w{8})(\w{4})(\w{4})(\w{4})(\w{12})/, '$1-$2-$3-$4-$5'),
-      ...(texturesData.textures.SKIN && {
-        skin: {
-          url: texturesData.textures.SKIN.url,
-          model: texturesData.textures.SKIN.metadata.model || 'classic'
-        }
-      }),
-      ...(texturesData.textures.CAPE && { cape: { url: texturesData.textures.CAPE.url } })
+      uuidDashed: playerData.id.replace(/(\w{8})(\w{4})(\w{4})(\w{4})(\w{12})/, '$1-$2-$3-$4-$5')
     };
+    // 添加皮肤信息
+    if (texturesData?.textures?.SKIN) {
+      profile.skin = {
+        url: texturesData.textures.SKIN.url,
+        model: texturesData.textures.SKIN.metadata?.model || 'classic'
+      };
+    }
+    // 添加披风信息
+    if (texturesData?.textures?.CAPE) profile.cape = { url: texturesData.textures.CAPE.url };
+    return profile;
   } catch (error) {
     ctx.logger.error(`玩家信息获取失败: ${error.message}`, error);
     throw new Error(`玩家信息获取失败: ${error.message}`);
