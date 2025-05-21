@@ -140,7 +140,7 @@ export function apply(ctx: Context, config: Config) {
   mc.subcommand('.help', 'Minecraft 插件帮助')
     .action(() => `MC-Tools 插件帮助\n[详细说明](https://github.com/YisRime/koishi-plugin-mc-tools)`)
   // 最新版本查询
-  config.verEnabled !== false && registerVer(ctx, mc)
+  config.verEnabled !== false && registerVer(mc)
   config.noticeTargets?.length && regVerCheck(ctx, config)
   // 玩家信息查询
   config.playerEnabled !== false && registerPlayer(ctx, mc)
