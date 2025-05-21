@@ -26,11 +26,10 @@
 - `mc.player <username>` - 查询玩家信息
   - `mc.player.skin <username>` - 获取玩家皮肤预览
     - `-e, --elytra`: 显示鞘翅
-    - `-c, --cape`: 显示披风 (同时存在则优先显示鞘翅)
+    - `-c, --cape`: 不显示披风
   - `mc.player.head <username>` - 获取玩家大头娃娃
   - `mc.player.raw <username>` - 获取玩家原始皮肤
 
-查询玩家皮肤时若不带参数，则不显示披风，需使用选项指定
 渲染图像均支持使用 `-b, --bg <color:string>` 设置背景颜色 (HEX 格式)
 
 ### 服务器交互

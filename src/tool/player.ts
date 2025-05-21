@@ -165,13 +165,13 @@ export function registerPlayer(ctx: Context, parent: any) {
     });
   player.subcommand('.skin <username>', '获取玩家皮肤预览')
     .option('elytra', '-e 显示鞘翅')
-    .option('cape', '-c 显示披风')
+    .option('cape', '-c 不显示披风')
     .option('bg', '-b <color:string> 设置背景色(HEX)')
     .action(async ({ options }, username) => {
       if (!username) return '请输入玩家用户名';
       try {
         const profile = await fetchPlayerProfile(ctx, username);
-        const showCape = Boolean(options.cape && profile.cape?.url);
+        const showCape = Boolean(!options.cape && profile.cape?.url);
         const showElytra = Boolean(options.elytra && profile.cape?.url);
         const skinImage = await renderPlayerSkin(ctx, profile.skin.url, (showCape || showElytra) ? profile.cape?.url : undefined, showElytra, options.bg);
         return h.image(`data:image/png;base64,${skinImage}`);
