@@ -7,6 +7,7 @@
 ## 功能概述
 
 - **资源查询**：查询 MCWiki、MCMOD 百科、CurseForge 和 Modrinth 上的内容
+- **链接解析**：自动识别并解析聊天中的 Minecraft 相关资源链接
 - **玩家信息**：查询玩家 UUID、皮肤、渲染 3D 模型和头像
 - **版本功能**：查询最新版本，自动推送 Minecraft 版本更新通知
 - **服务器信息**：查询 Java 版和基岩版服务器状态、玩家、模组和插件列表
@@ -103,11 +104,26 @@
   - `-l <loader:string>`: 加载器 (例如: `forge`, `fabric`, `quilt`, `neoforge`等)
   - `-k <count:number>`: 跳过结果数
 
+## 链接解析
+
+支持自动识别和解析聊天消息中的以下 Minecraft 相关资源链接：
+
+- **Modrinth** 链接：`modrinth.com/mod/project-id` 等
+- **CurseForge** 链接：`curseforge.com/minecraft/mc-mods/project-name` 等
+- **MCMOD 百科** 链接：`mcmod.cn/class/123.html` 等
+- **Minecraft Wiki** 链接：`minecraft.wiki/w/Page_Name` 等
+
+当用户在群聊中发送这些链接时，插件会自动获取并展示对应资源的详细信息。
+
 ## 配置说明
 
 ### 基础配置
 
 - **查询开关配置**：
+  - `linkParserEnabled`: 启用链接解析 ('disable'/'text'/'shot')
+    - `disable`: 禁用链接解析功能
+    - `text`: 启用链接解析，以文本形式返回结果
+    - `shot`: 启用链接解析，以截图形式返回结果（需要 Puppeteer 服务）
   - `mcwikiEnabled`: 启用 Minecraft Wiki 查询 (布尔值)
   - `modrinthEnabled`: 启用 Modrinth 查询 (布尔值)
   - `mcmodEnabled`: 启用 MCMOD 查询 (布尔值或API字符串)

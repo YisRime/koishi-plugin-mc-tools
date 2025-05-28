@@ -4,6 +4,7 @@ import { registerInfo } from './server/info'
 import { registerServer } from './server/server'
 import { registerVer, regVerCheck, UpdTarget, cleanupVerCheck, ServerMaps } from './tool/ver'
 import { initWebSocket, cleanupWebSocket, WsServerConfig, RconServerConfig } from './server/service'
+import { registerLinkParser } from './resource/parser'
 import { registerCurseForge } from './resource/curseforge'
 import { registerModrinth } from './resource/modrinth'
 import { registerSearch } from './resource/search'
@@ -45,6 +46,7 @@ export interface Config {
   modrinthEnabled: boolean
   mcmodEnabled: false | string
   mcwikiEnabled: boolean
+  linkParserEnabled: 'disable' | 'text' | 'shot'
   searchDesc: number
   searchResults: number
   maxParagraphs: number;
@@ -54,6 +56,11 @@ export interface Config {
 
 export const Config: Schema<Config> = Schema.intersect([
   Schema.object({
+    linkParserEnabled: Schema.union([
+      Schema.const('disable').description('禁用'),
+      Schema.const('text').description('启用'),
+      Schema.const('shot').description('启用（截图）')
+    ]).description('启用链接解析').default('disable'),
     mcwikiEnabled: Schema.boolean().description('启用 Minecraft Wiki 查询').default(true),
     modrinthEnabled: Schema.boolean().description('启用 Modrinth 查询').default(true),
     mcmodEnabled: Schema.union([
@@ -154,6 +161,8 @@ export function apply(ctx: Context, config: Config) {
   if (typeof config.curseforgeEnabled === 'string' && config.curseforgeEnabled) registerCurseForge(ctx, mc, config)
   if (typeof config.mcmodEnabled === 'string' && config.mcmodEnabled) registerMcmod(ctx, mc, config)
   if (config.mcwikiEnabled) registerMcwiki(ctx, mc, config)
+  // 链接解析
+  if (config.linkParserEnabled !== 'disable') registerLinkParser(ctx, config)
   // 统一搜索
   if (config.mcmodEnabled || config.mcwikiEnabled || config.modrinthEnabled
     || config.curseforgeEnabled) registerSearch(ctx, mc, config)
