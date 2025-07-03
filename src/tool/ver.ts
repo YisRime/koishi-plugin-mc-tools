@@ -82,12 +82,16 @@ async function getLatestVersion(): Promise<{ release: VersionInfo; snapshot: Ver
 async function sendUpdateNotification(ctx: Context, targets: UpdTarget[], versionType: VersionType, versionInfo: VersionInfo) {
   const typeName = versionType === 'release' ? '正式版' : '快照版';
   const updateMsg = `Minecraft ${typeName}更新：${versionInfo.id}\n发布时间: ${new Date(versionInfo.releaseTime).toLocaleString('zh-CN')}`;
-  targets
-    .filter(t => t.type === 'both' || t.type === versionType)
-    .forEach(target => {
-      const bot = ctx.bots.find(bot => bot.platform === target.platform);
-      if (bot) bot.sendMessage(target.channelId, updateMsg).catch(err => ctx.logger.error(`发送更新通知失败 [${target.platform}:${target.channelId}]:`, err));
-    });
+  const filteredTargets = targets.filter(t => t.type === 'both' || t.type === versionType);
+
+  for (let i = 0; i < filteredTargets.length; i++) {
+    const target = filteredTargets[i];
+    const bot = ctx.bots.find(bot => bot.platform === target.platform);
+    if (bot) {
+      await bot.sendMessage(target.channelId, updateMsg);
+      if (i < filteredTargets.length - 1) await new Promise(resolve => setTimeout(resolve, 500));
+    }
+  }
 }
 
 // 存储最新版本和检查定时器

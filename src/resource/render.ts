@@ -196,8 +196,18 @@ export async function renderOutput(session: Session, content: any[], url: string
   ctx: Context, config: Config, screenshot: boolean = false) {
   if (!content?.length) return ''
   if (config.useScreenshot && screenshot && url && ctx.puppeteer) {
-    const screenshotResult = await takeScreenshot(url, ctx, async (image) => { await session.send(image) })
-    return screenshotResult || '';
+    try {
+      const screenshotResult = await takeScreenshot(url, ctx, async (image) => { await session.send(image) })
+      return screenshotResult || '';
+    } catch (error) {
+      ctx.logger.error('截图失败:', error)
+      if (config.useFallback) {
+        for (const item of content) await session.send(item)
+        return ''
+      } else {
+        await session.send('截图失败')
+      }
+    }
   }
   if (config.useForward && session.platform === 'onebot') {
     try {
@@ -212,16 +222,16 @@ export async function renderOutput(session: Session, content: any[], url: string
       const isGroup = session.guildId || (session.subtype === 'group')
       const target = isGroup ? (session.guildId || session.channelId) : session.channelId
       const method = isGroup ? 'sendGroupForwardMsg' : 'sendPrivateForwardMsg'
-      try {
-        await session.bot.internal[method](target, messages)
-        return ''
-      } catch (error) {
-        ctx.logger.error('消息合并转发失败:', error)
+      await session.bot.internal[method](target, messages)
+      return ''
+    } catch (error) {
+      ctx.logger.error('消息合并转发失败:', error)
+      if (config.useFallback) {
         for (const item of content) await session.send(item)
         return ''
+      } else {
+        await session.send('合并转发失败')
       }
-    } catch (error) {
-      ctx.logger.error('消息处理失败:', error)
     }
   } else {
     try {

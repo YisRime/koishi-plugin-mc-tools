@@ -42,6 +42,7 @@ export interface Config {
   bindEnabled: boolean
   useForward: boolean
   useScreenshot: boolean
+  useFallback: boolean
   curseforgeEnabled: false | string
   modrinthEnabled: boolean
   mcmodEnabled: false | string
@@ -75,6 +76,7 @@ export const Config: Schema<Config> = Schema.intersect([
   Schema.object({
     useForward: Schema.boolean().description('启用合并转发').default(true),
     useScreenshot: Schema.boolean().description('启用网页截图').default(true),
+    useFallback: Schema.boolean().description('启用发送回退').default(true),
     searchDesc: Schema.number().description('简介长度').default(50).min(0).max(500),
     searchResults: Schema.number().description('搜索结果数/页').default(10).min(5).max(100),
     maxParagraphs: Schema.number().description('详情段落数限制').default(20).min(1).max(100),

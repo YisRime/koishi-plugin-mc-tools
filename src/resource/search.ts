@@ -184,7 +184,7 @@ async function handleUserInput(input, allResults, currentPage, config, ctx, sess
     const platform = Object.values(PLATFORMS).find(p => p.name === selected.platform);
     if (!platform) return { done: true, message: '获取详情失败：无法找到平台处理器' };
     const detailId = selected.platform === 'MCMOD' ? selected.id : selected.extra.id;
-    const detail = await platform.getDetail(ctx, detailId as any, config);
+    const detail = await platform.getDetail(ctx, detailId as never, config);
     if (!detail) return { done: true, message: '获取详情失败' };
     return { done: true, message: await renderOutput(session, detail.content, detail.url, ctx, config) };
   } catch (error) {
@@ -204,7 +204,7 @@ async function displayResultPage(ctx, session, config, platformResults, currentP
   // 检查是否需要加载更多结果
   if (endIndex > allResults.length) {
     const activePlatforms = platforms.filter(p => !platformStates[p]?.exhausted);
-    if (activePlatforms.length > 0 && allResults.length < endIndex) return { needMoreResults: true };
+    if (activePlatforms.length > 0 && allResults.length < endIndex && startIndex < allResults.length) return { needMoreResults: true };
   }
   const currentResults = allResults.slice(startIndex, endIndex);
   if (currentResults.length === 0) return { message: '无更多结果' };
@@ -264,14 +264,30 @@ export function registerSearch(ctx: Context, mc: Command, config: Config) {
         const initialSearch = await executeSearch(ctx, keyword, options, config, platforms, platformStates, platformResults);
         if (!initialSearch.success) return initialSearch.message;
         // 处理分页和用户交互
+        let searchAttempts = 0;
+        const maxSearchAttempts = 3;
         while (true) {
           // 显示当前页
           const displayResult = await displayResultPage(ctx, session, config, platformResults, currentPage, platforms, platformStates);
           if (displayResult.message) return displayResult.message;
           // 如果需要加载更多结果
           if (displayResult.needMoreResults) {
+            if (searchAttempts >= maxSearchAttempts) {
+              // 防止无限搜索，强制显示当前结果或返回无结果
+              const allResults = mergeResults(platformResults);
+              if (allResults.length === 0) return '无匹配结果';
+              currentPage = Math.max(0, Math.floor((allResults.length - 1) / config.searchResults));
+              continue;
+            }
+            const beforeCount = mergeResults(platformResults).length;
             await executeSearch(ctx, keyword, options, config,
               platforms.filter(p => !platformStates[p]?.exhausted), platformStates, platformResults);
+            const afterCount = mergeResults(platformResults).length;
+            if (afterCount <= beforeCount) {
+              searchAttempts++;
+            } else {
+              searchAttempts = 0;
+            }
             continue;
           }
           // 等待用户输入

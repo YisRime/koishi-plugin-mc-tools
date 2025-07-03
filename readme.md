@@ -136,6 +136,7 @@ MC 百科内容处理调用了作者自行编写的 API，由于使用了 CloudF
 - **资源查询配置**：
   - `useForward`: 启用合并转发 (布尔值)
   - `useScreenshot`: 启用网页截图 (布尔值)
+  - `useFallback`: 启用发送回退 (布尔值)
   - `searchDesc`: 简介长度 (数字)
   - `searchResults`: 搜索结果数/页 (数字)
   - `maxParagraphs`: 详情段落数限制 (数字)
