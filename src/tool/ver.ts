@@ -138,16 +138,19 @@ export function regVerCheck(ctx: Context, config: Config) {
       const isFirstCheck = !prevVersions.release.id;
       // 检查并推送更新
       if (!isFirstCheck) {
-        ['release', 'snapshot'].forEach(type => {
-          if (latest[type].id !== prevVersions[type].id) sendUpdateNotification(ctx, config.noticeTargets, type as VersionType, latest[type]);
-        });
+        if (latest.release.id !== prevVersions.release.id) {
+          sendUpdateNotification(ctx, config.noticeTargets, 'release', latest.release);
+        }
+        // 只有当快照版与正式版不同时才推送
+        if (latest.snapshot.id !== prevVersions.snapshot.id && latest.snapshot.id !== latest.release.id) {
+          sendUpdateNotification(ctx, config.noticeTargets, 'snapshot', latest.snapshot);
+        }
       }
       Object.assign(prevVersions, latest);
     } catch (error) {
       ctx.logger.warn('获取版本信息失败:', error);
     }
   };
-
   // 初始化并设置定时任务
   checkVersions();
   versionCheckInterval = ctx.setInterval(checkVersions, config.updInterval * 60000);
