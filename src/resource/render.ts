@@ -194,19 +194,12 @@ async function optimizePage(page, url: string) {
  */
 export async function renderOutput(session: Session, content: any[], url: string = null,
   ctx: Context, config: Config, screenshot: boolean = false) {
-  if (!content?.length) return ''
   if (config.useScreenshot && screenshot && url && ctx.puppeteer) {
     try {
       const screenshotResult = await takeScreenshot(url, ctx, async (image) => { await session.send(image) })
-      return screenshotResult || '';
+      return screenshotResult || ''
     } catch (error) {
-      ctx.logger.error('截图失败:', error)
-      if (config.useFallback) {
-        for (const item of content) await session.send(item)
-        return ''
-      } else {
-        await session.send('截图失败')
-      }
+      ctx.logger.error('截图失败', error)
     }
   }
   if (config.useForward && session.platform === 'onebot') {
@@ -219,27 +212,21 @@ export async function renderOutput(session: Session, content: any[], url: string
             ? `[CQ:image,file=${item.attrs?.src || ''}]` : item
         }
       }))
-      const isGroup = session.guildId || (session.subtype === 'group')
+      const isGroup = (session.guildId || (session.subtype === 'group')) &&
+                      (session.guildId !== session.userId && session.channelId !== session.userId)
       const target = isGroup ? (session.guildId || session.channelId) : session.channelId
       const method = isGroup ? 'sendGroupForwardMsg' : 'sendPrivateForwardMsg'
       await session.bot.internal[method](target, messages)
       return ''
     } catch (error) {
-      ctx.logger.error('消息合并转发失败:', error)
-      if (config.useFallback) {
-        for (const item of content) await session.send(item)
-        return ''
-      } else {
-        await session.send('合并转发失败')
-      }
-    }
-  } else {
-    try {
-      for (const item of content) await session.send(item)
-      return ''
-    } catch (error) {
-      ctx.logger.error('消息发送失败:', error)
+      ctx.logger.error('合并转发失败', error)
+      if (!config.useFallback) return ''
     }
   }
-  return content
+  try {
+    for (const item of content) await session.send(item)
+    return ''
+  } catch (error) {
+    ctx.logger.error('消息发送失败', error)
+  }
 }
