@@ -50,7 +50,6 @@ async function fetchPlayerProfile(ctx: Context, username: string): Promise<Minec
     return profile;
   } catch (error) {
     ctx.logger.error(`玩家信息获取失败: ${error.message}`, error);
-    throw new Error(`玩家信息获取失败: ${error.message}`);
   }
 }
 
@@ -160,7 +159,7 @@ export function registerPlayer(ctx: Context, parent: any) {
         ]);
       } catch (error) {
         ctx.logger.error(`查询玩家信息失败: ${error.message}`, error);
-        return `查询玩家信息失败`;
+        return `查询玩家信息失败: ${error.message}`;
       }
     });
   player.subcommand('.skin <username>', '获取玩家皮肤预览')
@@ -177,7 +176,7 @@ export function registerPlayer(ctx: Context, parent: any) {
         return h.image(`data:image/png;base64,${skinImage}`);
       } catch (error) {
         ctx.logger.error(`获取玩家皮肤预览失败: ${error.message}`, error);
-        return `获取玩家皮肤失败`;
+        return `获取玩家皮肤失败: ${error.message}`;
       }
     });
   player.subcommand('.head <username>', '获取玩家大头娃娃')
@@ -189,7 +188,7 @@ export function registerPlayer(ctx: Context, parent: any) {
         return h.image(`data:image/png;base64,${await renderPlayerHead(ctx, profile.skin.url, options.bg)}`);
       } catch (error) {
         ctx.logger.error(`获取玩家大头娃娃失败: ${error.message}`, error);
-        return `获取玩家皮肤失败`;
+        return `获取玩家皮肤失败: ${error.message}`;
       }
     });
   player.subcommand('.raw <username>', '获取玩家原始皮肤')
@@ -200,7 +199,7 @@ export function registerPlayer(ctx: Context, parent: any) {
         return h.image(profile.skin.url);
       } catch (error) {
         ctx.logger.error(`获取玩家原始皮肤失败: ${error.message}`, error);
-        return `获取玩家皮肤失败`;
+        return `获取玩家皮肤失败: ${error.message}`;
       }
     });
 }

@@ -1,9 +1,8 @@
 import { Context, Schema } from 'koishi'
 import { registerPlayer } from './tool/player'
 import { registerInfo } from './server/info'
-import { registerServer } from './server/server'
+import { registerServer, ServerConfig } from './server/server'
 import { registerVer, regVerCheck, UpdTarget, cleanupVerCheck, ServerMaps } from './tool/ver'
-import { initWebSocket, cleanupWebSocket, WsServerConfig, RconServerConfig } from './server/service'
 import { registerLinkParser } from './resource/parser'
 import { registerCurseForge } from './resource/curseforge'
 import { registerModrinth } from './resource/modrinth'
@@ -37,8 +36,7 @@ export interface Config {
   serverApis?: Array<{ type: 'java' | 'bedrock'; url: string }>
   serverTemplate: string
   serverMaps: ServerMaps[]
-  rconServers: RconServerConfig[]
-  wsServers: WsServerConfig[]
+  rconServers: ServerConfig[]
   bindEnabled: boolean
   useForward: boolean
   useScreenshot: boolean
@@ -129,17 +127,7 @@ export const Config: Schema<Config> = Schema.intersect([
       id: Schema.number().description('服务器 ID').required(),
       rconAddress: Schema.string().description('地址').default('localhost:25575'),
       rconPassword: Schema.string().description('密码').role('secret')
-    })).description('RCON 配置').default([]).role('table'),
-    wsServers: Schema.array(Schema.object({
-      id: Schema.number().description('服务器 ID').required(),
-      name: Schema.string().description('名称').default('Server'),
-      websocketMode: Schema.union([
-        Schema.const('client').description('客户端'),
-        Schema.const('server').description('服务端')
-      ]).description('模式').default('server'),
-      websocketAddress: Schema.string().description('地址').default('localhost:8080'),
-      websocketToken: Schema.string().description('密码').role('secret')
-    })).description('WebSocket 配置').default([]).role('table')
+    })).description('RCON 配置').default([]).role('table')
   }).description('服务器连接配置')
 ])
 
@@ -156,8 +144,7 @@ export function apply(ctx: Context, config: Config) {
   // 服务器信息查询
   config.infoEnabled !== false && config.serverApis?.length && registerInfo(ctx, mc, config)
   // 服务器连接与管理
-  if (config.rconServers.length > 0 || config.wsServers.length > 0) registerServer(ctx, mc, config)
-  if (config.wsServers.length > 0) initWebSocket(ctx, config)
+  if (config.rconServers.length > 0) registerServer(ctx, mc, config)
   // 资源查询
   if (config.modrinthEnabled) registerModrinth(ctx, mc, config)
   if (typeof config.curseforgeEnabled === 'string' && config.curseforgeEnabled) registerCurseForge(ctx, mc, config)
@@ -171,6 +158,5 @@ export function apply(ctx: Context, config: Config) {
 }
 
 export function dispose() {
-  cleanupWebSocket()
   cleanupVerCheck()
 }

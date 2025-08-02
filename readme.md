@@ -37,21 +37,10 @@
 
 所有命令均支持使用 `-s, --server <serverId:number>` 选项指定服务器 ID：
 
-- `mc.server.json <jsonText>` - 发送自定义JSON消息
-  - `-t, --type <type:string>`: 指定消息类型 (`chat`, `broadcast`, `whisper`, `title`, `actionbar`) (默认`broadcast`)
-  - `-p, --player <player:string>`: 指定目标玩家 (仅 `whisper` 类型可用)
-- `mc.server.bind [username]` - 白名单管理
-  - `-r, --remove`: 解绑指定用户名
-
-以下命令均支持使用 `-f, --format <format:string>` 选项指定消息文本格式：
-此外，`title` 命令还支持使用 `--sf, --subformat <format:string>` 选项指定副标题文本格式
-
 - `mc.server.say <message>` - 发送聊天消息到服务器
 - `mc.server.run <command>` - 执行服务器命令
-- `mc.server.broadcast <message>` - 发送全服广播
-- `mc.server.tell <player> <message>` - 发送私聊给玩家
-- `mc.server.title <title> [subtitle]` - 发送屏幕标题
-- `mc.server.actionbar <message>` - 发送动作栏消息
+- `mc.server.bind [username]` - 白名单管理
+  - `-r, --remove`: 解绑指定用户名
 
 ### 资源查询
 
@@ -215,41 +204,6 @@ MC 百科内容处理调用了作者自行编写的 API，由于使用了 CloudF
 
 RCON 是一种允许远程执行服务器命令的协议。
 在此处配置服务器的 RCON 地址和密码后，可以使用命令通过 RCON 与服务器交互。
-
-- **WebSocket配置** (`wsServers`)：设置WebSocket连接参数 (对象数组)
-  - `id`: 服务器 ID (数字, 必填)
-  - `name`: 服务器名称 (字符串)
-  - `websocketMode`: WebSocket模式 ('client'/'server')
-  - `websocketAddress`: WebSocket地址 (字符串, 如 `localhost:8080`)
-  - `websocketToken`: WebSocket认证令牌 (字符串)
-
-WebSocket 配置用于与 Minecraft 服务器上的**鹊桥**插件建立双向通信。
-能够接收来自服务器的实时事件（如玩家聊天、加入/退出游戏等）并推送到群组，同时也可以通过 WebSocket 发送消息到服务器。
-
-#### 文本格式化参数
-
-用户可以使用[**Minecraft 样式代码**](https://zh.minecraft.wiki/w/%E6%A0%BC%E5%BC%8F%E5%8C%96%E4%BB%A3%E7%A0%81)或以下**自定义格式**设置文本样式，也可混合使用：
-
-- `color:red` 或 `c:red` - 红色文本
-- `bold` 或 `b` - 粗体
-- `italic` 或 `i` - 斜体
-- `underlined` 或 `u` - 下划线
-- `strikethrough` 或 `s` - 删除线
-- `obfuscated` 或 `o` - 随机字符
-
-也支持设置一些**交互选项**，
-
-- `click:action=值`: 为文本添加点击事件
-  - `url`: 打开网址 (例如 `click:url=https://github.com/YisRime/koishi-plugin-mc-tools`)
-  - `run`: 执行命令 (例如 `click:run=/give @p diamond`)
-  - `suggest`: 在聊天框中预填内容 (例如 `click:suggest=/msg Hello!`)
-  - `copy`: 复制文本到剪贴板 (例如 `click:copy=这是重要信息`)
-- `hover:action=值`: 为文本添加悬浮提示
-  - `text`: 显示文本提示 (例如 `hover:text=这是一个提示`)
-  - `item`: 显示物品信息 (例如 `hover:item=minecraft:diamond_sword`)
-  - `entity`: 显示实体信息 (例如 `hover:entity=minecraft:creeper`)
-- `insert:文本`: 将文本插入聊天框
-- `time:淡入,停留,淡出`: 设置标题显示时间 (仅 `mc.server.title` 命令可用)
 
 ## 注意事项
 

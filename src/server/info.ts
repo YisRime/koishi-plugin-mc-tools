@@ -292,7 +292,7 @@ function formatServerStatus(status: ServerStatus, config: Config) {
  */
 function findGroupServer(session: any, config: Config): string | null {
   const mapping = config.serverMaps.find(m => m.platform === session.platform && m.channelId === session.guildId);
-  return mapping.serverAddress || null;
+  return mapping?.serverAddress || null;
 }
 
 /**
