@@ -98,7 +98,7 @@ export const Config: Schema<Config> = Schema.intersect([
         Schema.const('both').description('所有版本')
       ]).description('推送类型').default('both')
     })).description('版本更新推送目标').role('table'),
-    statusEnabled: Schema.boolean().description('启用服务状态查询').default(false),
+    statusEnabled: Schema.boolean().description('启用服务状态查询').default(true),
     statusUpdInterval: Schema.number().description('状态检查间隔(分钟)').default(60).min(1).max(1440),
     statusNoticeTargets: Schema.array(Schema.object({
       platform: Schema.string().description('平台 ID'),
