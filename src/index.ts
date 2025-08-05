@@ -3,6 +3,7 @@ import { registerPlayer } from './tool/player'
 import { registerInfo } from './server/info'
 import { registerServer, ServerConfig } from './server/server'
 import { registerVer, regVerCheck, UpdTarget, cleanupVerCheck, ServerMaps } from './tool/ver'
+import { registerStatus, regStatusCheck, StatusTarget, cleanupStatusCheck } from './tool/status'
 import { registerLinkParser } from './resource/parser'
 import { registerCurseForge } from './resource/curseforge'
 import { registerModrinth } from './resource/modrinth'
@@ -31,6 +32,9 @@ export interface Config {
   noticeTargets: UpdTarget[]
   updInterval: number
   verEnabled: boolean
+  statusEnabled: boolean
+  statusNoticeTargets: StatusTarget[]
+  statusUpdInterval: number
   playerEnabled: boolean
   infoEnabled: boolean
   serverApis?: Array<{ type: 'java' | 'bedrock'; url: string }>
@@ -93,8 +97,14 @@ export const Config: Schema<Config> = Schema.intersect([
         Schema.const('snapshot').description('仅快照版'),
         Schema.const('both').description('所有版本')
       ]).description('推送类型').default('both')
-    })).description('版本更新推送目标').role('table')
-  }).description('版本&玩家查询配置'),
+    })).description('版本更新推送目标').role('table'),
+    statusEnabled: Schema.boolean().description('启用服务状态查询').default(false),
+    statusUpdInterval: Schema.number().description('状态检查间隔(分钟)').default(60).min(1).max(1440),
+    statusNoticeTargets: Schema.array(Schema.object({
+      platform: Schema.string().description('平台 ID'),
+      channelId: Schema.string().description('频道 ID'),
+    })).description('状态变更推送目标').role('table')
+  }).description('版本&玩家&状态查询配置'),
   Schema.object({
     infoEnabled: Schema.boolean().description('启用服务器查询').default(true),
     serverApis: Schema.array(Schema.object({
@@ -139,6 +149,9 @@ export function apply(ctx: Context, config: Config) {
   // 最新版本查询
   config.verEnabled !== false && registerVer(mc)
   config.noticeTargets?.length && regVerCheck(ctx, config)
+  // 服务状态查询
+  config.statusEnabled !== false && registerStatus(mc)
+  config.statusNoticeTargets?.length && regStatusCheck(ctx, config)
   // 玩家信息查询
   config.playerEnabled !== false && registerPlayer(ctx, mc)
   // 服务器信息查询
@@ -159,4 +172,5 @@ export function apply(ctx: Context, config: Config) {
 
 export function dispose() {
   cleanupVerCheck()
+  cleanupStatusCheck()
 }

@@ -1,7 +1,7 @@
 {
   "name": "koishi-plugin-mc-tools",
   "description": "我的世界(Minecraft)。可查询 MC 版本、服务器信息、玩家皮肤信息以及四大平台资源；支持管理服务器，功能梭哈",
-  "version": "3.2.0",
+  "version": "3.2.1",
   "contributors": [
     "Yis_Rime <yis_rime@outlook.com>"
   ],

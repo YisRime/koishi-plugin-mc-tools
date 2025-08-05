@@ -232,7 +232,7 @@ export async function getMcmodProject(ctx: Context, project, config: Config = nu
     return { content, url: project.url, icon: basicInfo.img || null }
   } catch (error) {
     ctx.logger.error('MCMOD 详情获取失败:', error)
-    return { content: [ `[${project.name}]`, project.description || '暂无描述', `查看详情: ${project.url}` ], url: project.url, icon: null }
+    return null
   }
 }
 
@@ -300,7 +300,7 @@ export async function getMcmodModpack(ctx: Context, modpack, config: Config = nu
     return { content, url: modpack.url, icon: basicInfo.img || null }
   } catch (error) {
     ctx.logger.error('MCMOD 整合包获取失败:', error)
-    return { content: [ `[${modpack.name}]`, modpack.description || '暂无描述', `查看详情: ${modpack.url}` ], url: modpack.url, icon: null }
+    return null
   }
 }
 
@@ -342,7 +342,7 @@ export async function getMcmodPost(ctx: Context, post, config: Config = null) {
     return { content: postContent, url: post.url, icon: post.others && author ? author.avatar : null }
   } catch (error) {
     ctx.logger.error('MCMOD 教程获取失败:', error)
-    return { content: [ `[${post.name}]`, post.description || '暂无描述', `查看详情: ${post.url}` ], url: post.url, icon: null }
+    return null
   }
 }
 
@@ -419,7 +419,7 @@ export async function getMcmodItem(ctx: Context, item, config: Config = null) {
     return { content: itemContent, url: item.url, icon: iconUrl }
   } catch (error) {
     ctx.logger.error('MCMOD 资料详情获取失败:', error)
-    return { content: [ `[${item.name}]`, item.description || '暂无描述', `查看详情: ${item.url}` ], url: item.url, icon: null }
+    return null
   }
 }
 

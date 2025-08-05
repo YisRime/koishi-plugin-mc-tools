@@ -60,7 +60,6 @@ type VersionType = 'release' | 'snapshot'
 
 /**
  * 获取最新的Minecraft版本信息
- * @param {Context} ctx - Koishi上下文
  * @returns {Promise<{release: VersionInfo, snapshot: VersionInfo}>} 最新版本信息
  */
 async function getLatestVersion(): Promise<{ release: VersionInfo; snapshot: VersionInfo }> {
@@ -78,21 +77,24 @@ async function getLatestVersion(): Promise<{ release: VersionInfo; snapshot: Ver
 
 /**
  * 向指定目标发送更新通知
+ * @param ctx - Koishi 的上下文对象
+ * @param targets - 所有可能的通知目标列表
+ * @param versionType - 本次更新的版本类型 ('release' 或 'snapshot')
+ * @param versionInfo - 本次更新的版本详情
  */
 async function sendUpdateNotification(ctx: Context, targets: UpdTarget[], versionType: VersionType, versionInfo: VersionInfo) {
-  const typeName = versionType === 'release' ? '正式版' : '快照版';
-  const updateMsg = `Minecraft ${typeName}更新：${versionInfo.id}\n发布时间: ${new Date(versionInfo.releaseTime).toLocaleString('zh-CN')}`;
   const filteredTargets = targets.filter(t => t.type === 'both' || t.type === versionType);
 
-  for (let i = 0; i < filteredTargets.length; i++) {
-    const target = filteredTargets[i];
-    const bot = ctx.bots.find(bot => bot.platform === target.platform);
-    if (bot) {
-      await bot.sendMessage(target.channelId, updateMsg);
-      if (i < filteredTargets.length - 1) await new Promise(resolve => setTimeout(resolve, 500));
-    }
-  }
+  if (!filteredTargets.length) return;
+
+  const typeName = versionType === 'release' ? '正式版' : '快照版';
+  const updateMsg = `Minecraft ${typeName}更新：${versionInfo.id}\n发布时间: ${new Date(versionInfo.releaseTime).toLocaleString('zh-CN')}`;
+
+  const broadcastChannels = filteredTargets.map(t => `${t.platform}:${t.channelId}`);
+
+  await ctx.broadcast(broadcastChannels, updateMsg);
 }
+
 
 // 存储最新版本和检查定时器
 const prevVersions = { release: { id: '', releaseTime: '' }, snapshot: { id: '', releaseTime: '' } };
