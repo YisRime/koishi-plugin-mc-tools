@@ -57,15 +57,15 @@ function formatStatusMessage(status: MinecraftStatus): string {
 /**
  * 检查单个服务的在线状态和延迟。
  * @param url - 要检查的服务 URL。
- * @param timeoutMs - 请求超时时间（毫秒），默认为 8000。
+ * @param timeoutMs - 请求超时时间（毫秒），默认为 15000。
  * @returns 服务的健康状态 ('green', 'yellow', 'red')。
  */
-async function checkServiceStatus(url: string, timeoutMs = 8000): Promise<'green' | 'yellow' | 'red'> {
+async function checkServiceStatus(url: string, timeoutMs = 15000): Promise<'green' | 'yellow' | 'red'> {
   const startTime = Date.now();
   try {
     const response = await fetch(url, { signal: AbortSignal.timeout(timeoutMs), redirect: 'follow' });
     const duration = Date.now() - startTime;
-    return response.status < 500 ? (duration > 2000 ? 'yellow' : 'green') : 'red';
+    return response.status < 500 ? (duration > 5000 ? 'yellow' : 'green') : 'red';
   } catch (error) {
     return 'red';
   }
