@@ -11,27 +11,27 @@ export interface StatusTarget {
 
 /**
  * 定义了 Minecraft 服务状态的数据结构。
- * 'green' 代表正常, 'red' 代表异常。
+ * true 代表正常, false 代表异常。
  */
-type MinecraftStatus = Record<string, 'green' | 'red'>;
+type MinecraftServiceStatus = Record<string, boolean>;
 
 /**
  * 描述一次具体服务状态变更的详细信息。
  */
 interface StatusChange {
   service: string;
-  from: 'green' | 'red';
-  to: 'green' | 'red';
+  from: boolean;
+  to: boolean;
 }
 
 /** 需要监控的 Minecraft 服务列表 */
 const servicesToCheck = {
-  'Minecraft.net': 'https://minecraft.net/',
-  'Textures': 'http://textures.minecraft.net/',
+  'Minecraft Net': 'https://minecraft.net/',
   'Session': 'http://session.minecraft.net/',
+  'Textures': 'http://textures.minecraft.net/',
   'Mojang API': 'https://api.mojang.com/',
-  'Mojang Account': 'http://account.mojang.com/',
-  'Mojang Sessionserver': 'https://sessionserver.mojang.com/',
+  'Account': 'http://account.mojang.com/',
+  'SessionServer': 'https://sessionserver.mojang.com/',
 };
 
 /**
@@ -39,9 +39,9 @@ const servicesToCheck = {
  * @param status - 要格式化的状态对象。
  * @returns 格式化后的消息字符串。
  */
-function formatStatusMessage(status: MinecraftStatus): string {
-  const statusLines = Object.entries(status).map(([service, state]) => {
-    const symbol = state === 'green' ? '[√]' : '[×]';
+function formatStatusMessage(status: MinecraftServiceStatus): string {
+  const statusLines = Object.entries(status).map(([service, isOnline]) => {
+    const symbol = isOnline ? '[√]' : '[×]';
     return `${symbol} ${service}`;
   });
   return ['Minecraft 服务状态:', ...statusLines].join('\n');
@@ -49,15 +49,16 @@ function formatStatusMessage(status: MinecraftStatus): string {
 
 /**
  * 检查单个服务的在线状态。
+ * 如果 HTTP 状态码小于 500，则认为服务在线。
  * @param url - 要检查的服务 URL。
- * @returns 服务的健康状态 ('green' | 'red')。
+ * @returns 服务的健康状态 (true | false)。
  */
-async function checkServiceStatus(url: string): Promise<'green' | 'red'> {
+async function checkServiceStatus(url: string): Promise<boolean> {
   try {
     const response = await fetch(url, { signal: AbortSignal.timeout(15000), redirect: 'follow' });
-    return response.status < 500 ? 'green' : 'red';
+    return response.status < 500;
   } catch {
-    return 'red';
+    return false;
   }
 }
 
@@ -65,11 +66,11 @@ async function checkServiceStatus(url: string): Promise<'green' | 'red'> {
  * 并发检查所有预定义的服务，并返回它们的状态集合。
  * @returns 包含所有服务状态的对象。
  */
-async function getMinecraftStatus(): Promise<MinecraftStatus> {
+async function getMinecraftStatus(): Promise<MinecraftServiceStatus> {
   const statusEntries = await Promise.all(
     Object.entries(servicesToCheck).map(async ([name, url]) => {
-      const status = await checkServiceStatus(url);
-      return [name, status] as const;
+      const isOnline = await checkServiceStatus(url);
+      return [name, isOnline] as const;
     })
   );
   return Object.fromEntries(statusEntries);
@@ -84,9 +85,9 @@ async function getMinecraftStatus(): Promise<MinecraftStatus> {
 async function sendStatusNotification(ctx: Context, targets: StatusTarget[], changes: StatusChange[]) {
   if (!targets?.length) return;
 
-  const changeLines = changes.map(({ service, to }) => {
-    const symbol = to === 'green' ? '[√]' : '[×]';
-    const statusText = to === 'green' ? '恢复正常' : '服务异常';
+  const changeLines = changes.map(({ service, to: isOnline }) => {
+    const symbol = isOnline ? '[√]' : '[×]';
+    const statusText = isOnline ? '恢复正常' : '服务异常';
     return `${symbol} ${service}: ${statusText}`;
   });
 
@@ -95,7 +96,7 @@ async function sendStatusNotification(ctx: Context, targets: StatusTarget[], cha
   await ctx.broadcast(broadcastChannels, statusMessage);
 }
 
-let prevStatus: MinecraftStatus = {};
+let prevStatus: MinecraftServiceStatus = {};
 let statusCheckInterval: NodeJS.Timeout | null = null;
 
 /**
@@ -138,7 +139,7 @@ export function regStatusCheck(ctx: Context, config: Config & { statusNoticeTarg
       const currentStatus = await getMinecraftStatus();
       if (Object.keys(prevStatus).length > 0) {
         const changes: StatusChange[] = Object.entries(currentStatus)
-          .filter(([service, to]) => prevStatus[service] && prevStatus[service] !== to)
+          .filter(([service, to]) => prevStatus[service] !== undefined && prevStatus[service] !== to)
           .map(([service, to]) => ({ service, from: prevStatus[service], to }));
 
         if (changes.length > 0) {
@@ -147,7 +148,7 @@ export function regStatusCheck(ctx: Context, config: Config & { statusNoticeTarg
       }
       prevStatus = currentStatus;
     } catch (error) {
-      ctx.logger.warn('获取 Minecraft 服务状态失败:', error);
+      ctx.logger.warn('检查 Minecraft 服务状态失败:', error);
     }
   };
 
