@@ -31,7 +31,7 @@ const servicesToCheck = {
   'Textures': 'http://textures.minecraft.net/',
   'Mojang API': 'https://api.mojang.com/',
   'Account': 'http://account.mojang.com/',
-  'SessionServer': 'https://sessionserver.mojang.com/',
+  'Session Server': 'https://sessionserver.mojang.com/',
 };
 
 /**
@@ -115,9 +115,8 @@ export function cleanupStatusCheck() {
  */
 export function registerStatus(mc: Command) {
   mc.subcommand('.status', '查询 Minecraft 服务状态')
-    .action(async ({ session }) => {
+    .action(async ({ }) => {
       try {
-        await session.send('正在获取 Minecraft 服务状态，请稍候...');
         const currentStatus = await getMinecraftStatus();
         return formatStatusMessage(currentStatus);
       } catch (error) {
