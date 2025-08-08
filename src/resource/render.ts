@@ -212,9 +212,8 @@ export async function renderOutput(session: Session, content: any[], url: string
             ? `[CQ:image,file=${item.attrs?.src || ''}]` : item
         }
       }))
-      const isGroup = (session.guildId || (session.subtype === 'group')) &&
-                      (session.guildId !== session.userId && session.channelId !== session.userId)
-      const target = isGroup ? (session.guildId || session.channelId) : session.channelId
+      const isGroup = session.subtype === 'group'
+      const target = isGroup ? session.guildId : session.userId
       const method = isGroup ? 'sendGroupForwardMsg' : 'sendPrivateForwardMsg'
       await session.bot.internal[method](target, messages)
       return ''
