@@ -12,7 +12,7 @@ import { registerMcmod } from './resource/mcmod'
 import { registerMcwiki } from './resource/mcwiki'
 
 export const name = 'mc-tools'
-export const inject = {optional: ['puppeteer']}
+export const inject = {optional: ['puppeteer', 'database']}
 
 export const usage = `
 <div style="border-radius: 10px; border: 1px solid #ddd; padding: 16px; margin-bottom: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);">
