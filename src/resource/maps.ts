@@ -95,7 +95,7 @@ export const PLATFORMS = {
      * @param {Config} config - 配置对象
      * @returns {Promise<Object>} 项目详情
      */
-    getDetail: (ctx, id, config) => getMcmodProject(ctx, id, config),
+    getDetail: (ctx, project, config) => getMcmodProject(ctx, project, config),
     /**
      * 转换MCMOD项目数据为统一格式
      * @param {Object} p - 项目数据
