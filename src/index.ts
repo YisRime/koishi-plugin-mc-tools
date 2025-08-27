@@ -116,8 +116,8 @@ export const Config: Schema<Config> = Schema.intersect([
     })).description('服务器查询 API ').default([
       { type: 'java', url: 'https://api.mcstatus.io/v2/status/java/${address}' },
       { type: 'bedrock', url: 'https://api.mcstatus.io/v2/status/bedrock/${address}' },
-      { type: 'java', url: 'https://api.mcsrvstat.us/2/${address}' },
-      { type: 'bedrock', url: 'https://api.mcsrvstat.us/bedrock/2/${address}' },
+      { type: 'java', url: 'https://api.mcsrvstat.us/3/${address}' },
+      { type: 'bedrock', url: 'https://api.mcsrvstat.us/bedrock/3/${address}' },
       { type: 'java', url: 'https://api.imlazy.ink/mcapi?type=json&host=${address}' },
       { type: 'bedrock', url: 'https://api.imlazy.ink/mcapi?type=json&host=${address}&be=true' }
     ]).role('table'),
