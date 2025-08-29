@@ -195,8 +195,8 @@ function normalizeApiResponse(data: any, address: string, serverType: 'java' | '
       name: data.version?.name || data.protocol?.name || data.version?.protocol_name
     },
     players: {
-      online: data.players?.online ?? data.players?.now ?? data.players_online ?? data.online_players,
-      max: data.players?.max ?? data.players_max ?? data.max_players,
+      online: data.players?.online ?? data.players?.now ?? data.players_online ?? data.online_players ?? data.playersOnline,
+      max: data.players?.max ?? data.players_max ?? data.max_players ?? data.maxPlayers,
       list: Array.isArray(data.players?.list)
         ? data.players.list.map(p => typeof p === 'string' ? p : p.name || p.name_clean || p.id)
         : (Array.isArray(data.players)
