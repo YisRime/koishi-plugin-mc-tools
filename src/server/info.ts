@@ -57,34 +57,38 @@ interface ServerStatus {
  * @returns {string} 验证后的服务器地址
  * @throws {Error} 当地址无效时抛出错误
  */
-function validateServerAddress(input: string): string {
-  // 检查禁止的本地/内网地址
+function validateServerAddress(input: string): string | null {
   const lowerAddr = input.toLowerCase();
-  const forbiddenAddresses = ['localhost', '127.0.0.', '0.0.0.0', '::1', '::'];
-  if (forbiddenAddresses.some(addr => lowerAddr.includes(addr)) ||
-      /^fe80:|^f[cd]|^ff/.test(lowerAddr)) {
-    throw new Error('无效地址');
-  }
-  // 解析端口
-  let port: number | undefined;
-  if (input.includes(':')) {
-    const portMatch = input.match(/\]:(\d+)$/) || input.match(/:(\d+)$/);
-    if (portMatch) {
-      port = parseInt(portMatch[1], 10);
-      if (port < 1 || port > 65535) throw new Error('无效端口');
+  if (/^(\[::\]|::)(:\d+)?$/.test(lowerAddr) || /^(\[::1\]|::1)(:\d+)?$/.test(lowerAddr)) return null;
+  const forbiddenPatterns = ['localhost', '127.0.0.', '0.0.0.0'];
+  if (forbiddenPatterns.some(pattern => lowerAddr.includes(pattern))) return null;
+  let hostPart = input;
+  let portStr: string | undefined;
+  const ipv6Match = input.match(/^\[(.+)\](?::(\d+))?$/);
+  if (ipv6Match) {
+    hostPart = ipv6Match[1];
+    portStr = ipv6Match[2];
+  } else {
+    const lastColon = input.lastIndexOf(':');
+    if (lastColon > -1 && input.indexOf(':') === lastColon) {
+      hostPart = input.substring(0, lastColon);
+      portStr = input.substring(lastColon + 1);
     }
   }
-  // 验证IPv4地址
-  if (/^(\d{1,3}\.){3}\d{1,3}/.test(input)) {
-    const ipPart = input.split(':')[0];
-    const octets = ipPart.split('.').map(Number);
-    // 检查内网和特殊IP地址
+  if (portStr) {
+    const port = parseInt(portStr, 10);
+    if (isNaN(port) || port < 1 || port > 65535) return null;
+  }
+  const lowerHost = hostPart.toLowerCase();
+  if (/^fe80:|^f[cd]|^ff/.test(lowerHost)) return null;
+  if (/^(\d{1,3}\.){3}\d{1,3}/.test(hostPart)) {
+    const octets = hostPart.split('.').map(Number);
     const isInvalid =
       octets[0] === 10 || octets[0] === 127 || octets[0] === 0 || octets[0] > 223 ||
       (octets[0] === 192 && octets[1] === 168) ||
       (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31) ||
       (octets[0] === 169 && octets[1] === 254);
-    if (isInvalid) throw new Error('无效地址');
+    if (isInvalid) return null;
   }
   return input;
 }
@@ -95,20 +99,21 @@ function validateServerAddress(input: string): string {
 async function pingServer(host: string, port: number, type: 'java' | 'bedrock'): Promise<number> {
   const startTime = Date.now();
   if (type === 'java') {
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
       const socket = net.createConnection({ host, port })
         .once('connect', () => { socket.destroy(); resolve(Date.now() - startTime); })
-        .once('error', err => { socket.destroy(); reject(err); });
+        .once('error', () => { socket.destroy(); resolve(-1); });
+      socket.setTimeout(10000, () => { socket.destroy(); resolve(-1); });
     });
   } else {
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
       const client = dgram.createSocket('udp4');
       const pingData = Buffer.from([0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0x00, 0xfe, 0xfe, 0xfe, 0xfe, 0xfd, 0xfd, 0xfd, 0xfd, 0x12, 0x34, 0x56, 0x78]);
-      const timer = setTimeout(() => { client.close(); reject(new Error('查询超时')); }, 10000);
+      const timer = setTimeout(() => { client.close(); resolve(-1); }, 10000);
       client.once('message', () => {
         clearTimeout(timer); client.close(); resolve(Date.now() - startTime);
-      }).once('error', err => {clearTimeout(timer); client.close(); reject(err); });
-      client.send(pingData, port, host, err => { if (err) { clearTimeout(timer); client.close(); reject(err); }});
+      }).once('error', () => { clearTimeout(timer); client.close(); resolve(-1); });
+      client.send(pingData, port, host, err => { if (err) { clearTimeout(timer); client.close(); resolve(-1); }});
     });
   }
 }
@@ -116,42 +121,42 @@ async function pingServer(host: string, port: number, type: 'java' | 'bedrock'):
 /**
  * 获取 Minecraft 服务器状态
  */
-async function fetchServerStatus(ctx: Context, server: string, forceType: 'java' | 'bedrock', config?: Config): Promise<ServerStatus> {
-  // 解析和验证地址
-  let address = validateServerAddress(server);
+async function fetchServerStatus(server: string, forceType: 'java' | 'bedrock', config?: Config): Promise<ServerStatus> {
+  const address = validateServerAddress(server);
   const serverType = forceType || 'java';
   const defaultPort = serverType === 'java' ? 25565 : 19132;
+  if (!address) {
+    const [host, portStr] = server.split(':');
+    return {
+      online: false, host: host, port: parseInt(portStr) || defaultPort, players: { online: null, max: null },
+      error: '无效地址'
+    };
+  }
   const host = address.split(':')[0];
   const port = parseInt(address.split(':')[1]) || defaultPort;
-  // 获取API端点和执行ping请求
   const apiEndpoints = config?.serverApis?.filter(api => api.type === serverType)?.map(api => api.url) || [];
-  const pingPromise = pingServer(host, port, serverType).catch(() => null);
-  // 同时处理所有API请求和ping请求
-  const [pingResult, ...apiResults] = await Promise.allSettled([
-    pingPromise,
-    ...apiEndpoints.map(async (apiUrl) => {
+  const apiResults = await Promise.allSettled(
+    apiEndpoints.map(async (apiUrl) => {
       const startTime = Date.now();
-      const response = await fetch(apiUrl.replace('${address}', address), {headers: {'User-Agent': 'Mozilla/5.0'}, method: 'GET'});
+      const response = await fetch(apiUrl.replace('${address}', address), { headers: { 'User-Agent': 'Mozilla/5.0' }, method: 'GET' });
       if (!response.ok) return null;
       const data = await response.json();
-      // 检查有效响应
       const result = normalizeApiResponse(data, address, serverType);
       result.ping = Date.now() - startTime;
       return result.online && (result.version?.name_clean || result.players.online !== null) ? result : null;
     })
-  ]);
-  // 处理结果
-  const actualPingResult = pingResult.status === 'fulfilled' ? pingResult.value : null;
+  );
   const successResult = apiResults
     .filter(result => result.status === 'fulfilled' && result.value)
     .map(result => (result as PromiseFulfilledResult<ServerStatus>).value)[0];
   if (successResult) {
-    if (actualPingResult !== null) successResult.ping = actualPingResult;
+    const actualPing = await pingServer(host, port, serverType);
+    if (actualPing !== -1) successResult.ping = actualPing;
     return successResult;
   }
   return {
     online: false, host, port, players: { online: null, max: null },
-    ping: actualPingResult, error: '查询失败：无法获取服务器状态'
+    error: '服务器查询失败'
   };
 }
 
@@ -309,7 +314,7 @@ export function registerInfo(ctx: Context, parent: any, config: Config) {
         server = findGroupServer(session, config);
         if (!server) return '请提供服务器地址';
       }
-      const status = await fetchServerStatus(ctx, server, 'java', config);
+      const status = await fetchServerStatus(server, 'java', config);
       return formatServerStatus(status, config);
     });
   mcinfo.subcommand('.be [server]', '查询 Bedrock 服务器')
@@ -318,7 +323,7 @@ export function registerInfo(ctx: Context, parent: any, config: Config) {
         server = findGroupServer(session, config);
         if (!server) return '请提供服务器地址';
       }
-      const status = await fetchServerStatus(ctx, server, 'bedrock', config);
+      const status = await fetchServerStatus(server, 'bedrock', config);
       return formatServerStatus(status, config);
     });
 }
