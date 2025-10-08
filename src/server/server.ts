@@ -84,7 +84,7 @@ export function registerServer(ctx: Context, parent: any, config: Config) {
   server.subcommand('.say <message:text>', '发送聊天消息')
     .usage('mc.server.say <消息内容> - 发送消息到 Minecraft 服务器')
     .option('server', '-s <serverId:number> 指定服务器 ID')
-    .before(setupServerIdBefore)
+    .before((argv) => setupServerIdBefore(argv, config))
     .action(async ({ session, options }, message) => {
       if (!session) return;
       if (!message) return '请输入要发送的消息';
@@ -110,7 +110,7 @@ export function registerServer(ctx: Context, parent: any, config: Config) {
   server.subcommand('.run <command:text>', '执行命令')
     .usage('mc.server.run <命令内容> - 执行指定 Minecraft 命令')
     .option('server', '-s <serverId:number> 指定服务器 ID')
-    .before(setupServerIdBefore)
+    .before((argv) => setupServerIdBefore(argv, config))
     .action(async ({ session, options }, command) => {
       if (!session) return;
       if (!command) return '请输入要执行的命令';
