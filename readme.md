@@ -115,7 +115,7 @@
     - `disable`: 禁用链接解析功能
     - `text`: 启用链接解析，以文本形式返回结果
     - `shot`: 启用链接解析，以截图形式返回结果（需要 Puppeteer 服务）
-  - `mcwikiEnabled`: 启用 Minecraft Wiki 查询 (布尔值)
+  - `mcwikiEnabled`: 启用 MC Wiki 查询 (布尔值)
   - `modrinthEnabled`: 启用 Modrinth 查询 (布尔值)
   - `mcmodEnabled`: 启用 MCMOD 查询 (布尔值或API字符串)
   - `curseforgeEnabled`: 启用 CurseForge 查询 (布尔值或API密钥字符串)
@@ -128,11 +128,8 @@ MC 百科内容处理调用了作者自行编写的 API，由于使用了 CloudF
   - `useForward`: 启用合并转发 (布尔值)
   - `useScreenshot`: 启用网页截图 (布尔值)
   - `useFallback`: 启用发送回退 (布尔值)
-  - `searchDesc`: 简介长度 (数字)
-  - `searchResults`: 搜索结果数/页 (数字)
-  - `maxParagraphs`: 详情段落数限制 (数字)
+  - `maxParagraphs`: 详情段数限制 (数字)
   - `maxDescLength`: 每段字数限制 (数字)
-  - `maxModLinks`: 相关链接数限制 (数字)
 
 用于调整资源查询命令的行为和显示效果。
 合并转发功能仅在 `onebot` 平台可用，其余平台会自动以纯文本形式发送，网页截图功能需要 `Puppeteer` 服务支持。

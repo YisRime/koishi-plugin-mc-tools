@@ -50,11 +50,8 @@ export interface Config {
   mcmodEnabled: false | string
   mcwikiEnabled: boolean
   linkParserEnabled: 'disable' | 'text' | 'shot'
-  searchDesc: number
-  searchResults: number
-  maxParagraphs: number;
-  maxDescLength: number;
-  maxModLinks: number;
+  maxParagraphs: number
+  maxDescLength: number
 }
 
 export const Config: Schema<Config> = Schema.intersect([
@@ -64,12 +61,12 @@ export const Config: Schema<Config> = Schema.intersect([
       Schema.const('text').description('启用'),
       Schema.const('shot').description('启用（截图）')
     ]).description('启用链接解析').default('disable'),
-    mcwikiEnabled: Schema.boolean().description('启用 Minecraft Wiki 查询').default(true),
+    mcwikiEnabled: Schema.boolean().description('启用 MC Wiki 查询').default(true),
     modrinthEnabled: Schema.boolean().description('启用 Modrinth 查询').default(true),
     mcmodEnabled: Schema.union([
       Schema.const(false).description('禁用'),
       Schema.string().description('启用').role('link').default('https://mcmod-api.yis-rime.workers.dev/')
-    ]).description('启用 MC 百科查询').default('https://mcmod-api.yis-rime.workers.dev/'),
+    ]).description('启用 MC 百科 查询').default('https://mcmod-api.yis-rime.workers.dev/'),
     curseforgeEnabled: Schema.union([
       Schema.const(false).description('禁用'),
       Schema.string().description('启用').role('secret')
@@ -79,11 +76,8 @@ export const Config: Schema<Config> = Schema.intersect([
     useForward: Schema.boolean().description('启用合并转发').default(true),
     useScreenshot: Schema.boolean().description('启用网页截图').default(true),
     useFallback: Schema.boolean().description('启用发送回退').default(true),
-    searchDesc: Schema.number().description('简介长度').default(50).min(0).max(500),
-    searchResults: Schema.number().description('搜索结果数/页').default(10).min(5).max(100),
-    maxParagraphs: Schema.number().description('详情段落数限制').default(20).min(1).max(100),
-    maxDescLength: Schema.number().description('每段字数限制').default(1000).min(100).max(2000),
-    maxModLinks: Schema.number().description('相关链接数限制').default(10).min(5).max(1000),
+    maxParagraphs: Schema.number().description('详情段数限制').default(20).min(1).max(100),
+    maxDescLength: Schema.number().description('每段字数限制').default(512).min(128).max(2048),
   }).description('资源查询配置'),
   Schema.object({
     playerEnabled: Schema.boolean().description('启用玩家信息查询').default(true),

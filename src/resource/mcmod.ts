@@ -186,7 +186,7 @@ export async function getMcmodProject(ctx: Context, project, config: Config = nu
         `支持版本:\n● ${versionInfo}`,
         `Mod资料:\n${resources.map(res => `● ${getMapValue(MCMOD_MAPS.RESOURCE_TYPE, res.typeId)} (${res.count}条)`).join('\n')}`,
       ].join('\n'),
-      links?.length && `相关链接:\n${links.slice(0, config.maxModLinks)
+      links?.length && `相关链接:\n${links.slice(0, 10)
         .map(link => `● ${link.title}: ${link.url}`).join('\n')}`
     ].filter(Boolean)
     // 模组关系
@@ -196,11 +196,11 @@ export async function getMcmodProject(ctx: Context, project, config: Config = nu
         if (relation.version) {
           relationItems.push(`[${relation.version}]版本：`)
           if (relation.dependencyMods?.length) {
-            relationItems.push(`  依赖模组: ${relation.dependencyMods.slice(0, config.maxModLinks)
+            relationItems.push(`  依赖模组: ${relation.dependencyMods.slice(0, 10)
               .map(mod => `[${mod.name}](https://www.mcmod.cn/class/${mod.id}.html)`).join(', ')}`)
           }
           if (relation.relationMods?.length) {
-            relationItems.push(`  关联模组: ${relation.relationMods.slice(0, config.maxModLinks)
+            relationItems.push(`  关联模组: ${relation.relationMods.slice(0, 10)
               .map(mod => `[${mod.name}](https://www.mcmod.cn/class/${mod.id}.html)`).join(', ')}`)
           }
         }
@@ -211,12 +211,12 @@ export async function getMcmodProject(ctx: Context, project, config: Config = nu
     if (community) {
       if (community.tutorials?.length) {
         content.push('Mod教程:')
-        content.push(community.tutorials.slice(0, config.maxModLinks)
+        content.push(community.tutorials.slice(0, 10)
           .map(t => `● [${t.title}](https://www.mcmod.cn/post/${t.id}.html)`).join('\n'))
       }
       if (community.discussions?.length) {
         content.push('Mod讨论:')
-        content.push(community.discussions.slice(0, config.maxModLinks)
+        content.push(community.discussions.slice(0, 10)
           .map(d => `● [${d.title}](https://bbs.mcmod.cn/thread-${d.id}-1-1.html)`).join('\n'))
       }
     }
@@ -271,20 +271,20 @@ export async function getMcmodModpack(ctx: Context, modpack, config: Config = nu
         compatibility?.packMethod?.length ? `打包方式: ${compatibility.packMethod.join(', ')}` : null,
         compatibility?.mcVersions ? `支持版本: ${Array.isArray(compatibility.mcVersions) ? compatibility.mcVersions.join(', ') : '未知'}` : null,
       ].filter(Boolean).join('\n'),
-      links?.length && `相关链接:\n${links.slice(0, config.maxModLinks)
+      links?.length && `相关链接:\n${links.slice(0, 10)
         .map(link => `● ${link.title}: ${link.url}`).join('\n')}`
     ].filter(Boolean)
     // 包含模组
     if (modpack.relations && relations?.mods?.length) {
       content.push('包含模组:')
-      content.push(relations.mods.slice(0, config.maxModLinks)
+      content.push(relations.mods.slice(0, 10)
         .map(mod => `● [${mod.name}](https://www.mcmod.cn/class/${mod.id}.html)${mod.version ? ` (${mod.version})` : ''}`)
         .join('\n'))
     }
     // 相关教程
     if (modpack.community && relations?.tutorials?.length) {
       content.push('相关教程:')
-      content.push(relations.tutorials.slice(0, config.maxModLinks)
+      content.push(relations.tutorials.slice(0, 10)
         .map(t => `● [${t.title}](https://www.mcmod.cn/post/${t.id}.html)`)
         .join('\n'))
     }
@@ -409,7 +409,7 @@ export async function getMcmodItem(ctx: Context, item, config: Config = null) {
       // 添加相关内容
       if (item.others && itemInfo.teams?.relatedItems?.length) {
         const relatedItems = [`相关内容：`]
-        itemInfo.teams.relatedItems.slice(0, config.maxModLinks).forEach(related => {
+        itemInfo.teams.relatedItems.slice(0, 10).forEach(related => {
           relatedItems.push(`• [${related.name}](${related.url})`)
         })
         itemContent.push(relatedItems.join('\n'))

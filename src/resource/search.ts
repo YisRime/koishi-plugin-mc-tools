@@ -159,8 +159,7 @@ async function handleUserInput(input, allResults, currentPage, config, ctx, sess
   if (!input || input?.toLowerCase() === 'c') return { done: true, message: input ? '已取消搜索' : '已超时，自动取消搜索' };
   // 下一页
   if (input.toLowerCase() === 'n') {
-    const resultsPerPage = config.searchResults;
-    const endIndex = (currentPage + 1) * resultsPerPage;
+    const endIndex = (currentPage + 1) * 10;
     // 已有足够结果显示下一页
     if (endIndex < allResults.length) return { done: false, nextPage: currentPage + 1 };
     // 尝试加载更多结果
@@ -169,7 +168,7 @@ async function handleUserInput(input, allResults, currentPage, config, ctx, sess
       const beforeLoadCount = allResults.length;
       await executeSearch(ctx, keyword, options, config, activePlatforms, platformStates, platformResults);
       const newAllResults = mergeResults(platformResults);
-      if (newAllResults.length > beforeLoadCount) return { done: false, nextPage: Math.floor(beforeLoadCount / resultsPerPage) };
+      if (newAllResults.length > beforeLoadCount) return { done: false, nextPage: Math.floor(beforeLoadCount / 10) };
     }
     return { done: true, message: '无更多结果' };
   }
@@ -198,9 +197,8 @@ async function handleUserInput(input, allResults, currentPage, config, ctx, sess
  */
 async function displayResultPage(ctx, session, config, platformResults, currentPage, platforms, platformStates) {
   const allResults = mergeResults(platformResults);
-  const resultsPerPage = config.searchResults;
-  const startIndex = currentPage * resultsPerPage;
-  const endIndex = startIndex + resultsPerPage;
+  const startIndex = currentPage * 10;
+  const endIndex = startIndex + 10;
   // 检查是否需要加载更多结果
   if (endIndex > allResults.length) {
     const activePlatforms = platforms.filter(p => !platformStates[p]?.exhausted);
@@ -209,7 +207,7 @@ async function displayResultPage(ctx, session, config, platformResults, currentP
   const currentResults = allResults.slice(startIndex, endIndex);
   if (currentResults.length === 0) return { message: '无更多结果' };
   // 计算总页数
-  let totalPages = Math.ceil(allResults.length / resultsPerPage);
+  let totalPages = Math.ceil(allResults.length / 10);
   // 如果只有一个平台且提供了总页数，使用平台自身的总页数
   if (platforms.length === 1 && platformStates[platforms[0]]?.totalPages > 0) totalPages = platformStates[platforms[0]].totalPages;
   // 渲染结果
@@ -217,8 +215,8 @@ async function displayResultPage(ctx, session, config, platformResults, currentP
     '请回复序号查看详情，输入n查看下页，输入c取消',
     ...currentResults.map((p, i) => {
       const index = startIndex + i + 1;
-      const desc = config.searchDesc > 0 && p.description
-        ? `\n  ${p.description.substring(0, config.searchDesc)}${p.description.length > config.searchDesc ? '...' : ''}`
+      const desc = p.description
+        ? `\n  ${p.description.substring(0, 64)}${p.description.length > 64 ? '...' : ''}`
         : '';
       return `${index}. [${p.platform}] ${p.name}${desc}`;
     }),
@@ -276,7 +274,7 @@ export function registerSearch(ctx: Context, mc: Command, config: Config) {
               // 防止无限搜索，强制显示当前结果或返回无结果
               const allResults = mergeResults(platformResults);
               if (allResults.length === 0) return '无匹配结果';
-              currentPage = Math.max(0, Math.floor((allResults.length - 1) / config.searchResults));
+              currentPage = Math.max(0, Math.floor((allResults.length - 1) / 10));
               continue;
             }
             const beforeCount = mergeResults(platformResults).length;

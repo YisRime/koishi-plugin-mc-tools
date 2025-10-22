@@ -152,7 +152,6 @@ export async function handleDownload(ctx: Context, session: Session, platform: s
   try {
     let allFiles = [], currentIndex = 0, currentPage = 0, totalItems = 0;
     let hasMoreResults = true;
-    const displayPageSize = config.searchResults || 10;
     let cfPagination = null;
     // 获取初始数据
     if (platform === 'modrinth') {
@@ -162,7 +161,7 @@ export async function handleDownload(ctx: Context, session: Session, platform: s
     }
     while (true) {
       // 按需加载CurseForge数据
-      if (platform === 'curseforge' && (currentPage * displayPageSize >= allFiles.length) && hasMoreResults) {
+      if (platform === 'curseforge' && (currentPage * 10 >= allFiles.length) && hasMoreResults) {
         const result = await getCurseForgeFiles(ctx, project.id, config.curseforgeEnabled, options, currentIndex);
         if (!result.files?.length) {
           if (allFiles.length === 0) return '该项目未找到任何文件';
@@ -176,11 +175,11 @@ export async function handleDownload(ctx: Context, session: Session, platform: s
         }
       }
       // 计算当前页内容
-      const startIndex = currentPage * displayPageSize;
+      const startIndex = currentPage * 10;
       if (startIndex >= allFiles.length) return '已取消下载';
-      const endIndex = Math.min(startIndex + displayPageSize, allFiles.length);
+      const endIndex = Math.min(startIndex + 10, allFiles.length);
       const pageFiles = allFiles.slice(startIndex, endIndex);
-      const totalPages = Math.ceil(totalItems / displayPageSize);
+      const totalPages = Math.ceil(totalItems / 10);
       const isLastPage = !hasMoreResults && (endIndex >= allFiles.length);
       const pageInfo = `第 ${currentPage + 1}/${totalPages || '?'} 页${isLastPage ? '（最后一页）' : ''}`;
       await displayFileList(session, pageFiles, pageInfo, platform, ctx, config, startIndex);
